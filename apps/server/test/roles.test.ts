@@ -267,6 +267,22 @@ describe.skipIf(!available)('staff roles in the administration (PostgreSQL)', ()
     });
   });
 
+  describe('the journal of the staff commands', () => {
+    it('is read by the managers only, newest first, filtered by member', async () => {
+      const boss = await signUp('rl_jl_boss', 'gerant');
+      const mod = await signUp('rl_jl_mod', 'moderateur');
+      await pool.query("INSERT INTO staff_log (staff_id, command, args, room) VALUES ($1, 'kick', 'rl_x', 'hall'), ($1, 'mute', 'rl_y 10 test', 'hall'), ($2, 'ha', 'bonjour', 'hall')", [mod.id, boss.id]);
+      expect((await get(mod, '/api/staff/log')).statusCode).toBe(403);
+      expect((await get(await signUp('rl_jl_player'), '/api/staff/log')).statusCode).toBe(404);
+      const all = (await get(boss, '/api/staff/log')).json();
+      expect(all.entries.map((e: { command: string }) => e.command).slice(0, 3)).toEqual(['ha', 'mute', 'kick']);
+      expect(all.entries[0]).toMatchObject({ staff: 'rl_jl_boss', args: 'bonjour', room: 'hall' });
+      const only = (await get(boss, '/api/staff/log?staff=RL_JL_MOD')).json();
+      expect(only.entries.map((e: { command: string }) => e.command)).toEqual(['mute', 'kick']);
+      expect((await get(boss, '/api/staff/log?before=abc')).statusCode).toBe(400);
+    });
+  });
+
   describe('events', () => {
     const inHours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
     const event = (by: Account, extra: object = {}) =>

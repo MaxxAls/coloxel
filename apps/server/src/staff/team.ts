@@ -160,6 +160,24 @@ export function registerTeamRoutes(app: FastifyInstance, pool: pg.Pool) {
     }
   });
 
+  // What the staff typed as commands in the rooms, newest first: the managers' view of who did what.
+  app.get<{ Querystring: { staff?: string; before?: string } }>('/api/staff/log', async (req, reply) => {
+    if (!(await requireStaff(pool, req, reply, 'staff.log'))) return;
+    const { staff, before } = req.query;
+    if (before !== undefined && !/^\d{1,15}$/.test(before)) return reply.code(400).send({ error: 'Page invalide' });
+    const { rows } = await pool.query<{ id: string; nickname: string; command: string; args: string; room: string | null; created_at: Date }>(
+      `SELECT l.id, u.nickname, l.command, l.args, l.room, l.created_at
+         FROM staff_log l JOIN users u ON u.id = l.staff_id
+        WHERE ($1::text IS NULL OR lower(u.nickname) = lower($1)) AND ($2::bigint IS NULL OR l.id < $2)
+        ORDER BY l.id DESC LIMIT 100`,
+      [staff || null, before ?? null],
+    );
+    return {
+      entries: rows.map((r) => ({ id: Number(r.id), staff: r.nickname, command: r.command, args: r.args, room: r.room, at: r.created_at })),
+      next: rows.length === 100 ? Number(rows[rows.length - 1]!.id) : null,
+    };
+  });
+
   // ----- Events ------------------------------------------------------------------
   // Everybody may read what is coming up: the website and the game show it.
   app.get('/api/events', async () => ({ events: await upcomingEvents(pool) }));

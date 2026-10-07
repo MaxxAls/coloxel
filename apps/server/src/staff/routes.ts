@@ -4,36 +4,13 @@ import { z } from 'zod';
 import type { NotifyApartment } from '../building/routes';
 import { withTransaction } from '../db/pool';
 import { itemMaskedSql } from '../moderation/masking';
-import {
-  MAX_SANCTION_MINUTES,
-  SANCTION_KINDS,
-  liveSql,
-  sanctionText,
-  type NotifyUser,
-  type SanctionKind,
-} from '../moderation/sanctions';
+import { liveSql, type NotifyUser, type SanctionKind } from '../moderation/sanctions';
 import { REPORT_KINDS } from '../reports/routes';
-import { ROLES, assignableRoles, can, outranks, sanctionRefusal, type Permission, type StaffMember } from './roles';
+import { ROLES, assignableRoles, can, outranks, type Permission } from './roles';
+import { announceSanction, issueSanction, sanctionSchema, type Issued } from './sanctions';
 import { isMaintenance, requireStaff } from '../site/settings';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const sanctionSchema = z
-  .object({
-    kind: z.enum(SANCTION_KINDS, 'Sanction inconnue'),
-    minutes: z.number('Durée invalide').int('Durée invalide').min(1, 'Durée invalide').max(MAX_SANCTION_MINUTES, 'Durée trop longue (un an au maximum)').optional(),
-    reason: z
-      .string('Motif invalide')
-      .transform((s) => s.replace(/\s+/g, ' ').trim())
-      .pipe(z.string().min(3, 'Le motif est obligatoire (3 caractères au moins)').max(300, 'Motif trop long (300 caractères max)')),
-  })
-  .strict()
-  .superRefine((s, ctx) => {
-    const timed = s.kind === 'mute' || s.kind === 'suspension';
-    if (timed && s.minutes === undefined) ctx.addIssue({ code: 'custom', message: 'Une durée est obligatoire pour cette sanction' });
-    if (!timed && s.minutes !== undefined) ctx.addIssue({ code: 'custom', message: 'Cette sanction n’a pas de durée' });
-  });
-type SanctionInput = z.infer<typeof sanctionSchema>;
 
 const resolveSchema = z
   .object({
@@ -47,37 +24,13 @@ const resolveSchema = z
 
 const moderationSchema = z.object({ state: z.enum(['hidden', 'cleared', 'none']) }).strict();
 
-interface Issued {
-  id: number;
-  userId: string;
-  kind: SanctionKind;
-  text: string;
-}
-
 /** The staff panel: reports to review, the chat journal, player sheets, sanctions. Every route checks the role in the database. */
 export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyUser?: NotifyUser, notifyApartment?: NotifyApartment) {
   /** The signed-in staff member holding this permission (every staff role holds `admin.access`), or null after answering. */
   const staffOnly = (req: FastifyRequest, reply: FastifyReply, permission: Permission = 'admin.access') => requireStaff(pool, req, reply, permission);
 
-  /** Writes the sanction, inside the caller's transaction. Returns what to announce once it is committed. */
-  async function issue(client: pg.PoolClient, staff: StaffMember, userId: string, input: SanctionInput, reportId?: number): Promise<Issued | { error: string }> {
-    const target = await client.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [userId]);
-    if (!target.rows[0]) return { error: 'Joueur introuvable' };
-    if (userId === staff.id) return { error: 'Tu ne peux pas te sanctionner toi-même.' };
-    // Only from above: nobody sanctions somebody of their own level or higher.
-    if (!outranks(staff.role, target.rows[0].role)) return { error: 'Tu ne peux pas sanctionner quelqu’un de ton niveau ou au-dessus.' };
-    const refusal = sanctionRefusal(staff.role, input.kind, input.minutes);
-    if (refusal) return { error: refusal };
-    const expiresAt = input.minutes === undefined ? null : new Date(Date.now() + input.minutes * 60_000);
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO sanctions (user_id, kind, reason, issued_by, report_id, expires_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [userId, input.kind, input.reason, staff.id, reportId ?? null, expiresAt],
-    );
-    return { id: Number(rows[0]!.id), userId, kind: input.kind, text: sanctionText(input.kind, input.reason, expiresAt) };
-  }
-  // Once committed: a connected player is told or shown out within the second.
-  const announce = (issued: Issued) =>
-    notifyUser?.({ userId: issued.userId, kind: issued.kind, id: issued.kind === 'warning' ? issued.id : undefined, text: issued.text });
+  const issue = issueSanction;
+  const announce = (issued: Issued) => announceSanction(notifyUser, issued);
 
   // Who the signed-in staff member is and what they may do: the administration shows only what their role allows.
   app.get('/api/staff/me', async (req, reply) => {

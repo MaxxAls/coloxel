@@ -1045,6 +1045,407 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     }, 30000);
   });
 
+  describe('commands of the staff', () => {
+    interface Heard {
+      chat: string[];
+      system: string[];
+      alerts: { kind: string; text: string; from: string; link?: string; target?: { kind: string } }[];
+      fx: { kind: string; on?: boolean }[];
+      summons: { from: string; target: { kind: string } }[];
+      gotos: { who: string; target: { kind: string } }[];
+      refused: string[];
+      code: number;
+    }
+    const hear = (room: AnyRoom): Heard => {
+      const heard: Heard = { chat: [], system: [], alerts: [], fx: [], summons: [], gotos: [], refused: [], code: 0 };
+      room.onMessage('chat', (m: { text: string }) => heard.chat.push(m.text));
+      room.onMessage('system', (m: { text: string }) => heard.system.push(m.text));
+      room.onMessage('alert', (m: Heard['alerts'][number]) => heard.alerts.push(m));
+      room.onMessage('fx', (m: { kind: string; on?: boolean }) => heard.fx.push(m));
+      room.onMessage('summon', (m: Heard['summons'][number]) => heard.summons.push(m));
+      room.onMessage('goto', (m: Heard['gotos'][number]) => heard.gotos.push(m));
+      room.onMessage('chat-refused', (m: { reason: string }) => heard.refused.push(m.reason));
+      room.onLeave((c: number) => (heard.code = c));
+      return heard;
+    };
+    const member = async (nickname: string, role: string) => {
+      const a = await signUp(nickname);
+      if (role !== 'user') await pool.query('UPDATE users SET role = $2 WHERE id = $1', [a.id, role]);
+      return { ...a, nickname };
+    };
+    // The chat limiter lets a few messages through per window: commands count, so each test uses fresh accounts.
+    const logOf = async (a: Account) => (await pool.query('SELECT command, args, room FROM staff_log WHERE staff_id = $1 ORDER BY id', [a.id])).rows;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it('treats ":something" as plain chat for a player, and a smiley as plain chat for everybody', async () => {
+      const player = await member('sc_player', 'user');
+      const boss = await member('sc_smile', 'administrateur');
+      const a = await joinHall(player);
+      const b = await joinHall(boss);
+      const heardB = hear(b);
+      const heardA = hear(a);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':ha Je suis le chef' });
+      b.send('chat', { text: ':)' });
+      await until(() => heardB.chat.length === 2 && heardA.chat.length === 2, 3000);
+      expect(heardB.chat).toEqual([':ha Je suis le chef', ':)']);
+      expect(heardA.alerts).toEqual([]);
+      expect(heardB.alerts).toEqual([]);
+      expect(await logOf(player)).toEqual([]);
+    });
+
+    it('lets a role use only its own commands: anything else is chat, nobody learns what exists', async () => {
+      const mod = await member('sc_mod_only', 'moderateur');
+      const listener = await member('sc_listener', 'user');
+      const m = await joinHall(mod);
+      const l = await joinHall(listener);
+      const heardM = hear(m);
+      const heardL = hear(l);
+      await until(() => m.state?.players?.size === 2);
+      // A moderator may not alert the whole game, nor ban: both are just words in the chat.
+      m.send('chat', { text: ':ha Bonjour tout le monde' });
+      m.send('chat', { text: ':commandes' });
+      await until(() => heardL.chat.length === 1 && heardM.system.length >= 1, 3000);
+      expect(heardL.chat).toEqual([':ha Bonjour tout le monde']);
+      expect(heardL.alerts).toEqual([]);
+      expect(heardM.system[0]).toMatch(/Modérateur/);
+      expect(heardM.system[0]).toContain(':kick');
+      expect(heardM.system[0]).not.toContain(':ha');
+      expect(heardM.system[0]).not.toContain(':ban');
+    });
+
+    it('alerts the whole game from ":ha", wherever the players are, and journals it', async () => {
+      const senior = await member('sc_senior', 'super_moderateur');
+      const host = await member('sc_ha_owner', 'user');
+      const guest = await member('sc_ha_guest', 'user');
+      await setAccess(host.id, 'building');
+      const inHall = await joinHall(senior);
+      const inFlat = await joinApartment(host, host.id);
+      const elsewhere = await joinHall(guest);
+      const heards = [hear(inHall), hear(inFlat), hear(elsewhere)];
+      await until(() => inHall.state?.players?.size === 2);
+      inHall.send('chat', { text: ':ha Le jeu redémarre dans 5 minutes' });
+      await until(() => heards.every((h) => h.alerts.length === 1), 3000);
+      for (const h of heards) expect(h.alerts[0]).toMatchObject({ kind: 'hotel', text: 'Le jeu redémarre dans 5 minutes', from: 'sc_senior' });
+      expect(heards[0]!.chat).toEqual([]);
+      // Nothing about it in the chat journal; the staff journal knows.
+      expect((await pool.query('SELECT count(*) FROM chat_log WHERE user_id = $1', [senior.id])).rows[0].count).toBe('0');
+      expect(await logOf(senior)).toEqual([{ command: 'ha', args: 'Le jeu redémarre dans 5 minutes', room: 'hall' }]);
+    });
+
+    it('only points ":hal" at a page of the website', async () => {
+      const senior = await member('sc_hal', 'super_moderateur');
+      const other = await member('sc_hal_other', 'user');
+      const a = await joinHall(senior);
+      const b = await joinHall(other);
+      const heardA = hear(a);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':hal https://evil.example/phish Cadeau !' });
+      await until(() => heardA.system.length >= 1, 3000);
+      expect(heardA.system[0]).toMatch(/Usage/);
+      a.send('chat', { text: ':hal /site/evenements Concours ce soir' });
+      await until(() => heardB.alerts.length === 1, 3000);
+      expect(heardB.alerts[0]).toMatchObject({ text: 'Concours ce soir', link: '/site/evenements' });
+    });
+
+    it('announces an event with ":ea", and can take everybody to the room where it is held', async () => {
+      const host = await member('sc_event_host', 'animateur');
+      const fan = await member('sc_event_fan', 'user');
+      const a = await joinHall(host);
+      const b = await joinHall(fan);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':ea Chasse aux objets dans le hall !' });
+      await until(() => heardB.alerts.length === 1, 3000);
+      expect(heardB.alerts[0]).toMatchObject({ kind: 'event', from: 'sc_event_host', target: { kind: 'hall' } });
+    });
+
+    it('alerts one room, or one player, and nobody else', async () => {
+      const mod = await member('sc_ra', 'moderateur');
+      const inRoom = await member('sc_ra_in', 'user');
+      const outside = await member('sc_ra_out', 'user');
+      await setAccess(mod.id, 'building');
+      const m = await joinApartment(mod, mod.id);
+      const inside = await joinApartment(inRoom, mod.id);
+      const out = await joinHall(outside);
+      const heardIn = hear(inside);
+      const heardOut = hear(out);
+      await until(() => m.state?.players?.size === 2);
+      m.send('chat', { text: ':ra Merci de rester calmes' });
+      await until(() => heardIn.alerts.length === 1, 3000);
+      expect(heardIn.alerts[0]).toMatchObject({ kind: 'room', text: 'Merci de rester calmes' });
+      expect(heardOut.alerts).toEqual([]);
+      m.send('chat', { text: ':alert sc_ra_out Bonjour de la part de l’équipe' });
+      await until(() => heardOut.alerts.length === 1, 3000);
+      expect(heardOut.alerts[0]).toMatchObject({ kind: 'user', text: 'Bonjour de la part de l’équipe', from: 'sc_ra' });
+      expect(heardIn.alerts).toHaveLength(1);
+    });
+
+    it('shows a player out with ":kick", but never somebody of the same level or above', async () => {
+      const mod = await member('sc_kick_mod', 'moderateur');
+      const peer = await member('sc_kick_peer', 'moderateur');
+      const pest = await member('sc_kick_pest', 'user');
+      const a = await joinHall(mod);
+      const b = await joinHall(peer);
+      const c = await joinHall(pest);
+      const heardB = hear(b);
+      const heardC = hear(c);
+      const heardA = hear(a);
+      await until(() => a.state?.players?.size === 3);
+      a.send('chat', { text: ':kick sc_kick_peer' });
+      await until(() => heardA.system.length >= 1, 3000);
+      expect(heardA.system[0]).toMatch(/niveau/);
+      expect(heardB.code).toBe(0);
+      a.send('chat', { text: ':kick sc_kick_pest Trop de bruit' });
+      await until(() => heardC.code === 4006, 3000);
+      await until(() => a.state?.players?.size === 2, 3000);
+      // It is not a ban: they may come back.
+      await expect(joinHall(pest)).resolves.toBeDefined();
+    });
+
+    it('silences a room with ":roommute": only the staff speaks, until ":roomunmute"', async () => {
+      const mod = await member('sc_rm_mod', 'moderateur');
+      const talker = await member('sc_rm_talker', 'user');
+      const a = await joinHall(mod);
+      const b = await joinHall(talker);
+      const heardA = hear(a);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':roommute' });
+      await until(() => heardB.system.some((t) => /sourdine/.test(t)), 3000);
+      b.send('chat', { text: 'Je peux parler ?' });
+      await until(() => heardB.refused.length === 1, 3000);
+      expect(heardB.refused).toEqual(['room-muted']);
+      a.send('chat', { text: 'Silence, s’il vous plaît' });
+      await until(() => heardB.chat.length === 1, 3000);
+      expect(heardB.chat).toEqual(['Silence, s’il vous plaît']);
+      a.send('chat', { text: ':roomunmute' });
+      await until(() => heardB.system.filter((t) => /de nouveau parler/.test(t)).length === 1, 3000);
+      b.send('chat', { text: 'Merci' });
+      await until(() => heardA.chat.includes('Merci'), 3000);
+    });
+
+    it('sanctions from the chat bar with the same rules as the administration', async () => {
+      const mod = await member('sc_sanc_mod', 'moderateur');
+      const senior = await member('sc_sanc_senior', 'super_moderateur');
+      const target = await member('sc_sanc_target', 'user');
+      const peer = await member('sc_sanc_peer', 'moderateur');
+      const a = await joinHall(mod);
+      const s = await joinHall(senior);
+      const t = await joinHall(target);
+      const heardA = hear(a);
+      const heardT = hear(t);
+      await until(() => a.state?.players?.size === 3);
+
+      // Over the limit of a moderator (24 h), and not a command a moderator has (a ban): refused or plain chat.
+      a.send('chat', { text: ':mute sc_sanc_target 2000 Trop de bruit' });
+      await until(() => heardA.system.length >= 1, 3000);
+      expect(heardA.system[0]).toMatch(/24 h/);
+      a.send('chat', { text: ':mute sc_sanc_peer 10 Entre collègues' });
+      await until(() => heardA.system.length >= 2, 3000);
+      expect(heardA.system[1]).toMatch(/niveau/);
+      a.send('chat', { text: ':mute sc_sanc_target soixante Trop de bruit' });
+      await until(() => heardA.system.length >= 3, 3000);
+      expect(heardA.system[2]).toMatch(/minutes/);
+
+      a.send('chat', { text: ':mute sc_sanc_target 30 Trop de bruit' });
+      await until(() => heardT.system.length + 1 > 0 && heardA.system.length >= 4, 3000);
+      const live = (await pool.query("SELECT kind, reason, issued_by FROM sanctions WHERE user_id = $1", [target.id])).rows;
+      expect(live).toEqual([{ kind: 'mute', reason: 'Trop de bruit', issued_by: mod.id }]);
+      // The player is muted at once.
+      t.send('chat', { text: 'Bonjour' });
+      await until(() => heardT.refused.includes('muted'), 3000);
+      // And a role that can lift it does.
+      s.send('chat', { text: ':unsanction sc_sanc_target' });
+      await until(() => (heardT.refused.length, true));
+      await wait(500);
+      expect((await pool.query('SELECT count(*) FROM sanctions WHERE user_id = $1 AND revoked_at IS NULL', [target.id])).rows[0].count).toBe('0');
+      void peer;
+    }, 30000);
+
+    it('gives a ban only to the roles that may, and a warning to a host', async () => {
+      const host = await member('sc_ban_host', 'animateur');
+      const senior = await member('sc_ban_senior', 'super_moderateur');
+      const target = await member('sc_ban_target', 'user');
+      const h = await joinHall(host);
+      const s = await joinHall(senior);
+      const t = await joinHall(target);
+      const heardT = hear(t);
+      const heardH = hear(h);
+      await until(() => h.state?.players?.size === 3);
+      h.send('chat', { text: ':warn sc_ban_target Reste poli avec les autres' });
+      await until(() => heardT.system.length + 1 > 0 && heardH.system.length >= 1, 3000);
+      expect((await pool.query("SELECT kind FROM sanctions WHERE user_id = $1", [target.id])).rows).toEqual([{ kind: 'warning' }]);
+      // An animateur has no ":ban": it is only words in the chat.
+      h.send('chat', { text: ':ban sc_ban_target Pour rire' });
+      await wait(400);
+      expect((await pool.query("SELECT count(*) FROM sanctions WHERE kind = 'ban' AND user_id = $1", [target.id])).rows[0].count).toBe('0');
+
+      s.send('chat', { text: ':ban sc_ban_target Comportement inacceptable' });
+      await until(() => heardT.code === 4004, 4000);
+      expect((await pool.query("SELECT count(*) FROM sanctions WHERE kind = 'ban' AND user_id = $1", [target.id])).rows[0].count).toBe('1');
+    }, 30000);
+
+    it('summarises a player with ":info", and refuses an unknown one', async () => {
+      const mod = await member('sc_info_mod', 'moderateur');
+      const a = await joinHall(mod);
+      const heardA = hear(a);
+      await until(() => a.state?.players?.size === 1);
+      a.send('chat', { text: ':info sc_info_mod' });
+      await until(() => heardA.system.length >= 3, 3000);
+      expect(heardA.system[0]).toMatch(/sc_info_mod — Modérateur/);
+      expect(heardA.system[1]).toMatch(/Sanctions en cours : aucune/);
+      expect(heardA.system[2]).toMatch(/Connecté : dans le hall/);
+      a.send('chat', { text: ':info personne_ici' });
+      await until(() => heardA.system.length >= 4, 3000);
+      expect(heardA.system[3]).toMatch(/Usage/);
+    });
+
+    it('asks a player to join with ":summon", and takes the staff to a player with ":goto"', async () => {
+      const mod = await member('sc_summon_mod', 'moderateur');
+      const player = await member('sc_summon_player', 'user');
+      const a = await joinHall(mod);
+      const b = await joinHall(player);
+      const heardA = hear(a);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':summon sc_summon_player' });
+      await until(() => heardB.summons.length === 1, 3000);
+      expect(heardB.summons[0]).toMatchObject({ from: 'sc_summon_mod', target: { kind: 'hall' } });
+      a.send('chat', { text: ':goto sc_summon_player' });
+      await until(() => heardA.gotos.length === 1, 3000);
+      expect(heardA.gotos[0]).toMatchObject({ who: 'sc_summon_player', target: { kind: 'hall' } });
+      // A player cannot be called by somebody who does not outrank them.
+      const peer = await member('sc_summon_peer', 'moderateur');
+      const c = await joinHall(peer);
+      const heardC = hear(c);
+      a.send('chat', { text: ':summon sc_summon_peer' });
+      await wait(500);
+      expect(heardC.summons).toEqual([]);
+    });
+
+    it('livens a room up: dancing, lights and confetti, for the hosts', async () => {
+      const host = await member('sc_fun_host', 'animateur');
+      const p1 = await member('sc_fun_p1', 'user');
+      const p2 = await member('sc_fun_p2', 'user');
+      const a = await joinHall(host);
+      const b = await joinHall(p1);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      const emote = (id: string) => (b.state?.players?.get(id) as { emote: number } | undefined)?.emote;
+      a.send('chat', { text: ':massdance' });
+      await until(() => emote(p1.id) === 1 && emote(host.id) === 1, 3000);
+      a.send('chat', { text: ':stopdance' });
+      await until(() => emote(p1.id) === 0, 3000);
+      const lights = (room: AnyRoom) => (room.state as { disco?: boolean } | undefined)?.disco;
+      a.send('chat', { text: ':disco' });
+      a.send('chat', { text: ':confetti' });
+      await until(() => lights(b) === true && heardB.fx.some((f) => f.kind === 'confetti'), 3000);
+      // Somebody arriving while the lights are on finds them on.
+      const late = await joinHall(p2);
+      await until(() => lights(late) === true, 3000);
+      a.send('chat', { text: ':disco off' });
+      await until(() => lights(b) === false && lights(late) === false, 3000);
+    }, 30000);
+
+    it('freezes a player for a while, and frees them', async () => {
+      const host = await member('sc_frz_host', 'animateur');
+      const p1 = await member('sc_frz_p1', 'user');
+      const a = await joinHall(host);
+      const b = await joinHall(p1);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':freeze sc_frz_p1 30' });
+      await until(() => heardB.system.some((t) => /immobilisé/.test(t)), 3000);
+      const start = { ...playerOf(b, p1.id)! };
+      b.send('move', { i: 0, j: 0 });
+      await wait(1500);
+      expect(playerOf(b, p1.id)).toMatchObject({ i: start.i, j: start.j });
+      a.send('chat', { text: ':unfreeze sc_frz_p1' });
+      await until(() => heardB.system.some((t) => /de nouveau bouger/.test(t)), 3000);
+      b.send('move', { i: 0, j: 0 });
+      await until(() => playerOf(b, p1.id)!.i !== start.i || playerOf(b, p1.id)!.j !== start.j, 4000);
+    }, 30000);
+
+    it('keeps the fun commands from a moderator, who has others', async () => {
+      const mod = await member('sc_nofun_mod', 'moderateur');
+      const other = await member('sc_nofun_other', 'user');
+      const a = await joinHall(mod);
+      const b = await joinHall(other);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: ':disco' });
+      await until(() => heardB.chat.length === 1, 3000);
+      expect(heardB.chat).toEqual([':disco']);
+      expect(heardB.fx).toEqual([]);
+    });
+
+    it('lets the staff add a word to the chat filter, and take it away', async () => {
+      const mod = await member('sc_word_mod', 'moderateur');
+      const talker = await member('sc_word_talker', 'user');
+      const a = await joinHall(mod);
+      const b = await joinHall(talker);
+      const heardA = hear(a);
+      const heardB = hear(b);
+      await until(() => a.state?.players?.size === 2);
+      b.send('chat', { text: 'quel zorglub ce jeu' });
+      await until(() => heardA.chat.length === 1, 3000);
+      a.send('chat', { text: ':addword Zorglub' });
+      await until(() => heardA.system.some((t) => /zorglub/.test(t) && /filtré/.test(t)), 3000);
+      b.send('chat', { text: 'encore ce Zorglub' });
+      await until(() => heardB.refused.length === 1, 3000);
+      expect(heardB.refused).toEqual(['filtered']);
+      a.send('chat', { text: ':delword zorglub' });
+      await until(() => heardA.system.some((t) => /plus filtré/.test(t)), 3000);
+      b.send('chat', { text: 'on peut dire zorglub' });
+      await until(() => heardA.chat.length === 2, 3000);
+      expect((await pool.query("SELECT count(*) FROM banned_words WHERE word = 'zorglub'")).rows[0].count).toBe('0');
+    }, 30000);
+
+    it('lets only an administrator give Pixels, a few at a time, with a trace', async () => {
+      const boss = await member('sc_gift_admin', 'administrateur');
+      const senior = await member('sc_gift_senior', 'gerant');
+      const lucky = await member('sc_gift_lucky', 'user');
+      const a = await joinHall(boss);
+      const s = await joinHall(senior);
+      const l = await joinHall(lucky);
+      const heardA = hear(a);
+      const heardS = hear(s);
+      await until(() => a.state?.players?.size === 3);
+      const pixels = async () => (await pool.query('SELECT pixels FROM users WHERE id = $1', [lucky.id])).rows[0].pixels as number;
+      const before = await pixels();
+      s.send('chat', { text: ':gift sc_gift_lucky 500' }); // a manager has no ":gift": plain chat
+      await until(() => heardS.chat.length === 1, 3000);
+      expect(await pixels()).toBe(before);
+      a.send('chat', { text: ':gift sc_gift_lucky 5000' });
+      await until(() => heardA.system.length >= 1, 3000);
+      expect(heardA.system[0]).toMatch(/Usage/);
+      a.send('chat', { text: ':gift sc_gift_lucky 250' });
+      await until(() => heardA.system.length >= 2, 3000);
+      expect(await pixels()).toBe(before + 250);
+      expect((await pool.query("SELECT delta, reason FROM pixel_ledger WHERE user_id = $1 AND reason LIKE 'Cadeau%'", [lucky.id])).rows).toEqual([{ delta: 250, reason: 'Cadeau de l’équipe' }]);
+      void l;
+    }, 30000);
+
+    it('puts the game in maintenance from the chat bar, for the roles that may', async () => {
+      const boss = await member('sc_mt_gerant', 'gerant');
+      const a = await joinHall(boss);
+      const heardA = hear(a);
+      await until(() => a.state?.players?.size === 1);
+      try {
+        a.send('chat', { text: ':maintenance on' });
+        await until(() => heardA.system.some((t) => /en maintenance/.test(t)), 3000);
+        expect((await app.inject({ method: 'GET', url: '/api/status' })).json().maintenance).toBe(true);
+      } finally {
+        a.send('chat', { text: ':maintenance off' });
+        await until(() => heardA.system.some((t) => /rouvert/.test(t)), 3000);
+        forgetMaintenance();
+      }
+      expect((await app.inject({ method: 'GET', url: '/api/status' })).json().maintenance).toBe(false);
+    });
+  });
+
   describe('chat', () => {
     interface Heard {
       chat: { id: number; from: string; nickname: string; text: string }[];

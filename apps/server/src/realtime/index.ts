@@ -6,6 +6,7 @@ import type pg from 'pg';
 import type { Presence } from '../building/routes';
 import { ApartmentRoom, HallRoom, apartmentTopic, configureRooms } from './rooms';
 import { makeQuestRecorder } from '../quests/engine';
+import { forgetMaintenance, setMaintenance } from '../site/settings';
 import { USER_TOPIC, type NotifyUser } from '../moderation/sanctions';
 import { WHERE_KEY, locationOf, type Location, type WhereEntry } from './where';
 
@@ -39,10 +40,40 @@ export async function startRealtime({
   redisUrl = process.env.REDIS_URL,
   allowedOrigins = (process.env.CLIENT_ORIGINS ?? 'http://localhost:5173').split(',').map((o) => o.trim()),
 }: RealtimeOptions): Promise<Realtime> {
+  // Where each of these players is, among those connected right now.
+  const locate = async (userIds: string[]) => {
+    const found = new Map<string, Location>();
+    if (!userIds.length) return found;
+    const [entries, rooms] = await Promise.all([matchMaker.presence.hgetall(WHERE_KEY), matchMaker.query({})]);
+    // A process that died leaves its players behind in the store: only rooms that still exist count.
+    const live = new Set(rooms.map((r) => r.roomId));
+    for (const id of userIds) {
+      const raw = entries[id];
+      if (!raw) continue;
+      try {
+        const entry = JSON.parse(raw) as WhereEntry;
+        const at = live.has(entry.roomId) ? locationOf(entry.room) : null;
+        if (at) found.set(id, at);
+      } catch {
+        // An unreadable entry is no entry.
+      }
+    }
+    return found;
+  };
+
   configureRooms({
     pool,
     allowedOrigins,
     quest: makeQuestRecorder(pool, (event) => void matchMaker.presence.publish(USER_TOPIC, event)),
+    commands: {
+      pool,
+      publish: (topic, data) => void matchMaker.presence.publish(topic, data),
+      locate,
+      setMaintenance: async (on, staffId) => {
+        await setMaintenance(pool, on, staffId);
+        forgetMaintenance();
+      },
+    },
   });
 
   const presence = redisUrl ? new RedisPresence(redisUrl) : undefined;
@@ -69,25 +100,7 @@ export async function startRealtime({
     notifyUser(event) {
       void matchMaker.presence.publish(USER_TOPIC, event);
     },
-    async locate(userIds) {
-      const found = new Map<string, Location>();
-      if (!userIds.length) return found;
-      const [entries, rooms] = await Promise.all([matchMaker.presence.hgetall(WHERE_KEY), matchMaker.query({})]);
-      // A process that died leaves its players behind in the store: only rooms that still exist count.
-      const live = new Set(rooms.map((r) => r.roomId));
-      for (const id of userIds) {
-        const raw = entries[id];
-        if (!raw) continue;
-        try {
-          const entry = JSON.parse(raw) as WhereEntry;
-          const at = live.has(entry.roomId) ? locationOf(entry.room) : null;
-          if (at) found.set(id, at);
-        } catch {
-          // An unreadable entry is no entry.
-        }
-      }
-      return found;
-    },
+    locate,
     async occupancy() {
       const rooms = await matchMaker.query({ name: 'apartment' });
       const apartments = new Map<string, number>();

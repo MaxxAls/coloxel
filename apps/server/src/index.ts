@@ -15,6 +15,7 @@ import { registerQuestRoutes } from './quests/routes';
 import { registerNoticeRoutes } from './moderation/notices';
 import type { NotifyUser } from './moderation/sanctions';
 import { registerPetRoutes } from './pets/routes';
+import { watchExtraWords } from './moderation/words';
 import { registerReportRoutes } from './reports/routes';
 import { registerRuleRoutes } from './rules/routes';
 import { registerShopRoutes } from './shop/routes';
@@ -82,6 +83,9 @@ export function buildServer({
   });
 
   if (pool) {
+    // The words the staff added to the chat filter: read now, and again now and then.
+    const stopWatching = watchExtraWords(pool);
+    app.addHook('onClose', async () => stopWatching());
     app.register(async (scope) => {
       const guards = await buildRateGuards(scope, rateLimits, redis);
       registerAuthRoutes(scope, pool, guards);

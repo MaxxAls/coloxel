@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { hasExtraBannedWord } from '../moderation/words';
 
 export const MIN_AGE = 18;
 
@@ -15,7 +16,7 @@ function normalize(text: string): string {
 
 export function containsBannedWord(text: string): boolean {
   const flat = normalize(text);
-  return BANNED_WORDS.some((w) => flat.includes(normalize(w)));
+  return BANNED_WORDS.some((w) => flat.includes(normalize(w))) || hasExtraBannedWord(flat);
 }
 
 /** Parse a strict YYYY-MM-DD calendar date, or null. */

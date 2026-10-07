@@ -15,6 +15,8 @@ import { loadRules } from '../rules/routes';
 import type { Effect, Rule } from '../rules/schema';
 import { authenticateConnection } from './auth';
 import { DANCE_MS, HELP_TEXT, parseCommand } from './commands';
+import { HOTEL_TOPIC, parseStaffCommand, runStaffCommand, usageOf, type CommandEnv, type CommandRoom, type HotelAlert } from './staff-commands';
+import { can, loadStaff } from '../staff/roles';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
 
 /** One cell per step: a calm, continuous walk, about half a second per cell. */
@@ -26,6 +28,8 @@ type Interaction = 'sit' | 'lie';
 export const CLOSED_BY_OWNER = 4003;
 /** Close code sent to a visitor the owner showed out. */
 export const EXPELLED = 4005;
+/** Close code sent to a player a member of the staff showed out of the room. */
+export const KICKED = 4006;
 /** Presence topic carrying the changes of one apartment. */
 export const apartmentTopic = (ownerId: string) => `apartment:${ownerId.toLowerCase()}`;
 export const SPAWN: Cell = { i: 7, j: 0 };
@@ -49,7 +53,7 @@ export const Player = schema(
 );
 export type Player = SchemaType<typeof Player>;
 
-export const RoomState = schema({ players: t.map(Player) }, 'RoomState');
+export const RoomState = schema({ players: t.map(Player), /** The party lights are on (a host switched them on). */ disco: t.boolean() }, 'RoomState');
 export type RoomState = SchemaType<typeof RoomState>;
 
 export interface RealtimeDeps {
@@ -57,6 +61,8 @@ export interface RealtimeDeps {
   allowedOrigins: readonly string[];
   /** Moves challenges forward (visits, messages, sitting down). */
   quest: QuestRecorder;
+  /** What the staff commands typed in a room need from outside it. */
+  commands: CommandEnv;
 }
 
 // Wired by startRealtime() before any room is created.
@@ -160,6 +166,12 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         case 'quest':
           client.send('quest', { text: event.text });
           break;
+        case 'alert':
+          client.send('alert', { kind: 'user', text: event.text, from: event.from });
+          break;
+        case 'summon':
+          client.send('summon', { from: event.from, target: event.target });
+          break;
         case 'ring':
           client.send('ring', { visitorId: event.visitorId, nickname: event.nickname });
           break;
@@ -170,9 +182,93 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     }
   };
 
+  /** An announcement for the whole game: every room shows it to everybody in it. */
+  private onHotelAlert = (alert: HotelAlert) => {
+    if (!alert || typeof alert.text !== 'string') return;
+    this.broadcast('alert', { kind: alert.kind, text: alert.text, from: alert.from, link: alert.link, target: alert.target });
+  };
+
+  // ----- Commands of the staff: what they may do to this room -----------------------
+  private roomMuted = false;
+  private frozen = new Map<string, number>();
+
+  private isFrozen(id: string): boolean {
+    const until = this.frozen.get(id);
+    if (until === undefined) return false;
+    if (Date.now() < until) return true;
+    this.frozen.delete(id);
+    return false;
+  }
+
+  private commandRoom(): CommandRoom {
+    return {
+      location: this.location(),
+      findPlayer: (nickname) => {
+        let found: { id: string; nickname: string } | undefined;
+        this.state.players.forEach((p) => {
+          if (p.nickname.toLowerCase() === nickname.toLowerCase()) found = { id: p.id, nickname: p.nickname };
+        });
+        return found;
+      },
+      alertRoom: (text, from) => this.broadcast('alert', { kind: 'room', text, from }),
+      kick: (id, reason) => this.clientsByUser.get(id)?.leave(KICKED, reason),
+      roomMuted: () => this.roomMuted,
+      setRoomMuted: (on) => {
+        this.roomMuted = on;
+        this.broadcast('system', { text: on ? 'La salle est en sourdine : seule l’équipe peut parler.' : 'La salle peut de nouveau parler.' });
+      },
+      massDance: (on) => {
+        this.state.players.forEach((p, id) => {
+          if (p.pose !== POSE.stand) return;
+          if (on) this.startDance(id);
+          else this.setEmote(id, 0);
+        });
+      },
+      setDisco: (on) => {
+        // In the state, not in a message: whoever comes in later sees the lights on too.
+        this.state.disco = on;
+      },
+      confetti: () => this.broadcast('fx', { kind: 'confetti' }),
+      freeze: (id, seconds) => {
+        if (seconds <= 0) {
+          this.frozen.delete(id);
+          return this.sendTo(id, 'system', { text: 'Tu peux de nouveau bouger.' });
+        }
+        this.frozen.set(id, Date.now() + seconds * 1000);
+        this.paths.delete(id);
+        this.pending.delete(id);
+        this.following.delete(id);
+        this.sendTo(id, 'system', { text: `Tu es immobilisé ${seconds} secondes.` });
+      },
+    };
+  }
+
+  /** A command typed by a member of the staff. True when it was one (and was run); false means: ordinary chat. */
+  private async tryStaffCommand(client: AuthedClient, rawText: string): Promise<boolean> {
+    const parsed = parseStaffCommand(rawText);
+    if (!parsed) return false;
+    const staff = await loadStaff(needDeps().pool, userOf(client).id);
+    if (!staff) return false;
+    const reply = (text: string) => client.send('system', { text });
+    const handled = await runStaffCommand(parsed, {
+      staff,
+      room: this.commandRoom(),
+      env: needDeps().commands,
+      reply,
+      send: (type, data) => client.send(type, data),
+    });
+    // Typed without anything after it, a command says how it is used.
+    if (handled && !parsed.rest) {
+      const usage = usageOf(parsed.name);
+      if (usage) reply(`Usage : ${usage}`);
+    }
+    return handled;
+  }
+
   override onCreate(_options?: unknown) {
     this.setState(new RoomState());
     void this.presence.subscribe(USER_TOPIC, this.onUserEvent);
+    void this.presence.subscribe(HOTEL_TOPIC, this.onHotelAlert);
     this.setSimulationInterval(() => this.step(), STEP_MS);
 
     // The player changed what they wear or which companion follows them: read it again from the database.
@@ -209,6 +305,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const { id } = userOf(client);
       const player = this.state.players.get(id);
       if (!player) return;
+      if (this.isFrozen(id)) return;
       // Walking off ends a dance and stops following.
       this.following.delete(id);
       this.setEmote(id, 0);
@@ -242,6 +339,12 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (!this.chatLimiter.allow(id)) return refuse('rate', REFUSAL_MESSAGES.rate);
     const command = parseCommand(rawText);
     if (command) return this.handleCommand(client, command);
+    if (await this.tryStaffCommand(client, rawText)) return;
+    // In a room the staff silenced, only the staff speaks.
+    if (this.roomMuted) {
+      const staff = await loadStaff(needDeps().pool, id);
+      if (!staff || !can(staff.role, 'admin.access')) return refuse('room-muted', 'La salle est en sourdine : seule l’équipe peut parler.');
+    }
     const verdict = judgeChatText(rawText);
     if (!verdict.ok && verdict.reason !== 'filtered') return refuse(verdict.reason, verdict.message);
     const room = roomLabel(this.location());
@@ -444,10 +547,12 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const at = this.location();
     if (at.kind === 'apartment' && at.ownerId.toLowerCase() !== user.id.toLowerCase()) needDeps().quest(user.id, 'visit', at.ownerId.toLowerCase());
     this.onGameEvent({ type: 'enter', who: user.id });
+    if (this.roomMuted) client.send('system', { text: 'La salle est en sourdine : seule l’équipe peut parler.' });
   }
 
   override onDispose() {
     void this.presence.unsubscribe(USER_TOPIC, this.onUserEvent);
+    void this.presence.unsubscribe(HOTEL_TOPIC, this.onHotelAlert);
   }
 
   override async onLeave(client: AuthedClient) {

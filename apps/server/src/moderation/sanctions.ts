@@ -1,6 +1,8 @@
 import type pg from 'pg';
 
 export const SANCTION_KINDS = ['warning', 'mute', 'suspension', 'ban'] as const;
+import type { Location } from '../realtime/where';
+
 export type SanctionKind = (typeof SANCTION_KINDS)[number];
 
 /** Longest mute or suspension: a year. A longer one is a ban. */
@@ -53,6 +55,10 @@ export function sanctionText(kind: SanctionKind, reason: string, expiresAt: Date
 export type UserEvent =
   // A sanction: it takes effect on a player who is connected.
   | { userId: string; kind: SanctionKind; /** Warnings only: so that the player's screen can mark it as read. */ id?: number; text: string }
+  // A message from the staff, shown over the screen.
+  | { userId: string; kind: 'alert'; text: string; from: string }
+  // The staff asks the player to come to a room.
+  | { userId: string; kind: 'summon'; from: string; target: Location }
   // A challenge tier was reached.
   | { userId: string; kind: 'quest'; text: string }
   // Someone rings at the door of this player's apartment.

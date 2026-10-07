@@ -27,6 +27,27 @@ export const PERMISSIONS = [
   'maintenance.bypass',
   /** See the team and its changes of role. */
   'roles.view',
+  // Commands typed in a room (":ha", ":kick"…): see apps/server/src/realtime/staff-commands.ts.
+  /** Alert the people of the room one is in, or one player. */
+  'alerts.room',
+  'alerts.user',
+  /** Announce an event to everybody, with a button to join it. */
+  'alerts.event',
+  /** Alert every player who is connected. */
+  'alerts.hotel',
+  /** Show somebody out of the room, or silence the whole room. */
+  'room.kick',
+  'room.mute',
+  /** Lights, confetti, dancing, freezing: what a host does to liven a room up. */
+  'room.fun',
+  /** Ask a player to come to where one is. */
+  'players.summon',
+  /** Add or remove a word of the chat filter. */
+  'words.manage',
+  /** Read the journal of everything the staff did. */
+  'staff.log',
+  /** Give Pixels as a gift of the team. */
+  'gift.pixels',
   /** Give or take a role below one's own. */
   'roles.manage',
 ] as const;
@@ -49,9 +70,20 @@ export interface RoleDef {
 
 const DAY = 24 * 60;
 
-const ANIMATEUR: readonly Permission[] = ['admin.access', 'dashboard.view', 'players.view', 'sanction.warning', 'news.write', 'events.manage'];
+const ANIMATEUR: readonly Permission[] = [
+  'admin.access',
+  'dashboard.view',
+  'players.view',
+  'sanction.warning',
+  'news.write',
+  'events.manage',
+  'alerts.event',
+  'alerts.room',
+  'alerts.user',
+  'room.fun',
+];
 const MODERATEUR: readonly Permission[] = [
-  ...ANIMATEUR.filter((p) => p !== 'news.write' && p !== 'events.manage'),
+  ...ANIMATEUR.filter((p) => !['news.write', 'events.manage', 'alerts.event', 'room.fun'].includes(p)),
   'reports.view',
   'reports.resolve',
   'chat.view',
@@ -60,9 +92,13 @@ const MODERATEUR: readonly Permission[] = [
   'sanction.revoke',
   'items.moderate',
   'roles.view',
+  'room.kick',
+  'room.mute',
+  'players.summon',
+  'words.manage',
 ];
-const SUPER_MODERATEUR: readonly Permission[] = [...MODERATEUR, 'sanction.ban', 'news.write'];
-const GERANT: readonly Permission[] = [...SUPER_MODERATEUR, 'events.manage', 'maintenance.toggle', 'maintenance.bypass', 'roles.manage'];
+const SUPER_MODERATEUR: readonly Permission[] = [...MODERATEUR, 'sanction.ban', 'news.write', 'alerts.hotel'];
+const GERANT: readonly Permission[] = [...SUPER_MODERATEUR, 'events.manage', 'alerts.event', 'room.fun', 'staff.log', 'maintenance.toggle', 'maintenance.bypass', 'roles.manage'];
 
 export const ROLES: Record<RoleId, RoleDef> = {
   user: { id: 'user', title: 'Joueur', summary: 'Un joueur ordinaire.', level: 0, permissions: [] },
