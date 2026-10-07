@@ -50,6 +50,10 @@ export const PERMISSIONS = [
   'gift.pixels',
   /** Give or take a role below one's own. */
   'roles.manage',
+  /** See the market's suspicious operations, a player's transactions and the economy page. */
+  'market.view',
+  /** Undo a sale, shut a player out of the market. */
+  'market.manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -96,9 +100,10 @@ const MODERATEUR: readonly Permission[] = [
   'room.mute',
   'players.summon',
   'words.manage',
+  'market.view',
 ];
 const SUPER_MODERATEUR: readonly Permission[] = [...MODERATEUR, 'sanction.ban', 'news.write', 'alerts.hotel'];
-const GERANT: readonly Permission[] = [...SUPER_MODERATEUR, 'events.manage', 'alerts.event', 'room.fun', 'staff.log', 'maintenance.toggle', 'maintenance.bypass', 'roles.manage'];
+const GERANT: readonly Permission[] = [...SUPER_MODERATEUR, 'events.manage', 'alerts.event', 'room.fun', 'staff.log', 'maintenance.toggle', 'maintenance.bypass', 'roles.manage', 'market.manage'];
 
 export const ROLES: Record<RoleId, RoleDef> = {
   user: { id: 'user', title: 'Joueur', summary: 'Un joueur ordinaire.', level: 0, permissions: [] },

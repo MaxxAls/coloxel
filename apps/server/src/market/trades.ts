@@ -7,7 +7,9 @@ import { blockedUserSql } from '../moderation/sanctions';
 import { itemMaskedSql } from '../moderation/masking';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import type { Locate } from '../realtime/where';
+import { detectTradeFraud, isMarketBlocked, marketBlockedSql } from './fraud';
 
+const SHUT = 'Le marché t’est fermé pour le moment, les échanges aussi.';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What one side may put on the table, and how long a quiet trade stays open. */
@@ -116,8 +118,9 @@ export function registerTradeRoutes(app: FastifyInstance, pool: pg.Pool, locate?
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Demande invalide' });
     if (!locate) return reply.code(503).send({ error: 'Les échanges ne sont pas disponibles pour le moment' });
 
+    if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
     const target = await pool.query<{ id: string; blocked: boolean }>(
-      `SELECT u.id, ${blockedUserSql('u')} AS blocked FROM users u WHERE lower(u.nickname) = lower($1)`,
+      `SELECT u.id, (${blockedUserSql('u')} OR ${marketBlockedSql('u')}) AS blocked FROM users u WHERE lower(u.nickname) = lower($1)`,
       [parsed.data.nickname],
     );
     const other = target.rows[0];
@@ -152,6 +155,7 @@ export function registerTradeRoutes(app: FastifyInstance, pool: pg.Pool, locate?
     const parsed = offerSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Offre invalide' });
     const ids = [...new Set(parsed.data.itemIds)].sort();
+    if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
 
     const result = await withTransaction(pool, async (client) => {
       await expireIdle(client);
@@ -198,6 +202,7 @@ export function registerTradeRoutes(app: FastifyInstance, pool: pg.Pool, locate?
       if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Échange introuvable' });
       const parsed = versionSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Version invalide' });
+      if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
 
       const result = await withTransaction(pool, async (client) => {
         await expireIdle(client);
@@ -262,7 +267,7 @@ async function executeTrade(client: pg.PoolClient, t: TradeRow): Promise<'ok' | 
     [ids],
   );
   const giver = new Map(offers.rows.map((o) => [o.item_id, o.giver_id]));
-  const blocked = await client.query(`SELECT 1 FROM users u WHERE u.id IN ($1, $2) AND ${blockedUserSql('u')}`, [t.a_id, t.b_id]);
+  const blocked = await client.query(`SELECT 1 FROM users u WHERE u.id IN ($1, $2) AND (${blockedUserSql('u')} OR ${marketBlockedSql('u')})`, [t.a_id, t.b_id]);
   const wrong =
     items.rows.length !== ids.length || items.rows.some((r) => r.owner_id !== giver.get(r.id) || r.masked || r.listed) || (blocked.rowCount ?? 0) > 0;
   if (wrong) {
@@ -276,5 +281,7 @@ async function executeTrade(client: pg.PoolClient, t: TradeRow): Promise<'ok' | 
     await client.query("INSERT INTO item_owners (item_id, from_user, to_user, kind) VALUES ($1, $2, $3, 'trade')", [it.id, giver.get(it.id), to]);
   }
   await endTrade(client, t.id, 'done');
+  const gaveA = offers.rows.filter((o) => o.giver_id === t.a_id).length;
+  await detectTradeFraud(client, { aId: t.a_id, bId: t.b_id, gaveA, gaveB: offers.rows.length - gaveA });
   return 'ok';
 }

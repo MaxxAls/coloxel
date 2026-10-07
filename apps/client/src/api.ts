@@ -207,7 +207,7 @@ export interface AnnouncementDraft {
   published: boolean;
 }
 
-export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment';
+export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment' | 'listing' | 'trade';
 export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
 
 /** What the staff panel reads from the server (see apps/server/src/staff/routes.ts). */
@@ -407,6 +407,39 @@ export interface TradeData {
   theirs: TradeSide;
 }
 
+export interface MarketFlag {
+  id: number;
+  kind: string;
+  detail: string;
+  status: string;
+  at: string;
+  itemId: string | null;
+  serial: number | null;
+  player: string;
+  other: string | null;
+}
+
+export interface MarketPlayerSheet {
+  player: { id: string; nickname: string; coloxs: number; since: string };
+  block: { reason: string; until: string | null } | null;
+  sales: { id: number; serial: number; name: string; seller: string; buyer: string; price: number; commission: number; royalty: number; at: string; reversed: boolean }[];
+  trades: { id: string; status: string; at: string; a: string; b: string; gaveA: number; gaveB: number }[];
+  listings: { id: string; serial: number; name: string; price: number; expiresAt: string }[];
+  ledger: { delta: number; kind: string; detail: string | null; at: string }[];
+}
+
+export interface Economy {
+  coloxs: { circulating: number; bought: number; givenByStaff: number; refunded: number; destroyed: number };
+  last24h: { sales: number; volume: number; medianPrice: number | null };
+  activity: { listings: number; tradesOpen: number; tradesDone: number; salesTotal: number };
+  perDay: { day: string; sales: number; volume: number; medianPrice: number | null }[];
+  topHolders: { nickname: string; items: number }[];
+  concentration: { name: string; size: number; nickname: string; held: number }[];
+  flagsOpen: number;
+  marketBlocks: number;
+  ledgerMismatches: number;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -487,6 +520,13 @@ export const api = {
   staffEvents: () => call<{ events: StaffEvent[]; ranking: { nickname: string; events: number }[] }>('GET', '/api/staff/events'),
   staffCreateEvent: (event: { title: string; description: string; startsAt: string; place: string }) => call<{ id: number }>('POST', '/api/staff/events', event),
   staffCloseEvent: (id: number, status: 'done' | 'cancelled') => call<unknown>('PUT', `/api/staff/events/${id}`, { status }),
+  staffEconomy: () => call<Economy>('GET', '/api/staff/economy'),
+  staffMarketFlags: (status: 'open' | 'handled') => call<{ flags: MarketFlag[] }>('GET', `/api/staff/market/flags?status=${status}`),
+  staffHandleFlag: (id: number) => call<void>('POST', `/api/staff/market/flags/${id}/handle`),
+  staffMarketPlayer: (nickname: string) => call<MarketPlayerSheet>('GET', `/api/staff/market/player?nickname=${encodeURIComponent(nickname)}`),
+  staffReverseSale: (id: number, note: string) => call<void>('POST', `/api/staff/market/sales/${id}/reverse`, { note }),
+  staffMarketBlock: (nickname: string, reason: string, minutes?: number) => call<void>('POST', '/api/staff/market/block', { nickname, reason, minutes }),
+  staffMarketUnblock: (nickname: string) => call<void>('POST', '/api/staff/market/unblock', { nickname }),
   staffDashboard: () => call<StaffDashboard>('GET', '/api/staff/dashboard'),
   staffReports: () => call<{ groups: StaffReportGroup[] }>('GET', '/api/staff/reports'),
   staffHandled: () => call<{ handled: StaffHandledReport[] }>('GET', '/api/staff/reports?status=handled'),

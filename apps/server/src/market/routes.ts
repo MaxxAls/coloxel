@@ -9,9 +9,11 @@ import { itemMaskedSql } from '../moderation/masking';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { creditColoxs, debitColoxs } from '../wallet/coloxs';
 import { marketConfig, splitSale } from './config';
+import { detectSaleFraud, isMarketBlocked, marketBlockedSql } from './fraud';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE = 40;
+const SHUT = 'Le marché t’est fermé pour le moment. Contacte l’équipe si tu penses que c’est une erreur.';
 
 const listSchema = z
   .object({
@@ -72,7 +74,7 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
       where.push(`l.seller_id = $${params.length}`);
     } else {
       // Others see neither masked creations nor the offers of a suspended or banned player.
-      where.push(`NOT ${itemMaskedSql('it')}`, `NOT ${blockedUserSql('se')}`);
+      where.push(`NOT ${itemMaskedSql('it')}`, `NOT ${blockedUserSql('se')}`, `NOT ${marketBlockedSql('se')}`);
     }
     const text = (q.q ?? '').trim().slice(0, 60);
     if (text) {
@@ -143,6 +145,8 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
       return reply.code(400).send({ error: `Le prix doit être entre ${config.minPrice} et ${config.maxPrice} Coloxs` });
     }
 
+    if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
+
     const result = await withTransaction(pool, async (client) => {
       await expireListings(client);
       // The row lock orders this against placing, trading or buying the same item.
@@ -184,6 +188,7 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
     const user = req.user;
     if (!user) return reply.code(401).send({ error: 'Non connecté' });
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Offre introuvable' });
+    if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
     const { rowCount } = await pool.query(
       "UPDATE listings SET status = 'cancelled', closed_at = now() WHERE id = $1 AND seller_id = $2 AND status = 'active'",
       [req.params.id, user.id],
@@ -197,6 +202,8 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
     const user = req.user;
     if (!user) return reply.code(401).send({ error: 'Non connecté' });
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Offre introuvable' });
+
+    if (await isMarketBlocked(pool, user.id)) return reply.code(403).send({ error: SHUT });
 
     const result = await withTransaction(pool, async (client) => {
       await expireListings(client);
@@ -216,7 +223,7 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
         seller_blocked: boolean;
       }>(
         `SELECT l.id, l.item_id, l.seller_id, l.price, l.status, l.expires_at, it.creator_id, it.owner_id, it.serial, it.name,
-                ${itemMaskedSql('it')} AS masked, ${blockedUserSql('se')} AS seller_blocked
+                ${itemMaskedSql('it')} AS masked, (${blockedUserSql('se')} OR ${marketBlockedSql('se')}) AS seller_blocked
            FROM listings l
            JOIN items it ON it.id = l.item_id
            JOIN users se ON se.id = l.seller_id
@@ -248,6 +255,7 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
         [l.id, l.item_id, l.seller_id, user.id, l.creator_id, l.price, split.commission, split.royalty, split.sellerNet],
       );
       await client.query("UPDATE listings SET status = 'sold', closed_at = now() WHERE id = $1", [l.id]);
+      await detectSaleFraud(client, { itemId: l.item_id, sellerId: l.seller_id, buyerId: user.id, price: l.price });
       return { itemId: l.item_id, price: l.price, coloxs: balance, ...split };
     });
 

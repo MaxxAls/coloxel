@@ -1,4 +1,5 @@
 import { api, itemSpriteUrl, type MarketListing, type MarketRules, type MarketQuery } from './api';
+import { openReportDialog } from './report-dialog';
 import { wallet } from './wallet';
 import { windowBar } from './window';
 
@@ -107,6 +108,12 @@ export function createMarket(options: { onToggle(open: boolean): void; onChanged
       confirmBuy(li, l, action);
     });
     li.append(img, info, price, action);
+    if (!mine && !l.mine) {
+      const flag = el('button', 'link flag', 'Signaler');
+      flag.type = 'button';
+      flag.addEventListener('click', () => openReportDialog({ kind: 'listing', id: l.id, label: `l’offre « ${l.item.name} » de ${l.seller}` }, (text) => options.notify(text)));
+      li.append(flag);
+    }
     return li;
   };
 

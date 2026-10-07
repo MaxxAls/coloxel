@@ -14,11 +14,13 @@ import {
   type StaffReportGroup,
 } from './api';
 import { REASONS } from './report-dialog';
+import { renderStaffMarket } from './staff-market';
 import { windowBar } from './window';
 
-type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news' | 'events' | 'team' | 'log';
+type Tab = 'dashboard' | 'market' | 'reports' | 'chat' | 'players' | 'news' | 'events' | 'team' | 'log';
 const TABS: [Tab, string][] = [
   ['dashboard', 'Tableau de bord'],
+  ['market', 'Marché'],
   ['reports', 'Signalements'],
   ['chat', 'Journal du chat'],
   ['players', 'Joueurs'],
@@ -30,6 +32,7 @@ const TABS: [Tab, string][] = [
 /** What a role must hold to see a tab: the server checks it again on every request. */
 const TAB_PERMISSION: Record<Tab, string> = {
   dashboard: 'dashboard.view',
+  market: 'market.view',
   reports: 'reports.view',
   chat: 'chat.view',
   players: 'players.view',
@@ -69,6 +72,8 @@ const PERMISSION_LABELS: [string, string][] = [
   ['words.manage', 'Ajouter ou retirer un mot filtré'],
   ['staff.log', 'Lire le journal du staff'],
   ['gift.pixels', 'Offrir des Pixels (:gift)'],
+  ['market.view', 'Voir le marché, ses alertes et l’économie'],
+  ['market.manage', 'Annuler une vente, fermer le marché à un joueur'],
 ];
 
 const KIND_LABELS: Record<ReportKind, string> = {
@@ -77,6 +82,8 @@ const KIND_LABELS: Record<ReportKind, string> = {
   item: 'Création',
   apartment_name: 'Nom d’appart',
   apartment: 'Appart',
+  listing: 'Offre du marché',
+  trade: 'Échange',
 };
 const REASON_LABELS = Object.fromEntries(REASONS) as Record<string, string>;
 const SANCTION_LABELS: Record<SanctionKind, string> = { warning: 'Avertissement', mute: 'Sourdine', suspension: 'Suspension', ban: 'Bannissement' };
@@ -894,6 +901,7 @@ export function createStaffPanel(options: { me: StaffMe; onToggle(open: boolean)
       b.setAttribute('aria-selected', String(key === tab));
     }
     if (tab === 'dashboard') await renderDashboard();
+    else if (tab === 'market') await renderStaffMarket(content, { manage: allowed('market.manage'), say });
     else if (tab === 'reports') await renderReports();
     else if (tab === 'chat') await renderChat();
     else if (tab === 'news') await renderNews();

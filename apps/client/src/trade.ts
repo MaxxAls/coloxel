@@ -1,4 +1,5 @@
 import { api, itemSpriteUrl, type TradeData, type TradeSide } from './api';
+import { openReportDialog } from './report-dialog';
 import { windowBar } from './window';
 
 export interface Trade {
@@ -117,6 +118,10 @@ export function createTrade(options: { notify(text: string): void; onChanged(): 
       buttons.push(sum, confirm);
     }
     buttons.push(cancel);
+    const report = el('button', 'link flag', 'Signaler');
+    report.type = 'button';
+    report.addEventListener('click', () => openReportDialog({ kind: 'trade', id: t.id, label: `cet échange avec ${t.partner}` }, (text) => options.notify(text)));
+    buttons.push(report);
     actions.replaceChildren(...buttons);
 
     // My offer can only change before anything is accepted.

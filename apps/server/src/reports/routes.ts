@@ -6,7 +6,7 @@ import { NO_GUARDS, type RateGuards } from '../rate-limit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const REPORT_KINDS = ['player', 'message', 'item', 'apartment_name', 'apartment'] as const;
+export const REPORT_KINDS = ['player', 'message', 'item', 'apartment_name', 'apartment', 'listing', 'trade'] as const;
 export const REPORT_REASONS = ['insult', 'harassment', 'inappropriate', 'personal_info', 'spam', 'other'] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -68,6 +68,35 @@ async function findTarget(pool: pg.Pool, reporterId: string, kind: ReportKind, i
     if (!it || !(await findViewableItemRecipe(pool, key, reporterId))) return null;
     if (it.owner_id === reporterId) return { error: 'Tu ne peux pas signaler un objet qui est à toi.' };
     return { key, userId: it.creator_id, snapshot: `Création n° ${String(it.serial).padStart(4, '0')} « ${it.name} » : ${it.description}` };
+  }
+  if (kind === 'listing') {
+    const { rows } = await pool.query<{ seller_id: string; price: number; name: string; serial: number; seller: string }>(
+      `SELECT l.seller_id, l.price, it.name, it.serial, se.nickname AS seller
+         FROM listings l JOIN items it ON it.id = l.item_id JOIN users se ON se.id = l.seller_id
+        WHERE l.id = $1 AND l.status = 'active'`,
+      [key],
+    );
+    const l = rows[0];
+    if (!l) return null;
+    if (l.seller_id === reporterId) return { error: 'Tu ne peux pas signaler ta propre offre.' };
+    return { key, userId: l.seller_id, snapshot: `Offre de ${l.seller} : création n° ${String(l.serial).padStart(4, '0')} « ${l.name} » à ${l.price} Coloxs` };
+  }
+  if (kind === 'trade') {
+    const { rows } = await pool.query<{ a_id: string; b_id: string; a_name: string; b_name: string }>(
+      `SELECT t.a_id, t.b_id, a.nickname AS a_name, b.nickname AS b_name
+         FROM trades t JOIN users a ON a.id = t.a_id JOIN users b ON b.id = t.b_id
+        WHERE t.id = $1 AND (t.a_id = $2 OR t.b_id = $2)`,
+      [key, reporterId],
+    );
+    const t = rows[0];
+    if (!t) return null;
+    const items = await pool.query<{ giver: string; serial: number; name: string }>(
+      `SELECT g.nickname AS giver, it.serial, it.name FROM trade_offers o JOIN items it ON it.id = o.item_id JOIN users g ON g.id = o.giver_id
+        WHERE o.trade_id = $1 ORDER BY o.giver_id, it.serial`,
+      [key],
+    );
+    const list = items.rows.map((r) => `${r.giver} donne n° ${String(r.serial).padStart(4, '0')} « ${r.name} »`).join(' ; ');
+    return { key, userId: t.a_id === reporterId ? t.b_id : t.a_id, snapshot: `Échange ${t.a_name} / ${t.b_name} : ${list || 'rien sur la table'}` };
   }
   // Players, apartments and their names all point at a player.
   const { rows } = await pool.query<{ id: string; nickname: string; name: string | null }>(
