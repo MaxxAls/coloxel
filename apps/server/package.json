@@ -13,11 +13,14 @@
   "dependencies": {
     "@coloxel/generator": "*",
     "@coloxel/render": "*",
+    "@fastify/cookie": "^11.1.2",
+    "@node-rs/argon2": "^2.2.2",
     "dotenv": "^18.0.6",
     "fastify": "^5.2.0",
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.23.1",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
