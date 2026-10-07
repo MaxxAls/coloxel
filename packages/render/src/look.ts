@@ -182,8 +182,8 @@ export function lookFor(seed: string): Look {
   };
   const free = (slot: Slot) => LOOK_ITEMS[slot].filter((i) => i.price === 0);
   const pick = (slot: Slot) => free(slot)[next(free(slot).length)]!.id;
-  // Skin tones first: the natural ones are likelier than the fantasy ones.
-  const skin = next(10) < 8 ? next(8) : 8 + next(2);
+  // A starting look has a natural skin tone (the fantasy ones, the green and the violet, are for the wardrobe to offer).
+  const skin = next(8);
   return {
     skin,
     eyes: next(EYES.length),

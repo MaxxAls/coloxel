@@ -208,6 +208,8 @@ function turnHead(p: Painter, facing: Facing): void {
 function drawFace(p: Painter, look: Look, pal: Palette, blink: boolean): void {
   const dark = rgb(OUTLINE);
   const skin = pal.skin;
+  // The iris takes its colour from the hair: warm for brown, cold for blue, never the same grey.
+  const iris = mix2(tone(pal.hair, -0.1), [90, 110, 170], 0.4);
   for (const ex of [11.6, 18.4]) {
     if (blink || look.eyes === 2) {
       // Closed, or sleepy: a line under a heavy lid, with a lash at the outer corner.
@@ -220,22 +222,33 @@ function drawFace(p: Painter, look: Look, pal: Palette, blink: boolean): void {
       // Laughing eyes: little arches.
       for (const [dx, dy] of [[-1.8, 1], [-1, 0.2], [0, -0.2], [1, 0.2], [1.8, 1]] as const) p.set(ex + dx, 12.4 + dy, dark);
     } else if (look.eyes === 3) {
-      p.ball(ex, 12, 1.6, 2.3, dark, { flat: true });
-      p.set(ex - 0.6, 10.8, WHITE);
-      p.set(ex + 0.6, 13.2, WHITE);
-      p.set(ex, 13.4, [96, 74, 150]);
+      // Shining eyes: a big iris full of light.
+      p.ball(ex, 12.2, 2.1, 2.7, WHITE, { flat: true });
+      p.ball(ex, 12.4, 1.5, 2.2, iris, { flat: true });
+      p.ball(ex, 12.6, 0.9, 1.4, dark, { flat: true });
+      p.set(ex - 0.8, 10.9, WHITE);
+      p.set(ex - 0.1, 10.9, WHITE);
+      p.set(ex + 0.7, 13.5, [255, 255, 255]);
+      p.set(ex, 14.2, mix2(iris, WHITE, 0.45));
     } else {
-      p.ball(ex, 12, 1.25, 1.9, dark, { flat: true });
-      p.set(ex - 0.5, 11, WHITE);
+      // Round eyes: white of the eye (it reads on every skin tone), a coloured iris, a pupil, a sparkle, a lash line.
+      p.ball(ex, 12.2, 2.0, 2.4, WHITE, { flat: true });
+      p.ball(ex, 12.4, 1.2, 1.8, iris, { flat: true });
+      p.set(ex, 12.6, dark);
+      p.set(ex, 13.4, dark);
+      p.set(ex - 0.6, 11.4, WHITE);
+      p.set(ex + 0.7, 13.6, mix2(iris, WHITE, 0.55));
+      for (let dx = -1.8; dx <= 1.8; dx += 0.9) p.set(ex + dx, 9.9, dark);
     }
   }
   // Eyebrows.
   const brow = tone(pal.hair, -0.25);
   for (const bx of [11.6, 18.4]) for (let dx = -1.5; dx <= 1.5; dx++) p.set(bx + dx, 8.9, brow);
   // Rosy cheeks and a small nose.
-  for (const cxp of [8.8, 21.2]) for (let dx = -1; dx <= 1; dx++) p.set(cxp + dx, 14.8, mix2(skin, [240, 110, 120], 0.5));
+  for (const cxp of [9.4, 20.6]) for (let dx = -1; dx <= 1; dx++) p.set(cxp + dx, 14.9, mix2(skin, [244, 120, 130], dx === 0 ? 0.42 : 0.26));
   p.set(15, 14, tone(skin, -0.2));
-  const mouth: RGB = [0xa8, 0x3a, 0x3f];
+  const darkSkin = skin[0] * 0.3 + skin[1] * 0.59 + skin[2] * 0.11 < 115;
+  const mouth: RGB = darkSkin ? [0xd2, 0x6a, 0x72] : [0xa8, 0x3a, 0x3f];
   if (look.mouth === 1) {
     p.block(12.6, 15.4, 17.4, 18, [0x7a, 0x2a, 0x35], 1.2);
     for (let x = 13; x <= 17; x++) p.set(x, 15.8, WHITE);
@@ -245,7 +258,9 @@ function drawFace(p: Painter, look: Look, pal: Palette, blink: boolean): void {
   } else if (look.mouth === 3) {
     p.ball(15, 16.6, 1.3, 1.6, [0x7a, 0x2a, 0x35], { flat: true });
   } else {
-    for (const [mx, my] of [[13, 15.8], [14, 16.5], [15, 16.5], [16, 16.5], [17, 15.8]] as const) p.set(mx, my, mouth);
+    // A small smile: dark in the middle, softer at the corners, with a light lip under it.
+    for (const [mx, my, k] of [[13, 15.8, 0.55], [14, 16.5, 1], [15, 16.5, 1], [16, 16.5, 1], [17, 15.8, 0.55]] as const) p.set(mx, my, mix2(skin, mouth, k));
+    p.set(15, 17.4, mix2(skin, [244, 140, 150], 0.35));
   }
 }
 
@@ -484,9 +499,8 @@ function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: b
       // The nose sticks out of the profile.
       p.mapX = null;
       p.keepX = null;
-      p.set(22.8, 13.2, tone(pal.skin, 0.05));
-      p.set(23.6, 14, pal.skin);
-      p.set(22.8, 14.8, tone(pal.skin, -0.12));
+      p.set(22.8, 13.4, tone(pal.skin, 0.06));
+      p.set(23.5, 14.2, pal.skin);
       turnHead(p, facing);
     }
     drawGlasses(p, look);
