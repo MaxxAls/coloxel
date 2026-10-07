@@ -855,6 +855,9 @@ body.in-game {
   font-size: 12px;
   color: var(--muted);
 }
+.hud-coloxs {
+  color: #ffc857;
+}
 .hud-balance.bump {
   animation: bump 420ms cubic-bezier(0.2, 0.9, 0.3, 1.5);
 }

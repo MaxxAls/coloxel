@@ -4,7 +4,7 @@ import { pixelIcon } from './pixel-icons';
 // The player's Pixels, shared by the bar at the top and the shop. The server
 // owns the balance: this only mirrors the last number it sent.
 
-let state: WalletData = { pixels: 0, dailyAvailable: false, dailyPixels: 0 };
+let state: WalletData = { pixels: 0, coloxs: 0, dailyAvailable: false, dailyPixels: 0 };
 const listeners = new Set<(w: WalletData) => void>();
 const emit = () => listeners.forEach((cb) => cb(state));
 
@@ -84,11 +84,20 @@ export function createHud(handlers: { notify(text: string): void }): HTMLElement
   credits.textContent = 'Obtenir des crédits';
   credits.addEventListener('click', () => handlers.notify('Les crédits payants arrivent bientôt. En attendant, joue et récupère tes Pixels chaque jour !'));
 
-  root.append(balance, daily, credits);
+  const coloxBalance = document.createElement('div');
+  coloxBalance.className = 'hud-balance hud-coloxs';
+  coloxBalance.title = 'Tes Coloxs : la monnaie premium du jeu';
+  const coloxAmount = document.createElement('strong');
+  const coloxLabel = document.createElement('span');
+  coloxLabel.textContent = 'Coloxs';
+  coloxBalance.append(pixelIcon('colox', 16), coloxAmount, coloxLabel);
+
+  root.append(balance, coloxBalance, daily, credits);
 
   let shown = -1;
   let tween = 0;
   const render = (w: WalletData) => {
+    coloxAmount.textContent = String(w.coloxs);
     daily.hidden = !w.dailyAvailable;
     daily.disabled = false;
     const from = shown < 0 ? w.pixels : shown;

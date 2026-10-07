@@ -10,7 +10,8 @@
     "db:migrate": "tsx src/db/migrate.ts up",
     "db:rollback": "tsx src/db/migrate.ts down",
     "staff:grant": "tsx src/db/staff.ts grant",
-    "staff:revoke": "tsx src/db/staff.ts revoke"
+    "staff:revoke": "tsx src/db/staff.ts revoke",
+    "colox:grant": "tsx src/db/colox.ts grant"
   },
   "dependencies": {
     "@coloxel/generator": "*",

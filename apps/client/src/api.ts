@@ -115,6 +115,7 @@ export interface CatalogueData {
 
 export interface WalletData {
   pixels: number;
+  coloxs: number;
   dailyAvailable: boolean;
   dailyPixels: number;
 }
