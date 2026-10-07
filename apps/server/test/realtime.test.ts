@@ -1594,4 +1594,24 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     );
     expect(new Set(rooms.map((r) => r.roomId)).size).toBe(1);
   }, 30000);
+
+  it('follows the shape of an apartment: arrival at its door, no walking on void, and back to the door when the floor goes', async () => {
+    const owner = await signUp('shapeowner');
+    const setShape = (preset: string) =>
+      app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { preset } }, cookies: { coloxel_sid: owner.sid } });
+    // A ring around a courtyard: the door is at (7, 0), the middle has no floor.
+    expect((await setShape('ring')).statusCode).toBe(200);
+    const room = await joinApartment(owner, owner.id);
+    await until(() => playerOf(room, owner.id));
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 7, j: 0 });
+    room.send('move', { i: 3, j: 3 });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 7, j: 0 });
+    room.send('move', { i: 7, j: 3 });
+    await until(() => playerOf(room, owner.id)?.j === 3, 6000);
+    // The shape changes under the player's feet: a corridor has no floor at (7, 3).
+    expect((await setShape('corridor')).statusCode).toBe(200);
+    await until(() => playerOf(room, owner.id)?.i === 4, 3000);
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 4, j: 0 });
+  }, 20000);
 });

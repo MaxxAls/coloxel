@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { FLOORS, WALLS, catalogueEntry } from '@coloxel/render';
+import { layoutProblem, type RoomLayout } from '@coloxel/world';
 import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
+import { layoutOfPreset, loadLayout, saveLayout } from '../apartments/layout';
 import { listFriends } from '../friends/routes';
 import { itemMaskedSql } from '../moderation/masking';
 import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
@@ -131,6 +133,7 @@ export function registerBuildingRoutes(
         [ownerId, req.user.id],
       ),
     ]);
+    const layout = await loadLayout(pool, ownerId);
     const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; rot: number; lit: boolean }>(
       `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.lit
          FROM placements p JOIN furniture f ON f.id = p.furniture_id
@@ -142,6 +145,7 @@ export function registerBuildingRoutes(
       name: owner.rows[0]!.name,
       floor: owner.rows[0]!.floor_style ?? FLOORS[0]!.id,
       wall: owner.rows[0]!.wall_style ?? WALLS[0]!.id,
+      layout,
       furniture: base.rows.map((r) => ({
         id: r.id,
         key: r.catalogue_key,
@@ -180,6 +184,13 @@ export function registerBuildingRoutes(
       access: z.enum(['closed', 'bell', 'friends', 'building'], 'Accès invalide').optional(),
       floor: z.string('Sol invalide').refine((id) => FLOORS.some((f) => f.id === id), 'Sol inconnu').optional(),
       wall: z.string('Papier peint invalide').refine((id) => WALLS.some((w) => w.id === id), 'Papier peint inconnu').optional(),
+      // A ready-made shape by its key, or a shape drawn by the player (judged by the server either way).
+      layout: z
+        .union([
+          z.object({ preset: z.string('Forme inconnue') }).strict(),
+          z.object({ cells: z.string(), door: z.object({ i: z.number(), j: z.number() }).strict() }).strict(),
+        ])
+        .optional(),
     })
     .strict();
 
@@ -188,7 +199,16 @@ export function registerBuildingRoutes(
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const parsed = settingsSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
-    const { name, access, floor, wall } = parsed.data;
+    const { name, access, floor, wall, layout } = parsed.data;
+
+    let newLayout: RoomLayout | undefined;
+    if (layout) {
+      const picked = 'preset' in layout ? layoutOfPreset(layout.preset) : layout;
+      if (!picked) return reply.code(400).send({ error: 'Forme inconnue' });
+      const problem = layoutProblem(picked);
+      if (problem) return reply.code(400).send({ error: problem });
+      newLayout = { cells: picked.cells, door: { i: picked.door.i, j: picked.door.j } };
+    }
 
     let newName: string | null | undefined = undefined;
     if (name !== undefined) {
@@ -204,12 +224,18 @@ export function registerBuildingRoutes(
     if (access !== undefined) {
       await pool.query('UPDATE users SET apartment_access = $1 WHERE id = $2', [access, req.user.id]);
     }
+    let putAway = 0;
+    if (newLayout) {
+      const n = await saveLayout(pool, req.user.id, newLayout);
+      if (n === null) return reply.code(404).send({ error: 'Pas d’appartement' });
+      putAway = n;
+    }
     if (floor !== undefined) await pool.query('UPDATE apartments SET floor_style = $1 WHERE owner_id = $2', [floor, req.user.id]);
     if (wall !== undefined) await pool.query('UPDATE apartments SET wall_style = $1 WHERE owner_id = $2', [wall, req.user.id]);
     // Visitors inside follow: out if the door just closed on them, a reload if the look changed.
     if (access !== undefined) notify?.(req.user.id, 'access');
-    if (newName !== undefined || floor !== undefined || wall !== undefined) notify?.(req.user.id, 'decor');
-    return mineOf(pool, req.user.id);
+    if (newName !== undefined || floor !== undefined || wall !== undefined || newLayout) notify?.(req.user.id, 'decor');
+    return { ...(await mineOf(pool, req.user.id)), putAway };
   });
 
   // Where to go: the hall, the apartments open to everyone (busiest first) and
@@ -261,5 +287,14 @@ async function mineOf(pool: pg.Pool, userId: string) {
     [userId],
   );
   const r = rows[0]!;
-  return { id: r.id, floor: r.floor, slot: r.slot, name: r.name, access: r.access, floorStyle: r.floor_style, wallStyle: r.wall_style };
+  return {
+    id: r.id,
+    floor: r.floor,
+    slot: r.slot,
+    name: r.name,
+    access: r.access,
+    floorStyle: r.floor_style,
+    wallStyle: r.wall_style,
+    layout: await loadLayout(pool, userId),
+  };
 }

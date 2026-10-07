@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
+import { hasFloor } from '@coloxel/world';
+import { loadLayout } from '../apartments/layout';
 import type { NotifyApartment } from '../building/routes';
 import type { QuestRecorder } from '../quests/engine';
 import { itemMaskedSql } from '../moderation/masking';
@@ -104,6 +106,10 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         : null;
     if (creation.rowCount === 0 && furniture?.rowCount === 0) return reply.code(404).send({ error: 'Objet introuvable' });
     const column = creation.rowCount ? 'item_id' : 'furniture_id';
+
+    // Only where there is a floor.
+    const shape = await loadLayout(pool, user.id);
+    if (!hasFloor(shape, i, j)) return reply.code(400).send({ error: 'Il n’y a pas de sol ici' });
 
     let saved: { rows: { rot: number }[] };
     try {

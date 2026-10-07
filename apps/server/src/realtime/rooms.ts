@@ -3,8 +3,9 @@ import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
 import { CATALOGUE, catalogueEntry, isSwitchable } from '@coloxel/render';
-import { N, findPath, inGrid, type Cell } from '@coloxel/world';
+import { DEFAULT_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
+import { loadLayout } from '../apartments/layout';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
 import type { QuestRecorder } from '../quests/engine';
@@ -24,6 +25,7 @@ export const STEP_MS = 480;
 /** How a player is posed: on their feet, sitting, or lying down. */
 export const POSE = { stand: 0, sit: 1, lie: 2 } as const;
 type Interaction = 'sit' | 'lie';
+type RoomMap = { blocked: Set<number>; seats: Map<number, Interaction>; shape: RoomLayout };
 /** Close code sent to a visitor when the owner closes the apartment on them. */
 export const CLOSED_BY_OWNER = 4003;
 /** Close code sent to a visitor the owner showed out. */
@@ -108,6 +110,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private emoteUntil = new Map<string, number>();
   /** The cells in the way, as of the last time somebody asked to move: followers walk around them. */
   private blockedCache = new Set<number>();
+  /** The shape of the room as of the last look: followers climb the same steps as everybody. */
+  private shapeCache: RoomLayout = DEFAULT_LAYOUT;
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
 
@@ -117,9 +121,12 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   /** Room-specific entry check (the hall is open to every signed-in player). */
   protected async authorize(_user: SessionUser): Promise<void> {}
 
-  /** Cells nobody can walk onto, and among them the seats and beds. The hall holds none. */
-  protected async layout(): Promise<{ blocked: Set<number>; seats: Map<number, Interaction> }> {
-    return { blocked: new Set(), seats: new Map() };
+  /**
+   * Cells nobody can walk onto (no floor, or something in the way), the seats and beds, and the shape
+   * of the room (levels, door). The hall is a plain square with nothing in it.
+   */
+  protected async layout(): Promise<RoomMap> {
+    return { blocked: new Set(), seats: new Map(), shape: DEFAULT_LAYOUT };
   }
 
   /** Is someone already sitting or lying on this cell? */
@@ -133,13 +140,21 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 
   /** After the decor changed: whoever sits or lies where there is no longer a seat gets back on their feet. */
   protected async revalidatePoses(): Promise<void> {
-    const { seats } = await this.layout();
+    const { seats, blocked, shape } = await this.layout();
+    this.shapeCache = shape;
+    this.blockedCache = blocked;
     this.state.players.forEach((p, id) => {
       if (p.pose !== POSE.stand && !seats.has(p.i * N + p.j)) {
         p.pose = POSE.stand;
         this.pending.delete(id);
       }
     });
+    // Whoever stood where the floor is gone is put back at the door.
+    for (const [id, p] of [...this.state.players.entries()]) {
+      if (hasFloor(shape, p.i, p.j)) continue;
+      const cell = this.freeCellNear(shape.door, blocked, id);
+      if (cell) this.moveInstantly(id, cell);
+    }
   }
 
   override async onAuth(_client: Client, _options: unknown, context: AuthContext) {
@@ -309,14 +324,18 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       // Walking off ends a dance and stops following.
       this.following.delete(id);
       this.setEmote(id, 0);
-      const { blocked, seats } = await this.layout();
+      const { blocked, seats, shape } = await this.layout();
       this.blockedCache = blocked;
+      this.shapeCache = shape;
       const target = parsed.data;
       // A seat or a bed that is free can be walked onto: that is how one sits down. Everything else placed is in the way.
       const kind = seats.get(target.i * N + target.j);
       const usable = kind !== undefined && !this.taken(target.i, target.j, id);
-      const path = findPath({ i: player.i, j: player.j }, target, (i, j) =>
-        blocked.has(i * N + j) && !(usable && i === target.i && j === target.j),
+      const path = findPath(
+        { i: player.i, j: player.j },
+        target,
+        (i, j) => blocked.has(i * N + j) && !(usable && i === target.i && j === target.j),
+        (a, b) => canStep(shape, a, b),
       );
       if (path.length) {
         // Any new walk gets the player back on their feet first.
@@ -500,26 +519,27 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   }
 
   /** The free cell closest to the door: not under an object, not under another player. */
-  private spawnCell(blocked: Set<number>): Cell {
+  private spawnCell(blocked: Set<number>, door: Cell): Cell {
     const taken = new Set<number>(blocked);
     this.state.players.forEach((p) => taken.add(p.i * N + p.j));
     let best: Cell | null = null;
     let bestDistance = Infinity;
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        const d = Math.abs(i - SPAWN.i) + Math.abs(j - SPAWN.j);
+        const d = Math.abs(i - door.i) + Math.abs(j - door.j);
         if (!taken.has(i * N + j) && d < bestDistance) {
           best = { i, j };
           bestDistance = d;
         }
       }
     }
-    return best ?? SPAWN;
+    return best ?? door;
   }
 
   override async onJoin(client: AuthedClient) {
     const user = userOf(client);
-    const { blocked } = await this.layout();
+    const { blocked, shape } = await this.layout();
+    this.shapeCache = shape;
     // One seat per player: a second connection replaces the first.
     const previous = this.clientsByUser.get(user.id);
     if (previous && previous !== client) previous.leave(4000, 'Connecté ailleurs');
@@ -533,7 +553,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     player.pet = appearance.pet;
     // A second connection of the same player replaces the first: its old cell is free again.
     this.state.players.delete(user.id);
-    const spawn = this.spawnCell(blocked);
+    const spawn = this.spawnCell(blocked, shape.door);
     player.i = spawn.i;
     player.j = spawn.j;
     player.pose = POSE.stand;
@@ -592,8 +612,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       }
       if (this.paths.has(id) || me.pose !== POSE.stand) continue;
       if (Math.max(Math.abs(me.i - target.i), Math.abs(me.j - target.j)) <= 1) continue;
-      const path = findPath({ i: me.i, j: me.j }, { i: target.i, j: target.j }, (i, j) =>
-        this.blockedCache.has(i * N + j) && !(i === target.i && j === target.j),
+      const path = findPath(
+        { i: me.i, j: me.j },
+        { i: target.i, j: target.j },
+        (i, j) => this.blockedCache.has(i * N + j) && !(i === target.i && j === target.j),
+        (a, b) => canStep(this.shapeCache, a, b),
       );
       path.pop();
       if (path.length) this.paths.set(id, path);
@@ -795,7 +818,7 @@ export class ApartmentRoom extends BuildingRoom {
   }
 
   /** The layout is asked at every click: it is remembered for a moment, and forgotten as soon as the decor changes. */
-  private layoutCache: { at: number; value: Promise<{ blocked: Set<number>; seats: Map<number, Interaction> }> } | null = null;
+  private layoutCache: { at: number; value: Promise<RoomMap> } | null = null;
 
   protected override async layout() {
     const now = Date.now();
@@ -810,14 +833,16 @@ export class ApartmentRoom extends BuildingRoom {
     return this.layoutCache.value;
   }
 
-  private async readLayout() {
+  private async readLayout(): Promise<RoomMap> {
+    const shape = await loadLayout(needDeps().pool, this.ownerId);
     const { rows } = await needDeps().pool.query<{ i: number; j: number; key: string | null }>(
       `SELECT p.i, p.j, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1`,
       [this.ownerId],
     );
-    const blocked = new Set<number>();
+    // No floor: nobody walks there.
+    const blocked = voidKeys(shape);
     const seats = new Map<number, Interaction>();
     for (const r of rows) {
       const entry = r.key ? catalogueEntry(r.key) : undefined;
@@ -827,6 +852,6 @@ export class ApartmentRoom extends BuildingRoom {
       const use = entry?.interaction;
       if (use) seats.set(r.i * N + r.j, use);
     }
-    return { blocked, seats };
+    return { blocked, seats, shape };
   }
 }
