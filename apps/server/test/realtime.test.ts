@@ -8,6 +8,7 @@ import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
 import { startRealtime, type Realtime } from '../src/realtime';
 import { SPAWN, STEP_MS } from '../src/realtime/rooms';
+import { forgetMaintenance } from '../src/site/settings';
 
 const url = process.env.DATABASE_URL ?? 'postgres://coloxel:coloxel@localhost:5432/coloxel';
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -842,6 +843,21 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(heardA.system[2]).toMatch(/Rien/);
       void b;
     });
+  });
+
+  it('keeps players out of the rooms during maintenance, and lets the staff in', async () => {
+    const player = await signUp('mt_player');
+    const staff = await signUp('mt_staff');
+    await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [staff.id]);
+    await app.inject({ method: 'PUT', url: '/api/staff/maintenance', payload: { on: true }, cookies: { coloxel_sid: staff.sid } });
+    try {
+      await expect(joinHall(player)).rejects.toThrow(/maintenance/);
+      await expect(joinHall(staff)).resolves.toBeDefined();
+    } finally {
+      await app.inject({ method: 'PUT', url: '/api/staff/maintenance', payload: { on: false }, cookies: { coloxel_sid: staff.sid } });
+      forgetMaintenance();
+    }
+    await expect(joinHall(player)).resolves.toBeDefined();
   });
 
   describe('chat', () => {

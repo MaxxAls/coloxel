@@ -17,6 +17,10 @@
 | Commandes de salle (expulser) | **Faire sortir** : le propriétaire exclut un visiteur pour 30 minutes. |
 | Tickets d'assistance avec les derniers messages | Les signalements gardent les 8 derniers messages visibles de la salle. |
 | Modèles de réponse du support | Modèles de sanctions dans le panel staff. |
+| Déplacements et animations | Commandes de chat : `/danse` (animation vue par tous), `/suivre <ami>` (le joueur reste à côté de l'ami qui marche), `/stop`, `/aide`. Elles ne sont ni du chat, ni journalisées. |
+| Site web (pages PHP de l'émulateur) | **Site public** servi par le serveur sous `/site` : accueil avec compteurs et nouveautés, actualités, classement (inventeurs, apparts visités), équipe, état du jeu, profils de joueurs, sprites des créations visibles. Aucune donnée privée, rien de masqué, tout est échappé. |
+| Annonces de l'équipe | Écrites depuis l'onglet « Annonces » du panel staff (brouillon, épinglée, modification, suppression). La plus récente s'affiche une fois dans le jeu. |
+| Mode maintenance | Interrupteur dans le panel staff : l'API et les salles refusent les joueurs (503), le staff, la connexion et le site restent accessibles. |
 
 ## À faire, dans l'ordre conseillé
 
@@ -59,12 +63,9 @@ Besoins qui descendent avec le temps réel (calculés à la lecture à partir d'
 
 Équipes, score, minuteur dans un appart, construits sur les mécanismes (effets « rejoindre une équipe », « marquer un point »). Jamais de mise en Pixels ni de pari (règle 6).
 
-### 5. Idées issues du site web
+### 5. Suite possible du site web
 
-- **Profil public** : pseudo, avatar, nombre de créations, nom et état de l'appart. Aucune donnée personnelle (règle 7).
-- **Annonces de l'équipe** : table `announcements` écrite depuis le panel staff, affichée à la connexion.
-- **Classement** : créateurs les plus prolifiques, apparts les plus visités, sur des données publiques et pseudonymes.
-- **État et maintenance** : `GET /api/status` et un mode maintenance (variable `MAINTENANCE`) qui répond 503 aux joueurs, mais laisse passer le staff.
+Le site existe (voir « Fait »). Reste à décider : avatars sur les profils (il faut rendre l'avatar côté serveur), badges, hall d'honneur par saison, page « apparts à visiter » avec miniatures. Chaque ajout doit rester sans donnée personnelle (règle 7).
 
 ### Non retenu
 

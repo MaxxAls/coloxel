@@ -22,6 +22,9 @@ import { registerInventoryRoutes } from './inventory/routes';
 import type { Locate } from './realtime/where';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
+import { registerAnnouncementRoutes } from './site/announcements';
+import { registerSiteRoutes } from './site/routes';
+import { registerMaintenance } from './site/settings';
 import { registerStaffRoutes } from './staff/routes';
 
 export { spriteToPng };
@@ -80,6 +83,10 @@ export function buildServer({
     app.register(async (scope) => {
       const guards = await buildRateGuards(scope, rateLimits, redis);
       registerAuthRoutes(scope, pool, guards);
+      // After the sign-in hook, which tells who is asking: during maintenance only staff gets through.
+      registerMaintenance(scope, pool);
+      registerSiteRoutes(scope, pool, { occupancy });
+      registerAnnouncementRoutes(scope, pool);
       registerCreationRoutes(scope, pool, model, guards, quest);
       registerInventoryRoutes(scope, pool, notifyApartment, quest);
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);

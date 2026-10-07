@@ -5,6 +5,7 @@ import {
   type ReportKind,
   type SanctionKind,
   type SanctionOrder,
+  type Announcement,
   type StaffHandledReport,
   type StaffPlayerRow,
   type StaffPlayerSheet,
@@ -13,11 +14,12 @@ import {
 import { REASONS } from './report-dialog';
 import { windowBar } from './window';
 
-type Tab = 'reports' | 'chat' | 'players';
+type Tab = 'reports' | 'chat' | 'players' | 'news';
 const TABS: [Tab, string][] = [
   ['reports', 'Signalements'],
   ['chat', 'Journal du chat'],
   ['players', 'Joueurs'],
+  ['news', 'Annonces'],
 ];
 
 const KIND_LABELS: Record<ReportKind, string> = {
@@ -462,6 +464,95 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     content.replaceChildren(sheetView(res.data));
   }
 
+  // ----- News and maintenance ----------------------------------------------
+  let editing: Announcement | null = null;
+
+  async function renderNews() {
+    content.replaceChildren(el('p', 'muted', 'Chargement…'));
+    const res = await api.staffAnnouncements();
+    if (!res.ok) return void content.replaceChildren(el('p', 'error', res.error));
+    const view = el('div', 'staff-list');
+
+    // Maintenance: players are shown the door, the staff still plays.
+    const maintenance = el('div', 'staff-card');
+    const state = el('p', undefined, res.data.maintenance ? 'Le jeu est EN MAINTENANCE : seuls les membres de l’équipe peuvent jouer.' : 'Le jeu est ouvert à tous.');
+    maintenance.append(
+      el('strong', undefined, 'Mode maintenance'),
+      state,
+      button(res.data.maintenance ? 'Rouvrir le jeu' : 'Passer en maintenance', async () => {
+        const next = await api.staffMaintenance(!res.data.maintenance);
+        if (!next.ok) return failure(next.error);
+        say(next.data.maintenance ? 'Maintenance activée.' : 'Le jeu est rouvert.');
+        void renderNews();
+      }, res.data.maintenance ? 'primary' : undefined),
+    );
+    view.append(maintenance);
+
+    const form = el('form', 'staff-card');
+    form.append(el('strong', undefined, editing ? 'Modifier l’annonce' : 'Nouvelle annonce'));
+    const title = el('input');
+    title.placeholder = 'Titre';
+    title.maxLength = 80;
+    title.value = editing?.title ?? '';
+    title.setAttribute('aria-label', 'Titre');
+    const body = el('textarea');
+    body.rows = 5;
+    body.maxLength = 4000;
+    body.placeholder = 'Texte (une ligne vide sépare les paragraphes)';
+    body.value = editing?.body ?? '';
+    body.setAttribute('aria-label', 'Texte');
+    const checkbox = (label: string, checked: boolean) => {
+      const row = el('label', 'check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = checked;
+      row.append(box, document.createTextNode(` ${label}`));
+      return { row, box };
+    };
+    const pinned = checkbox('Épinglée en haut', editing?.pinned ?? false);
+    const published = checkbox('Publiée (sinon, brouillon)', editing?.published ?? true);
+    const submit = el('button', 'primary', editing ? 'Enregistrer' : 'Publier');
+    submit.type = 'submit';
+    const actions = el('div', 'staff-actions');
+    actions.append(submit);
+    if (editing) actions.append(button('Annuler', () => ((editing = null), renderNews())));
+    form.append(title, body, pinned.row, published.row, actions);
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const draft = { title: title.value, body: body.value, pinned: pinned.box.checked, published: published.box.checked };
+      const done = editing ? await api.staffEditAnnouncement(editing.id, draft) : await api.staffAnnounce(draft);
+      if (!done.ok) return failure(done.error);
+      say(editing ? 'Annonce enregistrée.' : 'Annonce publiée.');
+      editing = null;
+      void renderNews();
+    });
+    view.append(form);
+
+    view.append(el('h3', undefined, `Annonces (${res.data.announcements.length})`));
+    for (const a of res.data.announcements) {
+      const card = el('article', 'staff-card');
+      const head = el('div', 'staff-card-head');
+      head.append(el('strong', undefined, a.title));
+      if (a.pinned) head.append(el('span', 'chip good', 'Épinglée'));
+      if (!a.published) head.append(el('span', 'chip bad', 'Brouillon'));
+      card.append(head, el('p', 'muted small', `${when(a.createdAt)} · par ${a.author}`), el('p', 'small', a.body.length > 200 ? `${a.body.slice(0, 200)}…` : a.body));
+      const row = el('div', 'staff-actions');
+      row.append(
+        button('Modifier', () => ((editing = a), renderNews())),
+        button('Supprimer', async () => {
+          if (!confirm(`Supprimer « ${a.title} » ?`)) return;
+          const done = await api.staffDeleteAnnouncement(a.id);
+          if (!done.ok) return failure(done.error);
+          say('Annonce supprimée.');
+          void renderNews();
+        }),
+      );
+      card.append(row);
+      view.append(card);
+    }
+    content.replaceChildren(view);
+  }
+
   // ----- Shell -------------------------------------------------------------
   function openPlayer(id: string) {
     playerId = id;
@@ -481,6 +572,7 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     }
     if (tab === 'reports') await renderReports();
     else if (tab === 'chat') await renderChat();
+    else if (tab === 'news') await renderNews();
     else await renderPlayers();
   }
 

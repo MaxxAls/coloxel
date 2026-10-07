@@ -152,6 +152,23 @@ export interface Quest {
   done: boolean;
 }
 
+export interface Announcement {
+  id: number;
+  title: string;
+  body: string;
+  pinned: boolean;
+  published: boolean;
+  author: string;
+  createdAt: string;
+}
+
+export interface AnnouncementDraft {
+  title: string;
+  body: string;
+  pinned: boolean;
+  published: boolean;
+}
+
 export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment';
 export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
 
@@ -285,6 +302,12 @@ export const api = {
   ring: (ownerId: string) => call<{ status: 'open' | 'ringing' }>('POST', `/api/apartments/${ownerId}/ring`),
   answerBell: (visitorId: string, accept: boolean) => call<unknown>('POST', '/api/apartment/bell/answer', { visitorId, accept }),
   expel: (userId: string) => call<unknown>('POST', `/api/apartment/visitors/${userId}/expel`),
+  announcements: () => call<{ announcements: Announcement[] }>('GET', '/api/announcements'),
+  staffAnnouncements: () => call<{ announcements: Announcement[]; maintenance: boolean }>('GET', '/api/staff/announcements'),
+  staffAnnounce: (draft: AnnouncementDraft) => call<{ id: number }>('POST', '/api/staff/announcements', draft),
+  staffEditAnnouncement: (id: number, draft: AnnouncementDraft) => call<unknown>('PUT', `/api/staff/announcements/${id}`, draft),
+  staffDeleteAnnouncement: (id: number) => call<unknown>('DELETE', `/api/staff/announcements/${id}`),
+  staffMaintenance: (on: boolean) => call<{ maintenance: boolean }>('PUT', '/api/staff/maintenance', { on }),
   friends: () => call<FriendsData>('GET', '/api/friends'),
   askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
   acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),

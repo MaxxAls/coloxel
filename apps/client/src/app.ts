@@ -323,6 +323,29 @@ export async function startApp(user: User) {
   syncPanel();
   await go(home);
 
+  // The news: the newest one is shown once, when it is new to this browser.
+  const news = await api.announcements();
+  if (news.ok && news.data.announcements[0]) {
+    const latest = news.data.announcements.reduce((a, b) => (b.id > a.id ? b : a));
+    let seen = 0;
+    try {
+      seen = Number(localStorage.getItem('coloxel.news') ?? 0);
+    } catch {
+      // Private window: the news will come back next time, which is harmless.
+    }
+    if (latest.id > seen) {
+      showNotice(`${latest.title}
+
+${latest.body}`, () => {
+        try {
+          localStorage.setItem('coloxel.news', String(latest.id));
+        } catch {
+          // Nothing to do.
+        }
+      });
+    }
+  }
+
   // What the staff told the player and they have not read yet (warnings), or what still applies (a mute).
   const notices = await api.notices();
   if (notices.ok) {

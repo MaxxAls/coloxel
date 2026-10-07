@@ -128,6 +128,8 @@ async function join(name: string, options: object): Promise<JoinResult> {
     const error =
       status === 401
         ? 'Ta session a expiré, reconnecte-toi.'
+        : status === 503
+          ? (e.message ?? 'Le jeu est en maintenance.')
         : status === 403
           ? (e.message ?? 'Tu ne peux pas entrer ici.')
           : 'Impossible de se connecter à la salle, réessaie dans un instant.';
