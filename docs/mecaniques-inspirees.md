@@ -74,6 +74,17 @@ Besoins qui descendent avec le temps réel (calculés à la lecture à partir d'
 
 Le site existe (voir « Fait »). Reste à décider : avatars sur les profils (il faut rendre l'avatar côté serveur), badges, hall d'honneur par saison, page « apparts à visiter » avec miniatures. Chaque ajout doit rester sans donnée personnelle (règle 7).
 
+### Optimisations faites
+
+- Texte compressé (gzip ou brotli) : la page d'accueil du site passe de 21 Ko à 3,6 Ko sur le réseau.
+- Styles et scripts du site dans des fichiers versionnés (`?v=…`) gardés un an par le navigateur, au lieu d'être recopiés dans chaque page.
+- Client : bibliothèques lourdes (PixiJS, Colyseus) dans des fichiers à part, que les joueurs ne retéléchargent pas à chaque nouvelle version du jeu ; le code du jeu pèse 131 Ko au lieu de 594 Ko ; le panneau staff n'est téléchargé que par le staff.
+- Serveur : la disposition d'un appart n'est plus relue en base à chaque clic, mais gardée une seconde et oubliée dès que le décor change.
+
+### Personnages
+
+Les personnages de l'émulateur d'origine sont des créations protégées : ils ne sont ni repris, ni « remixés » (règle 5). Les avatars de Coloxel restent dessinés par notre propre moteur ; leurs visages ont été redessinés (blanc de l'œil, iris coloré, sourire et joues plus doux) et les looks de départ n'ont plus de peau verte ou violette par hasard (ces teintes restent au vestiaire).
+
 ### Non retenu
 
 - **Groupes avec forums** : immeubles de groupe, hors périmètre de la phase 2.
