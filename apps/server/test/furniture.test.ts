@@ -80,6 +80,8 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.headers['content-type']).toBe('image/png');
     expect(ok.rawPayload.subarray(1, 4).toString()).toBe('PNG');
+    // Clients add the sprite version to the URL so that old cached images are never reused.
+    expect((await app.inject({ method: 'GET', url: '/api/catalogue/lit.png?v=2', cookies: as(sid) })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/catalogue/licorne.png', cookies: as(sid) })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/api/catalogue/lit.png' })).statusCode).toBe(401);
   });

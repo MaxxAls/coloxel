@@ -1,3 +1,5 @@
+import { SPRITE_VERSION } from '@coloxel/render';
+
 // Thin wrappers over the server API. The server decides everything; these only send intentions.
 
 export interface User {
@@ -122,5 +124,5 @@ export const api = {
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
 };
 
-export const itemSpriteUrl = (id: string) => `/api/items/${id}.png`;
-export const furnitureSpriteUrl = (key: string) => `/api/catalogue/${key}.png`;
+export const itemSpriteUrl = (id: string) => `/api/items/${id}.png?v=${SPRITE_VERSION}`;
+export const furnitureSpriteUrl = (key: string) => `/api/catalogue/${key}.png?v=${SPRITE_VERSION}`;
