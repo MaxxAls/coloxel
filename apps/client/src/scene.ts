@@ -1,4 +1,4 @@
-import type { Application } from 'pixi.js';
+import type { Application, Container } from 'pixi.js';
 import type { User } from './api';
 
 export type Target =
@@ -12,6 +12,10 @@ export const sameTarget = (a: Target, b: Target) =>
 /** What a scene may ask of the application around it. */
 export interface SceneHost {
   app: Application;
+  /** Where a scene puts its world: the application scales and centres it in the window. */
+  stage: Container;
+  /** A mouse event position in the scene's own pixels. */
+  pointer(ev: MouseEvent): { x: number; y: number };
   user: User;
   go(target: Target): void;
   notify(text: string): void;

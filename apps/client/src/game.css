@@ -8,39 +8,6 @@ body {
   background-attachment: fixed;
 }
 
-.game {
-  min-height: 100vh;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 24px;
-  padding: 16px 24px 24px;
-  box-sizing: border-box;
-}
-
-.stage {
-  display: grid;
-  gap: 14px;
-  justify-items: center;
-}
-
-.frame {
-  padding: 8px;
-  background: linear-gradient(160deg, #4a3f7a, #2a2150);
-  border: 2px solid #1b1530;
-  border-radius: 14px;
-  box-shadow:
-    0 0 0 2px #6c61a3,
-    0 12px 32px rgba(10, 6, 30, 0.6),
-    0 0 48px rgba(160, 100, 255, 0.12);
-  line-height: 0;
-}
-.frame canvas {
-  border-radius: 6px;
-  display: block;
-}
-
 .navbar {
   position: fixed;
   left: 50%;
@@ -90,10 +57,6 @@ body {
 }
 .navbar button:disabled {
   opacity: 0.35;
-}
-
-.game {
-  padding-bottom: 96px;
 }
 
 .navigator {
@@ -326,9 +289,55 @@ body {
   border-radius: 6px;
 }
 
+/* The client is the whole window: the canvas fills it, everything else floats on top. */
+body.in-game {
+  overflow: hidden;
+  height: 100vh;
+}
+.game-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(10, 6, 30, 0.55) 100%);
+}
+
 .panel-host {
-  width: 320px;
-  max-width: 100%;
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 8;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 116px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.panel-host .panel {
+  background: rgba(35, 29, 63, 0.92);
+  backdrop-filter: blur(6px);
+}
+.panel-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: 22px;
+  z-index: 11;
+  padding: 8px 14px;
+  background: rgba(35, 29, 63, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgba(10, 6, 30, 0.5);
 }
 
 .panel {
@@ -419,10 +428,7 @@ body {
 }
 
 @media (max-width: 760px) {
-  .game {
-    padding: 12px;
-  }
-  .panel-host {
-    width: 100%;
+  .panel-toggle {
+    bottom: 96px;
   }
 }

@@ -60,21 +60,3 @@ export function glowTexture(): Texture {
   }
   return glow;
 }
-
-let vignette: Texture | null = null;
-/** Darkens the corners of the room, as a lens would. */
-export function vignetteTexture(w: number, h: number): Texture {
-  if (!vignette) {
-    const cv = document.createElement('canvas');
-    cv.width = w;
-    cv.height = h;
-    const ctx = cv.getContext('2d')!;
-    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.38, w / 2, h / 2, Math.hypot(w, h) / 2);
-    g.addColorStop(0, 'rgba(10,6,30,0)');
-    g.addColorStop(1, 'rgba(10,6,30,0.55)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-    vignette = Texture.from(cv);
-  }
-  return vignette;
-}

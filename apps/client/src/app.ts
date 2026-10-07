@@ -1,4 +1,4 @@
-import { Application } from 'pixi.js';
+import { Application, Container } from 'pixi.js';
 import type { User } from './api';
 import { createBuildingScene } from './building-scene';
 import { createCatalogue } from './catalogue';
@@ -6,7 +6,8 @@ import { createNavigator } from './navigator';
 import { createRoomScene } from './room-scene';
 import { sameTarget, type Scene, type SceneHost, type Target } from './scene';
 
-const PANEL_WIDTH = 320;
+const PANEL_WIDTH = 340;
+const BAR_SPACE = 100;
 
 // 8x8 pixel icons, drawn with the current text color.
 const ICONS: Record<string, string[]> = {
@@ -44,22 +45,27 @@ function icon(name: string): SVGSVGElement {
 /** The game shell: one canvas, a side panel, the permanent bottom bar, and the scene being shown. */
 export async function startApp(user: User) {
   const app = new Application();
-  await app.init({ width: 300, height: 216, background: 0x120f22, antialias: false, roundPixels: true });
+  // The canvas is the whole window; the page's gradient shows through behind the scene.
+  await app.init({ resizeTo: window, backgroundAlpha: 0, antialias: false, roundPixels: true });
   try {
     await document.fonts.load('8px "Press Start 2P"');
   } catch {
     // The fallback monospace font is fine.
   }
 
-  const layout = document.createElement('div');
-  layout.className = 'game';
-  const stage = document.createElement('div');
-  stage.className = 'stage';
-  const frame = document.createElement('div');
-  frame.className = 'frame';
-  frame.append(app.canvas);
+  document.body.classList.add('in-game');
+  app.canvas.className = 'game-canvas';
+  const stage = new Container();
+  app.stage.addChild(stage);
+  // Handy for end-to-end scripts that click on scene coordinates (development only).
+  if (import.meta.env.DEV) (window as unknown as { __stage: Container }).__stage = stage;
+  const vignette = document.createElement('div');
+  vignette.className = 'vignette';
   const panelHost = document.createElement('div');
   panelHost.className = 'panel-host';
+  const panelToggle = document.createElement('button');
+  panelToggle.type = 'button';
+  panelToggle.className = 'panel-toggle';
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.setAttribute('role', 'status');
@@ -67,21 +73,36 @@ export async function startApp(user: User) {
   const nav = document.createElement('nav');
   nav.className = 'navbar';
   nav.setAttribute('aria-label', 'Navigation');
-  stage.append(frame);
-  layout.append(stage, panelHost);
-  document.body.append(layout, nav, toast);
+  document.body.append(app.canvas, vignette, panelHost, panelToggle, nav, toast);
 
   let scene: Scene | null = null;
   let current: Target | null = null;
   let switching = 0;
 
-  const fit = () => {
-    const { w, h } = scene?.size ?? { w: 300, h: 216 };
-    const room = Math.max(280, innerWidth - (innerWidth > 760 ? PANEL_WIDTH + 64 : 32));
-    const scale = Math.max(1, Math.floor(Math.min(room / w, (innerHeight - 100) / h)));
-    app.canvas.style.width = `${w * scale}px`;
-    app.canvas.style.height = `${h * scale}px`;
+  // The panel floats over the right of the window; on a narrow window it starts hidden.
+  let panelOpen = innerWidth >= 900;
+  const syncPanel = () => {
+    panelHost.hidden = !panelOpen;
+    panelToggle.textContent = panelOpen ? 'Masquer le panneau' : 'Panneau';
+    panelToggle.setAttribute('aria-expanded', String(panelOpen));
+    fit();
   };
+  panelToggle.addEventListener('click', () => {
+    panelOpen = !panelOpen;
+    syncPanel();
+  });
+
+  /** Scale the scene as large as the free part of the window allows, and centre it there. */
+  function fit() {
+    const { w, h } = scene?.size ?? { w: 600, h: 400 };
+    const availW = innerWidth - (panelOpen ? PANEL_WIDTH + 24 : 0);
+    const availH = innerHeight - BAR_SPACE;
+    const s = Math.min(availW / w, availH / h);
+    // Whole steps when there is room (crisp pixels), finer steps on a small window.
+    const scale = Math.max(0.5, s >= 2 ? Math.floor(s * 2) / 2 : Math.floor(s * 4) / 4);
+    stage.scale.set(scale);
+    stage.position.set(Math.round((availW - w * scale) / 2), Math.round((availH - h * scale) / 2 + 8));
+  }
   addEventListener('resize', fit);
 
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -92,7 +113,20 @@ export async function startApp(user: User) {
     toastTimer = setTimeout(() => (toast.hidden = true), 3500);
   };
 
-  const host: SceneHost = { app, user, go: (target) => void go(target), notify };
+  const host: SceneHost = {
+    app,
+    stage,
+    pointer: (ev) => {
+      const r = app.canvas.getBoundingClientRect();
+      return {
+        x: (ev.clientX - r.left - stage.position.x) / stage.scale.x,
+        y: (ev.clientY - r.top - stage.position.y) / stage.scale.y,
+      };
+    },
+    user,
+    go: (target) => void go(target),
+    notify,
+  };
   const home: Target = { kind: 'apartment', ownerId: user.id };
 
   const navigator = createNavigator({
@@ -201,10 +235,10 @@ export async function startApp(user: User) {
     scene = created;
     current = target;
     panelHost.replaceChildren(created.panel);
-    app.renderer.resize(created.size.w, created.size.h);
     fit();
     markActive();
   }
 
+  syncPanel();
   await go(home);
 }

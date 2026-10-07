@@ -11,6 +11,8 @@ const ROOF_H = 76;
 const HALL_H = 90;
 const STREET_H = 44;
 const REFRESH_MS = 4000;
+/** The sky, skyline and street reach this far on each side of the scene, to fill the whole window. */
+const EDGE = 1800;
 
 interface Layout {
   floors: number;
@@ -77,14 +79,18 @@ const darken = (c: Color, t: number) => mixColor(c, 0x000000, t);
 function drawSky(g: Graphics, l: Layout) {
   g.clear();
   const H = l.height;
-  // Dusk sky: deep violet at the top, warm rose near the street.
+  const left = -EDGE, width = W + 2 * EDGE;
+  // Dusk sky: deep violet at the top, warm rose near the street. The first and last colors run on past the scene.
   const stops = [0x140d3a, 0x1d1250, 0x2a1a63, 0x3a2277, 0x502c86, 0x6c3790, 0x8f4592, 0xb55a8f];
   const bands = 40;
+  rect(g, left, -EDGE, width, EDGE + 2, stops[0]!);
   for (let k = 0; k < bands; k++) {
     const t = (k / (bands - 1)) * (stops.length - 1);
     const i = Math.min(stops.length - 2, Math.floor(t));
-    rect(g, 0, Math.floor((k * H) / bands), W, Math.ceil(H / bands) + 1, mixColor(stops[i]!, stops[i + 1]!, t - i));
+    rect(g, left, Math.floor((k * H) / bands), width, Math.ceil(H / bands) + 1, mixColor(stops[i]!, stops[i + 1]!, t - i));
   }
+  rect(g, left, H, width, EDGE, stops[stops.length - 1]!);
+
   // Moon with craters and a halo.
   g.circle(500, 42, 30).fill({ color: 0xfff3d6, alpha: 0.08 });
   g.circle(500, 42, 20).fill({ color: 0xfff3d6, alpha: 0.12 });
@@ -93,41 +99,49 @@ function drawSky(g: Graphics, l: Layout) {
   g.circle(505, 46, 2.4).fill({ color: 0xe6d7b4, alpha: 0.9 });
   g.circle(503, 36, 1.6).fill({ color: 0xe6d7b4, alpha: 0.9 });
 
-  // Far and near skylines behind the building, with lit windows.
+  // Skylines behind the building, with lit windows, all along the street.
   const base = l.y0 + l.floors * CELL_H + 12;
-  const towers: [number, number, number, Color, number][] = [
-    [0, 52, 150, 0x2a1a63, 0], [44, 40, 200, 0x261758, 1], [88, 34, 120, 0x2c1c68, 2],
-    [470, 44, 190, 0x261758, 3], [520, 34, 130, 0x2c1c68, 4], [556, 44, 170, 0x2a1a63, 5],
-  ];
-  for (const [x, w, h, color, salt] of towers) {
+  const bodyLeft = l.x0 - 30, bodyRight = l.x0 + l.perFloor * CELL_W + 30;
+  for (let x = left, n = 0; x < left + width; n++) {
+    const w = 34 + Math.floor(hash(n, 21) * 26);
+    const h = 90 + Math.floor(hash(n, 22) * 150);
+    if (x + w > bodyLeft && x < bodyRight) {
+      x += w + 4;
+      continue;
+    }
+    const color = [0x2a1a63, 0x261758, 0x2c1c68][n % 3]!;
     rect(g, x, base - h, w, h, color);
     rect(g, x, base - h, w, 3, lighten(color, 0.1));
+    if (hash(n, 23) > 0.6) rect(g, x + w / 2 - 1, base - h - 14, 2, 14, color);
     for (let wy = base - h + 10; wy < base - 12; wy += 14) {
       for (let wx = x + 6; wx < x + w - 8; wx += 11) {
-        const r = hash(wx * 31 + wy, salt);
+        const r = hash(wx * 31 + wy, n);
         if (r < 0.38) rect(g, wx, wy, 5, 7, r < 0.12 ? 0xffe9a8 : 0xffc857, 0.7);
       }
     }
+    x += w + 4;
   }
 
   // Street: sidewalk, curb, asphalt, lane marks.
   const sy = l.y0 + l.floors * CELL_H + HALL_H;
-  rect(g, 0, sy - 8, W, 8, 0x4a3f7a);
-  rect(g, 0, sy - 8, W, 2, 0x6c61a3);
-  for (let x = 0; x < W; x += 24) rect(g, x, sy - 8, 1, 8, 0x3b3366);
-  rect(g, 0, sy, W, STREET_H, 0x1b1530);
-  rect(g, 0, sy, W, 4, 0x35295a);
-  for (let x = 12; x < W; x += 52) rect(g, x, sy + 24, 26, 4, 0x6c61a3);
+  rect(g, left, sy - 8, width, 8, 0x4a3f7a);
+  rect(g, left, sy - 8, width, 2, 0x6c61a3);
+  for (let x = left; x < left + width; x += 24) rect(g, x, sy - 8, 1, 8, 0x3b3366);
+  rect(g, left, sy, width, STREET_H + EDGE, 0x1b1530);
+  rect(g, left, sy, width, 4, 0x35295a);
+  for (let x = left + 12; x < left + width; x += 52) rect(g, x, sy + 24, 26, 4, 0x6c61a3);
 
-  // Lamp posts with their halos, and two trees.
-  for (const lx of [24, W - 24]) {
+  // Lamp posts with their halos, and trees, along the sidewalk.
+  for (let lx = -EDGE + 24; lx < W + EDGE; lx += 300) {
+    if (lx > bodyLeft - 20 && lx < bodyRight + 20 && lx > 100 && lx < W - 100) continue;
     rect(g, lx - 2, sy - 62, 4, 54, 0x1b1530);
     rect(g, lx - 8, sy - 66, 16, 5, 0x1b1530);
     g.circle(lx, sy - 62, 20).fill({ color: 0xffe9a8, alpha: 0.1 });
     g.circle(lx, sy - 62, 12).fill({ color: 0xffe9a8, alpha: 0.16 });
     g.circle(lx, sy - 60, 5).fill(0xffe9a8);
   }
-  for (const tx of [78, W - 78]) {
+  for (let tx = -EDGE + 78; tx < W + EDGE; tx += 300) {
+    if (tx > bodyLeft - 40 && tx < bodyRight + 40 && tx > 100 && tx < W - 100) continue;
     rect(g, tx - 3, sy - 40, 6, 32, 0x4a3326);
     for (const [dx, dy, r, c] of [[-10, -50, 14, 0x2f7a46], [10, -52, 14, 0x3a8f52], [0, -62, 14, 0x48a65f], [-4, -46, 10, 0x2a6a3e]] as const) {
       g.circle(tx + dx, sy + dy, r).fill(c);
@@ -364,7 +378,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
 
   const abort = new AbortController();
   const world = new Container();
-  app.stage.addChild(world);
+  host.stage.addChild(world);
 
   const sky = new Graphics();
   const body = new Graphics();
@@ -376,14 +390,15 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
   const hallSign = new Text({
     text: 'HALL',
     style: { fontFamily: FONT, fontSize: 16, fill: 0xffc857 },
+    resolution: 2,
   });
   hallSign.anchor.set(0.5, 0);
   world.addChild(sky, body, cells, hall, live, highlight, labels, hallSign);
 
   // Fixed stars, so the sky does not flicker on every redraw.
-  const stars = Array.from({ length: 70 }, (_, k) => ({
-    x: (k * 97 + 13) % W,
-    y: (k * 53 + 7) % 200,
+  const stars = Array.from({ length: 220 }, (_, k) => ({
+    x: ((k * 97 + 13) % (W + 2 * 700)) - 700,
+    y: ((k * 53 + 7) % 560) - 300,
     phase: k * 1.7,
     big: k % 7 === 0,
   }));
@@ -408,7 +423,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
     }
     for (const [k, y] of [[0, 90], [1, 150], [2, 40]] as const) {
       const speed = 380 + k * 160;
-      const x = ((now / speed + k * 230) % (W + 160)) - 80;
+      const x = ((now / speed + k * 230) % (W + 1600)) - 800;
       live.ellipse(x, y, 40, 9).fill({ color: 0xe9d6ff, alpha: 0.12 });
       live.ellipse(x + 22, y - 6, 26, 8).fill({ color: 0xe9d6ff, alpha: 0.12 });
     }
@@ -469,6 +484,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
       const t = new Text({
         text: name,
         style: { fontFamily: FONT, fontSize: 8, fill: a.mine ? 0xffc857 : 0xffffff },
+        resolution: 2,
       });
       t.position.set(r.x + 7, r.y + 7);
       labels.addChild(t);
@@ -527,10 +543,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
   document.body.append(tooltip);
 
   type Hit = { kind: 'apartment'; apartment: BuildingApartment } | { kind: 'hall' } | null;
-  const toGame = (ev: PointerEvent | MouseEvent) => {
-    const r = app.canvas.getBoundingClientRect();
-    return { x: ((ev.clientX - r.left) * W) / r.width, y: ((ev.clientY - r.top) * layout.height) / r.height };
-  };
+  const toGame = (ev: PointerEvent | MouseEvent) => host.pointer(ev);
   const hit = (x: number, y: number): Hit => {
     const h = hallRect(layout);
     if (x >= h.x - 8 && x <= h.x + h.w + 8 && y >= h.y - 14 && y <= h.y + h.h) return { kind: 'hall' };

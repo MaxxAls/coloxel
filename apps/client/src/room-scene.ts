@@ -8,7 +8,7 @@ import { createPanel } from './panel';
 import { joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
-import { avatarTexture, furnitureTexture, glowTexture, itemTexture, vignetteTexture } from './textures';
+import { avatarTexture, furnitureTexture, glowTexture, itemTexture } from './textures';
 import { createVisitPanel } from './visit-panel';
 
 const STEP_MS = 150;
@@ -43,6 +43,7 @@ function facingFor(di: number, dj: number): { facing: Facing; flip: 1 | -1 } {
 
 export async function createRoomScene(host: SceneHost, target: RoomTarget): Promise<Scene | { error: string }> {
   const { app, user } = host;
+  const toRoom = (ev: MouseEvent) => host.pointer(ev);
   const ownerId = target.kind === 'apartment' ? target.ownerId : null;
   const mine = ownerId === user.id;
 
@@ -72,7 +73,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const abort = new AbortController();
   const world = new Container();
   world.sortableChildren = true;
-  app.stage.addChild(world);
+  host.stage.addChild(world);
 
   // The room itself: the hall's fixed look, or the floor and wallpaper the owner chose.
   let floor: Sprite | null = null;
@@ -271,6 +272,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         fill: p.id === user.id ? 0xffc857 : 0xffffff,
         stroke: { color: 0x1b1530, width: 3 },
       },
+      resolution: 2,
     });
     label.anchor.set(0.5, 1);
     label.position.set(0, 10 - AVATAR_H - 4);
@@ -346,10 +348,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   }
 
   // ----- Input -------------------------------------------------------------
-  const toRoom = (ev: PointerEvent | MouseEvent) => {
-    const r = app.canvas.getBoundingClientRect();
-    return { x: ((ev.clientX - r.left) * ROOM_W) / r.width, y: ((ev.clientY - r.top) * ROOM_H) / r.height };
-  };
   let hover: { i: number; j: number } | null = null;
   let goal: { i: number; j: number } | null = null;
 
@@ -404,10 +402,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   dust.zIndex = 9000;
   world.addChild(dust);
   const motes = Array.from({ length: 22 }, (_, k) => ({ a: Math.random() * 6, b: Math.random(), speed: 0.6 + Math.random() * 0.8, k }));
-  // The corners of the room darken a little, like a lens.
-  const vignette = new Sprite(vignetteTexture(ROOM_W, ROOM_H));
-  vignette.zIndex = 9999;
-  world.addChild(vignette);
 
   const tick = (ticker: Ticker) => {
     const now = performance.now();
