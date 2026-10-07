@@ -1,6 +1,10 @@
-﻿import { api, type User } from './api';
+import './auth.css';
+import { api, type User } from './api';
+import { startLoginScene } from './login-scene';
 
 type Mode = 'login' | 'register';
+
+const LOGO_COLORS = ['#ff5a7a', '#ffc857', '#6be2a3', '#5ab8ff', '#b78cff', '#ff9a5a', '#ff5a7a'];
 
 function field(label: string, name: string, type: string, extra: Partial<HTMLInputElement> = {}) {
   const wrap = document.createElement('label');
@@ -16,46 +20,64 @@ function field(label: string, name: string, type: string, extra: Partial<HTMLInp
   return { wrap, input };
 }
 
+function logo() {
+  const h1 = document.createElement('h1');
+  h1.className = 'logo';
+  h1.setAttribute('aria-label', 'Coloxel');
+  [...'COLOXEL'].forEach((ch, k) => {
+    const s = document.createElement('span');
+    s.textContent = ch;
+    s.setAttribute('aria-hidden', 'true');
+    s.style.color = LOGO_COLORS[k]!;
+    s.style.animationDelay = `${k * 110}ms`;
+    h1.append(s);
+  });
+  return h1;
+}
+
 /** Shows the sign-in / sign-up screen and resolves with the user once authenticated. */
 export function showAuthScreen(): Promise<User> {
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.className = 'auth';
+
+    const scene = document.createElement('canvas');
+    scene.className = 'scene';
+    scene.setAttribute('aria-hidden', 'true');
+
     const card = document.createElement('form');
     card.className = 'card';
-    card.noValidate = false;
 
-    const title = document.createElement('h1');
-    title.textContent = 'Coloxel';
-    const tagline = document.createElement('p');
-    tagline.className = 'muted';
-    tagline.textContent = 'Invente des objets uniques, un seul exemplaire pour chacun.';
+    const pitch = document.createElement('p');
+    pitch.className = 'pitch';
 
     const tabs = document.createElement('div');
     tabs.className = 'tabs';
+    tabs.setAttribute('role', 'tablist');
     const tabLogin = document.createElement('button');
     tabLogin.type = 'button';
     tabLogin.textContent = 'Connexion';
     const tabRegister = document.createElement('button');
     tabRegister.type = 'button';
     tabRegister.textContent = 'Inscription';
+    for (const tab of [tabLogin, tabRegister]) tab.setAttribute('role', 'tab');
     tabs.append(tabLogin, tabRegister);
 
-    const email = field('Email', 'email', 'email', { autocomplete: 'email' });
-    const password = field('Mot de passe', 'password', 'password', { minLength: 8 });
+    const email = field('Email', 'email', 'email', { autocomplete: 'email' as AutoFill });
+    const password = field('Mot de passe', 'password', 'password');
     const nickname = field('Pseudo', 'nickname', 'text', {
       minLength: 3,
       maxLength: 20,
       pattern: '[A-Za-z0-9_\\-]{3,20}',
-      title: '3 Ã  20 caractÃ¨res : lettres, chiffres, _ et -',
+      title: '3 à 20 caractères : lettres, chiffres, _ et -',
       autocomplete: 'nickname' as AutoFill,
     });
     const birth = field('Date de naissance', 'birthDate', 'date', { autocomplete: 'bday' as AutoFill });
     birth.input.max = new Date().toISOString().slice(0, 10);
 
     const hint = document.createElement('p');
-    hint.className = 'muted small';
-    hint.textContent = 'Lâ€™alpha est rÃ©servÃ©e aux adultes (18 ans et plus).';
+    hint.className = 'hint';
+    hint.textContent = 'Alpha réservée aux adultes (18 ans et plus).';
 
     const error = document.createElement('p');
     error.className = 'error';
@@ -63,11 +85,20 @@ export function showAuthScreen(): Promise<User> {
 
     const submit = document.createElement('button');
     submit.type = 'submit';
-    submit.className = 'primary';
+    submit.className = 'play';
 
-    card.append(title, tagline, tabs, email.wrap, password.wrap, nickname.wrap, birth.wrap, hint, error, submit);
-    root.append(card);
+    const perks = document.createElement('ul');
+    perks.className = 'perks';
+    for (const text of ['Décris', 'Invente', 'Expose']) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      perks.append(li);
+    }
+
+    card.append(logo(), pitch, tabs, email.wrap, password.wrap, nickname.wrap, birth.wrap, hint, error, submit, perks);
+    root.append(scene, card);
     document.body.append(root);
+    const stopScene = startLoginScene(scene);
 
     let mode: Mode = 'login';
     const setMode = (next: Mode) => {
@@ -82,7 +113,12 @@ export function showAuthScreen(): Promise<User> {
       password.input.minLength = reg ? 8 : 0;
       tabLogin.classList.toggle('active', !reg);
       tabRegister.classList.toggle('active', reg);
-      submit.textContent = reg ? 'CrÃ©er mon compte' : 'Se connecter';
+      tabLogin.setAttribute('aria-selected', String(!reg));
+      tabRegister.setAttribute('aria-selected', String(reg));
+      pitch.textContent = reg
+        ? 'Crée ton avatar et invente ton premier objet en moins de 2 minutes.'
+        : 'Content de te revoir ! Ton appart t’attend.';
+      submit.textContent = reg ? 'C’est parti !' : 'Jouer';
       error.textContent = '';
     };
     tabLogin.addEventListener('click', () => setMode('login'));
@@ -107,6 +143,7 @@ export function showAuthScreen(): Promise<User> {
         error.textContent = result.error;
         return;
       }
+      stopScene();
       root.remove();
       resolve(result.data.user);
     });

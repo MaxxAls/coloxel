@@ -1,6 +1,7 @@
 ﻿import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y } from '@coloxel/render';
 import { api, itemSpriteUrl, type InventoryItem, type User } from './api';
+import { avatarCanvas } from './avatar';
 import { showAuthScreen } from './auth-screen';
 import { createPanel } from './panel';
 import { N, OX, OY, TH, TW, findPath, tileAt, tileCenter, type Cell } from './room';
@@ -56,33 +57,11 @@ function drawRoom(): Graphics {
   return g;
 }
 
-const AVATAR = [
-  '  hhhhh  ', ' hhhhhhh ', ' hsssssh ', ' ssesess ', ' sssssss ', '  sssss  ',
-  '   sss   ', '  ttttt  ', ' ttttttt ', 'sttttttts', 'sttttttts', 's ttttt s',
-  '  ppppp  ', '  pp pp  ', '  pp pp  ', '  pp pp  ', '  pp pp  ', ' kkk kkk ',
-];
-const AVATAR_COLORS: Record<string, number> = {
-  h: 0x4a2c1a, s: 0xf1c27d, e: 0x222222, t: 0xe2483d, p: 0x2b4a8b, k: 0x1a1a1a,
-};
-
 function avatarTexture(): Texture {
-  const cv = document.createElement('canvas');
-  cv.width = AVATAR[0]!.length;
-  cv.height = AVATAR.length;
-  const ctx = cv.getContext('2d')!;
-  AVATAR.forEach((row, y) =>
-    [...row].forEach((ch, x) => {
-      const color = AVATAR_COLORS[ch];
-      if (color === undefined) return;
-      ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-      ctx.fillRect(x, y, 1, 1);
-    }),
-  );
-  const tex = Texture.from(cv);
+  const tex = Texture.from(avatarCanvas());
   tex.source.scaleMode = 'nearest';
   return tex;
 }
-
 
 async function startGame(user: User) {
   const app = new Application();
