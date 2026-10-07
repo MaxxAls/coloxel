@@ -6,6 +6,9 @@ import { Client, type Room } from '@colyseus/sdk';
 const url = import.meta.env.VITE_REALTIME_URL ?? `${location.protocol}//${location.hostname}:2567`;
 const client = new Client(url);
 
+/** The server sent us out because the owner closed the apartment. */
+export const CLOSED_BY_OWNER = 4003;
+
 export interface PlayerState {
   id: string;
   nickname: string;
@@ -18,8 +21,10 @@ export interface BuildingRoom {
   players(): PlayerState[];
   /** "I want to walk to (i, j)". The server computes the path. */
   moveTo(i: number, j: number): void;
-  /** Calls back once when the server closes our connection (kicked, replaced, shut down). */
-  onClosed(callback: () => void): void;
+  /** Calls back once when the server closes our connection, with the close code (kicked, replaced, shut down). */
+  onClosed(callback: (code: number) => void): void;
+  /** A message the server broadcasts to the room. */
+  onMessage(type: string, callback: () => void): void;
   leave(): Promise<void>;
 }
 
@@ -37,7 +42,10 @@ function wrap(room: Room): BuildingRoom {
       room.send('move', { i, j });
     },
     onClosed(callback) {
-      room.onLeave(callback);
+      room.onLeave((code: number) => callback(code));
+    },
+    onMessage(type, callback) {
+      room.onMessage(type, () => callback());
     },
     leave: async () => {
       await room.leave().catch(() => {});

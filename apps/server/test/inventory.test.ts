@@ -186,4 +186,40 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
       expect((await sprite(visitor, id)).statusCode).toBe(404);
     });
   });
+
+  describe('only the owner arranges an apartment', () => {
+    it('refuses a visitor who tries to place, move or put away anything in someone else’s apartment', async () => {
+      const owner = await signUp('landlady');
+      const visitor = await signUp('guest');
+      await pool.query("UPDATE users SET apartment_access = 'building' WHERE nickname = 'landlady'");
+      const ownerItem = await createItem(owner);
+      await place(owner, { itemId: ownerItem, i: 2, j: 2 });
+      const visitorItem = await createItem(visitor);
+      const ownerId = (await pool.query("SELECT id FROM users WHERE nickname = 'landlady'")).rows[0].id as string;
+      const decor = async () =>
+        (await app.inject({ method: 'GET', url: `/api/apartments/${ownerId}`, cookies: as(visitor) })).json().items as {
+          id: string;
+          placement: { i: number; j: number };
+        }[];
+      const before = await decor();
+      expect(before).toEqual([expect.objectContaining({ id: ownerItem, placement: { i: 2, j: 2 } })]);
+
+      // Moving the owner's object, putting it away, adding to the owner's apartment: all refused.
+      expect((await place(visitor, { itemId: ownerItem, i: 5, j: 5 })).statusCode).toBe(404);
+      const away = await app.inject({ method: 'DELETE', url: `/api/placements/${ownerItem}`, cookies: as(visitor) });
+      expect(away.statusCode).toBe(404);
+      // The only apartment a placement can land in is the placer's own: the owner's is untouched.
+      expect((await place(visitor, { itemId: visitorItem, i: 4, j: 4 })).statusCode).toBe(200);
+      expect(await decor()).toEqual(before);
+      // No request carries an apartment id: forging one changes nothing.
+      const forged = await app.inject({
+        method: 'PUT',
+        url: '/api/placements',
+        payload: { itemId: visitorItem, i: 6, j: 6, ownerId, userId: ownerId },
+        cookies: as(visitor),
+      });
+      expect([200, 400]).toContain(forged.statusCode);
+      expect(await decor()).toEqual(before);
+    });
+  });
 });

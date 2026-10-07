@@ -4,7 +4,7 @@ import { RedisPresence } from '@colyseus/redis-presence';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
 import type { Presence } from '../building/routes';
-import { ApartmentRoom, HallRoom, configureRooms } from './rooms';
+import { ApartmentRoom, HallRoom, apartmentTopic, configureRooms } from './rooms';
 
 export interface RealtimeOptions {
   pool: pg.Pool;
@@ -21,6 +21,8 @@ export interface Realtime {
   port: number;
   /** Players currently inside each apartment, by owner id (for the building view). */
   occupancy(): Promise<Presence>;
+  /** Tell the room of an apartment, wherever it runs, that its access or decor changed. */
+  notifyApartment(ownerId: string, kind: 'access' | 'decor'): void;
   close(): Promise<void>;
 }
 
@@ -50,6 +52,9 @@ export async function startRealtime({
   return {
     server,
     port: actualPort,
+    notifyApartment(ownerId, kind) {
+      void matchMaker.presence.publish(apartmentTopic(ownerId), kind);
+    },
     async occupancy() {
       const rooms = await matchMaker.query({ name: 'apartment' });
       const apartments = new Map<string, number>();

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
+import type { NotifyApartment } from '../building/routes';
 
 export const GRID_SIZE = 8;
 
@@ -32,7 +33,7 @@ interface InventoryRow {
   j: number | null;
 }
 
-export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
+export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, notify?: NotifyApartment) {
   app.get('/api/inventory', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
@@ -108,6 +109,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
       }
       throw err;
     }
+    notify?.(user.id, 'decor');
     return { placement: { itemId, i, j } };
   });
 
@@ -122,6 +124,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
       [itemId, user.id],
     );
     if (rowCount === 0) return reply.code(404).send({ error: 'Cet objet n’est pas posé' });
+    notify?.(user.id, 'decor');
     return reply.code(204).send();
   });
 }

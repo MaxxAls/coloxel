@@ -5,7 +5,7 @@ import { createApartmentSettings } from './apartment-settings';
 import { AVATAR_H, lookFor, type Facing, type Frame, type Look } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
-import { joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
+import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture } from './textures';
@@ -98,7 +98,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let inspect: (item: InventoryItem | FurnitureItem) => void = () => {};
   let setMessage: (text: string) => void = () => {};
   let refreshOwn: () => Promise<void> = async () => {};
-  let setPresent: (count: number) => void = () => {};
+  let setPresent: (players: PlayerState[]) => void = () => {};
   let panelElement: HTMLElement;
 
   if (mine) {
@@ -146,8 +146,17 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
     };
     panelElement = panel.element;
-    // Name and opening of the apartment sit right under the player's name.
-    panelElement.children[0]?.after(createApartmentSettings());
+    // Name and opening of the apartment sit right under the player's name, then who is visiting.
+    const settings = createApartmentSettings();
+    panelElement.children[0]?.after(settings);
+    const visitors = document.createElement('p');
+    visitors.className = 'present small';
+    visitors.setAttribute('role', 'status');
+    settings.after(visitors);
+    setPresent = (players) => {
+      const others = players.filter((p) => p.id !== user.id).map((p) => p.nickname);
+      visitors.textContent = others.length ? `Chez toi : ${others.join(', ')}` : 'Personne ne te rend visite pour l’instant.';
+    };
     void panel.refreshCharges();
   } else {
     const visit = createVisitPanel(
@@ -170,7 +179,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           },
     );
     inspect = (item) => visit.inspect(item);
-    setPresent = visit.setPresent;
+    setPresent = (players) => visit.setPresent(players.length);
     panelElement = visit.element;
   }
 
@@ -344,7 +353,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       view.box.destroy({ children: true });
       views.delete(id);
     }
-    setPresent(players.length);
+    setPresent(players);
   }
 
   // ----- Input -------------------------------------------------------------
@@ -450,10 +459,25 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   };
   app.ticker.add(tick);
 
+  // The owner rearranged the apartment while we are visiting: show what is there now.
+  async function reloadVisit() {
+    if (mine || target.kind !== 'apartment') return;
+    const visit = await api.apartment(target.ownerId);
+    if (closing || !visit.ok) return;
+    items = visit.data.items;
+    furniture = visit.data.furniture;
+    syncItems();
+    if (visit.data.floor !== look.floor || visit.data.wall !== look.wall) {
+      look = { floor: visit.data.floor, wall: visit.data.wall };
+      drawFloor();
+    }
+  }
+  room.onMessage('decor', () => void reloadVisit());
+
   let closing = false;
-  room.onClosed(() => {
+  room.onClosed((code) => {
     if (closing) return;
-    host.notify('Tu as été déconnecté de la salle.');
+    host.notify(code === CLOSED_BY_OWNER ? 'Le propriétaire vient de fermer son appart.' : 'Tu as été déconnecté de la salle.');
     host.go({ kind: 'building' });
   });
 

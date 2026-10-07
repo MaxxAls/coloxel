@@ -3,7 +3,7 @@ import Fastify from 'fastify';
 import type pg from 'pg';
 import { SEEDS, renderSprite } from '@coloxel/render';
 import { registerAuthRoutes } from './auth/routes';
-import { registerBuildingRoutes, type Occupancy } from './building/routes';
+import { registerBuildingRoutes, type NotifyApartment, type Occupancy } from './building/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
@@ -24,6 +24,8 @@ export interface ServerDeps {
   redis?: unknown;
   /** Players currently inside each apartment (from the realtime server). */
   occupancy?: Occupancy;
+  /** Lets the apartment's room know about a change of access or decor (from the realtime server). */
+  notifyApartment?: NotifyApartment;
 }
 
 export function buildServer({
@@ -32,6 +34,7 @@ export function buildServer({
   rateLimits = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === 'true' ? false : DEFAULT_LIMITS,
   redis,
   occupancy,
+  notifyApartment,
 }: ServerDeps = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -55,9 +58,9 @@ export function buildServer({
       const guards = await buildRateGuards(scope, rateLimits, redis);
       registerAuthRoutes(scope, pool, guards);
       registerCreationRoutes(scope, pool, model, guards);
-      registerInventoryRoutes(scope, pool);
-      registerFurnitureRoutes(scope, pool, guards);
-      registerBuildingRoutes(scope, pool, occupancy);
+      registerInventoryRoutes(scope, pool, notifyApartment);
+      registerFurnitureRoutes(scope, pool, guards, notifyApartment);
+      registerBuildingRoutes(scope, pool, occupancy, notifyApartment);
     });
   }
 

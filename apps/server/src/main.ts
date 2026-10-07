@@ -11,7 +11,12 @@ const redis = redisUrl ? new Redis(redisUrl) : undefined;
 
 async function main() {
   const realtime = await startRealtime({ pool });
-  await buildServer({ pool, redis, occupancy: () => realtime.occupancy() }).listen({ port, host: '0.0.0.0' });
+  await buildServer({
+    pool,
+    redis,
+    occupancy: () => realtime.occupancy(),
+    notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind),
+  }).listen({ port, host: '0.0.0.0' });
   console.log(`realtime (Colyseus) on port ${realtime.port}`);
 }
 

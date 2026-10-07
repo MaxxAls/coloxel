@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, renderSprite } from '@coloxel/render';
+import type { NotifyApartment } from '../building/routes';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spriteToPng } from '../sprite-png';
 
@@ -28,7 +29,12 @@ export async function giveStarterKit(client: pg.PoolClient, userId: string): Pro
 
 const takeSchema = z.object({ key: z.string('Meuble invalide') }).strict();
 
-export function registerFurnitureRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS) {
+export function registerFurnitureRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  guards: RateGuards = NO_GUARDS,
+  notify?: NotifyApartment,
+) {
   // Sprites of base furniture never change for a given key: render once, keep.
   const pngCache = new Map<string, Buffer>();
 
@@ -85,6 +91,7 @@ export function registerFurnitureRoutes(app: FastifyInstance, pool: pg.Pool, gua
       req.user.id,
     ]);
     if (rowCount === 0) return reply.code(404).send({ error: 'Meuble introuvable' });
+    notify?.(req.user.id, 'decor');
     return reply.code(204).send();
   });
 }

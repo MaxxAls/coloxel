@@ -15,6 +15,13 @@ export interface Presence {
   hall: number;
 }
 export type Occupancy = () => Promise<Presence>;
+
+/**
+ * Tell the apartment's room that something changed: who may enter ('access': visitors
+ * who no longer may are sent out) or what the apartment looks like ('decor': visitors
+ * reload it). Supplied by the realtime server; absent where there is none (some tests).
+ */
+export type NotifyApartment = (ownerId: string, kind: 'access' | 'decor') => void;
 const nobody = (): Presence => ({ apartments: new Map(), hall: 0 });
 
 /** Move a new player into the first free apartment. Run inside the sign-up transaction. */
@@ -54,7 +61,12 @@ interface PlacedRow {
   j: number;
 }
 
-export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occupancy: Occupancy | undefined) {
+export function registerBuildingRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  occupancy: Occupancy | undefined,
+  notify?: NotifyApartment,
+) {
   // The building seen from the side: every apartment, who lives there, whether
   // the requester may walk in, and how many players are inside right now.
   app.get('/api/building', async (req, reply) => {
@@ -185,6 +197,9 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     }
     if (floor !== undefined) await pool.query('UPDATE apartments SET floor_style = $1 WHERE owner_id = $2', [floor, req.user.id]);
     if (wall !== undefined) await pool.query('UPDATE apartments SET wall_style = $1 WHERE owner_id = $2', [wall, req.user.id]);
+    // Visitors inside follow: out if the door just closed on them, a reload if the look changed.
+    if (access !== undefined) notify?.(req.user.id, 'access');
+    if (newName !== undefined || floor !== undefined || wall !== undefined) notify?.(req.user.id, 'decor');
     return mineOf(pool, req.user.id);
   });
 

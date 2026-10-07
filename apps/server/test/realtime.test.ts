@@ -39,7 +39,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await pool.query(
       'INSERT INTO apartments (id, floor, slot) SELECT n, 10 + n, 0 FROM generate_series(31, 120) AS n',
     );
-    app = buildServer({ pool, model });
+    app = buildServer({ pool, model, notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind) });
     // Redis is optional here: without it presence stays in memory.
     realtime = await startRealtime({ pool, port: 0, redisUrl, allowedOrigins: [ORIGIN] });
   });
@@ -193,6 +193,96 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await expect(joinApartment(leo, '00000000-0000-4000-8000-000000000000')).rejects.toThrow(/fermé/);
       await expect(asAccount(leo).joinOrCreate('apartment', { ownerId: 'not-a-uuid' })).rejects.toThrow(/invalide/);
       await expect(asAccount(leo).joinOrCreate('apartment', {})).rejects.toThrow(); // may match any room, which still checks its own owner
+    });
+
+    describe('when the owner changes the door or the decor', () => {
+      const api = (owner: Account, payload: object) =>
+        app.inject({ method: 'PUT', url: '/api/apartment', payload, cookies: { coloxel_sid: owner.sid } });
+      const watch = (room: AnyRoom) => {
+        const seen = { code: 0, decor: 0 };
+        room.onLeave((code: number) => (seen.code = code));
+        room.onMessage('decor', () => seen.decor++);
+        return seen;
+      };
+
+      it('shows visitors out the moment the owner closes the apartment, and keeps the owner inside', async () => {
+        const ana = await signUp('ana');
+        const ben = await signUp('ben');
+        const cyd = await signUp('cyd');
+        await setAccess(ana.id, 'building');
+        const host = await joinApartment(ana, ana.id);
+        const b = await joinApartment(ben, ana.id);
+        const c = await joinApartment(cyd, ana.id);
+        const seenB = watch(b);
+        const seenC = watch(c);
+        const seenHost = watch(host);
+        await until(() => host.state?.players?.size === 3);
+
+        expect((await api(ana, { access: 'closed' })).statusCode).toBe(200);
+        await until(() => seenB.code === 4003 && seenC.code === 4003, 4000);
+        await until(() => host.state?.players?.size === 1);
+        expect(seenHost.code).toBe(0);
+        expect(playerOf(host, ana.id)).toBeDefined();
+        // And the door is really shut: nobody comes back in.
+        await expect(joinApartment(ben, ana.id)).rejects.toThrow(/fermé/);
+      });
+
+      it('shows visitors out when the apartment is opened to friends only, which nobody is yet', async () => {
+        const dan = await signUp('dan');
+        const eve = await signUp('eve');
+        await setAccess(dan.id, 'building');
+        const host = await joinApartment(dan, dan.id);
+        const guest = await joinApartment(eve, dan.id);
+        const seen = watch(guest);
+        await until(() => host.state?.players?.size === 2);
+        await api(dan, { access: 'friends' });
+        await until(() => seen.code === 4003, 4000);
+      });
+
+      it('keeps visitors in for a change that does not shut the door', async () => {
+        const fay = await signUp('fay');
+        const gus = await signUp('gus');
+        await setAccess(fay.id, 'building');
+        const host = await joinApartment(fay, fay.id);
+        const guest = await joinApartment(gus, fay.id);
+        const seen = watch(guest);
+        await until(() => host.state?.players?.size === 2);
+        await api(fay, { access: 'building', name: 'Chez Fay' });
+        await new Promise((r) => setTimeout(r, 500));
+        expect(seen.code).toBe(0);
+        expect(playerOf(guest, gus.id)).toBeDefined();
+      });
+
+      it('tells visitors to reload when something is placed, taken back, or the look changes', async () => {
+        const hal = await signUp('hal');
+        const ida = await signUp('ida');
+        await setAccess(hal.id, 'building');
+        const host = await joinApartment(hal, hal.id);
+        const guest = await joinApartment(ida, hal.id);
+        const seen = watch(guest);
+        await until(() => host.state?.players?.size === 2);
+
+        const created = await app.inject({
+          method: 'POST',
+          url: '/api/creations',
+          payload: { description: 'une lampe' },
+          cookies: { coloxel_sid: hal.sid },
+        });
+        const itemId = created.json().item.id as string;
+        const place = await app.inject({
+          method: 'PUT',
+          url: '/api/placements',
+          payload: { itemId, i: 3, j: 6 },
+          cookies: { coloxel_sid: hal.sid },
+        });
+        expect(place.statusCode).toBe(200);
+        await until(() => seen.decor >= 1, 4000);
+        await app.inject({ method: 'DELETE', url: `/api/placements/${itemId}`, cookies: { coloxel_sid: hal.sid } });
+        await until(() => seen.decor >= 2, 4000);
+        await api(hal, { floor: 'damier' });
+        await until(() => seen.decor >= 3, 4000);
+        expect(seen.code).toBe(0);
+      });
     });
 
     it('counts the players inside each apartment for the building view', async () => {

@@ -8,6 +8,10 @@ import type { SessionUser } from '../auth/routes';
 import { authenticateConnection } from './auth';
 
 export const STEP_MS = 150;
+/** Close code sent to a visitor when the owner closes the apartment on them. */
+export const CLOSED_BY_OWNER = 4003;
+/** Presence topic carrying the changes of one apartment. */
+export const apartmentTopic = (ownerId: string) => `apartment:${ownerId.toLowerCase()}`;
 export const SPAWN: Cell = { i: 7, j: 0 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -177,6 +181,27 @@ export class ApartmentRoom extends BuildingRoom {
     // Lets the building view count who is inside.
     void this.setMetadata({ ownerId: this.ownerId });
     super.onCreate();
+    // The owner changes the door or the decor through the API: this room, wherever it runs, hears of it.
+    this.presence.subscribe(apartmentTopic(this.ownerId), this.onChange);
+  }
+
+  override onDispose() {
+    void this.presence.unsubscribe(apartmentTopic(this.ownerId), this.onChange);
+  }
+
+  private onChange = (kind: unknown) => {
+    if (kind === 'decor') this.broadcast('decor');
+    else if (kind === 'access') void this.sendOutUnwelcome();
+  };
+
+  /** Visitors who may no longer enter (door closed, or opened to friends only) are shown out at once. */
+  private async sendOutUnwelcome() {
+    const { pool } = needDeps();
+    for (const client of [...this.clients]) {
+      const user = client.auth as SessionUser | undefined;
+      if (!user || user.id.toLowerCase() === this.ownerId) continue;
+      if (!(await canEnterApartment(pool, this.ownerId, user.id))) client.leave(CLOSED_BY_OWNER, 'Le propriétaire a fermé son appart');
+    }
   }
 
   protected override async authorize(user: SessionUser) {
