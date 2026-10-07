@@ -287,6 +287,7 @@ ${
 <div class="step form" hidden>
 <label class="field">Ta date de naissance<input name="birth" type="date" autocomplete="bday" required></label>
 <p class="hint">Coloxel est réservé aux adultes (18 ans et plus) pendant l’alpha. Ta date de naissance n’est jamais affichée.</p>
+<p class="hint"><b>La charte de la bêta :</b> tu as 18 ans ou plus ; tu n’achètes ni ne revends d’objets Coloxel en dehors du jeu ; tu ne donnes tes coordonnées à personne et tu ne les demandes à personne ; en cas de doute sur une offre ou un échange, tu le signales.</p>
 <label class="check"><input type="checkbox" name="rules"><span>Je respecte les autres joueurs, je ne partage aucune information personnelle et j’accepte que l’équipe modère le jeu.</span></label>
 <div class="row"><button class="btn white" type="button" data-back>Retour</button><button class="btn gold" type="submit">Créer mon compte</button></div></div>
 <p class="form-error" role="alert"></p>

@@ -11,6 +11,8 @@ export interface FurniCardData {
   /** What the server knows about it, one line each. */
   lines: string[];
   actions: FurniAction[];
+  /** Lines that take a moment to know (who owned it): added when they arrive, if the card still shows this piece. */
+  more?: () => Promise<string[]>;
 }
 
 export interface FurniCard {
@@ -76,6 +78,13 @@ export function createFurniCard(): FurniCard {
         }),
       );
       root.hidden = false;
+      if (data.more) {
+        const shown = data.image;
+        void data.more().then((extra) => {
+          if (root.hidden || img.getAttribute('src') !== shown) return;
+          lines.append(...extra.map((l) => el('p', 'muted small', l)));
+        });
+      }
     },
     hide,
     isShown: () => !root.hidden,

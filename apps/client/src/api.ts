@@ -520,6 +520,7 @@ export const api = {
   staffEvents: () => call<{ events: StaffEvent[]; ranking: { nickname: string; events: number }[] }>('GET', '/api/staff/events'),
   staffCreateEvent: (event: { title: string; description: string; startsAt: string; place: string }) => call<{ id: number }>('POST', '/api/staff/events', event),
   staffCloseEvent: (id: number, status: 'done' | 'cancelled') => call<unknown>('PUT', `/api/staff/events/${id}`, { status }),
+  community: () => call<{ discordUrl: string | null }>('GET', '/api/community'),
   staffEconomy: () => call<Economy>('GET', '/api/staff/economy'),
   staffMarketFlags: (status: 'open' | 'handled') => call<{ flags: MarketFlag[] }>('GET', `/api/staff/market/flags?status=${status}`),
   staffHandleFlag: (id: number) => call<void>('POST', `/api/staff/market/flags/${id}/handle`),

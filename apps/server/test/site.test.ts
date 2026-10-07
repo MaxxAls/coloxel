@@ -128,6 +128,30 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       expect((await page('/site/nimporte-quoi')).statusCode).toBe(404);
     });
 
+    it('shows the beta charter when signing up', async () => {
+      const body = (await page('/site/inscription')).body;
+      expect(body).toContain('La charte de la bêta');
+      expect(body).toMatch(/ne revends d’objets Coloxel en dehors du jeu/);
+    });
+
+    it('gives the Discord link only when it is a real invitation', async () => {
+      const ask = async () => (await app.inject({ method: 'GET', url: '/api/community' })).json().discordUrl;
+      const before = process.env.DISCORD_INVITE_URL;
+      try {
+        delete process.env.DISCORD_INVITE_URL;
+        expect(await ask()).toBeNull();
+        process.env.DISCORD_INVITE_URL = 'https://discord.gg/abcDEF123';
+        expect(await ask()).toBe('https://discord.gg/abcDEF123');
+        for (const bad of ['http://discord.gg/abc', 'https://evil.example/discord.gg/abc', 'javascript:alert(1)', 'https://discord.gg/abc"onclick="x']) {
+          process.env.DISCORD_INVITE_URL = bad;
+          expect(await ask(), bad).toBeNull();
+        }
+      } finally {
+        if (before === undefined) delete process.env.DISCORD_INVITE_URL;
+        else process.env.DISCORD_INVITE_URL = before;
+      }
+    });
+
     it('shows a profile with the creations, and nothing private', async () => {
       const maker = await signUp('site_maker');
       const itemId = await createItem(maker, 'Lampe lune', 'appelle moi au 06 12 34 56 78');

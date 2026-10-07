@@ -283,7 +283,28 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         },
       });
     }
-    furniCard.show({ image: creation ? itemSpriteUrl(piece.id, piece.placement?.rot) : furnitureSpriteUrl(piece.key, piece.placement?.rot), name: piece.name, lines, actions });
+    furniCard.show({
+      image: creation ? itemSpriteUrl(piece.id, piece.placement?.rot) : furnitureSpriteUrl(piece.key, piece.placement?.rot),
+      name: piece.name,
+      lines,
+      actions,
+      // The story of a creation: who made it and who owned it since.
+      more: creation
+        ? async () => {
+            const res = await api.itemHistory(piece.id);
+            if (!res.ok) return [];
+            return res.data.history.map((h) =>
+              h.kind === 'creation'
+                ? `Créé par ${h.to}`
+                : h.kind === 'sale'
+                  ? `Vendu à ${h.to} (${h.price} Coloxs)`
+                  : h.kind === 'trade'
+                    ? `Échangé avec ${h.to}`
+                    : `Rendu à ${h.to} (vente annulée)`,
+            );
+          }
+        : undefined,
+    });
   }
 
   const HINT = 'Clique sur une case pour t’y rendre, sur un siège pour t’asseoir. Clic sur un objet : sa fiche.';

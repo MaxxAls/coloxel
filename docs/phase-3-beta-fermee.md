@@ -18,10 +18,22 @@ La phase 3 ne s'ouvre que si la phase 2 a franchi sa porte (`docs/phase-2-multij
 
 ## Avancement
 
-- **Étape 1, Coloxs et registre : faite.** `colox_ledger` est le seul chemin vers un solde (déclencheur), `npm run colox:grant -- <pseudo> <montant>` donne des Coloxs aux testeurs.
-- **Étape 2, Stripe : repoussée** à la demande du fondateur. En attendant, les Coloxs se donnent à la main. Le cas « solde négatif après remboursement » sera à traiter avec elle.
-- **Étape 3, marché : faite côté serveur et interface** (fenêtre « Marché », bouton « Vendre » dans l'inventaire). Séquestre garanti par la base (un objet en vente ne peut pas être posé), achat atomique avec verrouillage des comptes dans un ordre fixe, historique de propriété (`item_owners`), ventes archivées (`market_sales`, la commission détruite s'y lit). Valeurs réglables par `MARKET_COMMISSION_PERCENT`, `MARKET_ROYALTY_PERCENT`, `MARKET_MIN_PRICE`, `MARKET_MAX_PRICE`, `MARKET_LISTING_DAYS`, `MARKET_MAX_LISTINGS`. L'interface n'a pas encore été vue dans un navigateur.
-- Reste : l'historique de propriété n'est pas encore affiché sur la fiche objet du client (l'API `GET /api/items/:id/history` existe), puis les étapes 4 à 10.
+Construit le 7 octobre 2026, étapes 1, 3 à 10. **Étape 2 (Stripe) repoussée** à la demande du fondateur : en attendant, les Coloxs et le VIP se donnent à la main.
+
+- **1. Coloxs et registre** : `colox_ledger` est le seul chemin vers un solde (déclencheur), lignes figées, jamais négatif. `npm run colox:grant -- <pseudo> <montant>`. Reste, avec Stripe : le solde négatif après remboursement (prévu : une colonne de dette à part).
+- **2. Stripe** : à faire. Aucune clé, aucune route de paiement.
+- **3. Marché** : séquestre garanti par la base, achat atomique (comptes verrouillés dans un ordre fixe), commission détruite, historique de propriété (`item_owners`), ventes archivées (`market_sales`). Réglages `MARKET_*` dans `.env.example`.
+- **4. Échange** : même salle pour commencer (la présence vient du serveur temps réel), table à deux côtés, deux acceptations puis confirmation avec numéro et créateur, version pour annuler tout accord périmé, fermeture après 15 min d'inactivité.
+- **5. Séries limitées** : 1, 5 ou 10 exemplaires, 1, 2 ou 3 charges, naissance en une transaction, charges rendues si le générateur échoue.
+- **6. Royalties** : onglet « Royalties » du marché. Un créateur banni continue d'être payé.
+- **7. VIP Atelier** : date de fin et journal sur le compte, +5 charges par jour, badge. Donné par `npm run vip:grant -- <pseudo> <jours>`. Pas encore : palettes exclusives, objets animés, paiement. Aucun effet sur le marché (testé).
+- **8. Anti-fraude** : alertes sans blocage (va-et-vient, compte neuf qui achète, prix anormal, échange à sens unique), fiche de transactions d'un joueur, annulation d'une vente par des lignes inverses (refusée si l'argent est dépensé ou si l'objet a bougé), fermeture du marché à un joueur (équivaut à geler son solde, puisque les Coloxs ne se dépensent que là), signalement des offres et des échanges. Limite de débit `marketPerUser`.
+- **9. Économie** : onglet « Marché » du panel staff (Coloxs en circulation, achetés, détruits, ventes par jour et prix médian, plus gros détenteurs, séries accaparées, contrôle du registre).
+- **10. Discord** : `DISCORD_INVITE_URL` (lien vérifié, sinon rien), entrée dans le menu du compte, charte de la bêta à l'inscription. Le serveur Discord lui-même reste à créer à la main.
+
+Droits staff ajoutés : `market.view` (modérateur et au-dessus), `market.manage` (gérant et administrateur).
+
+À faire avant l'ouverture aux testeurs : voir l'interface dans un navigateur (marché, échange, onglet staff), choisir les vraies valeurs de commission et de royalties, brancher Stripe, fixer le nombre d'abonnés payants qui fait franchir la porte.
 
 ## Principes
 

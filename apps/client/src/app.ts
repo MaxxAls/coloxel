@@ -326,6 +326,11 @@ export async function startApp(user: User) {
       location.reload();
     }),
   );
+  // The beta's Discord, when the server has a link for it: just before "Se déconnecter".
+  void api.community().then((res) => {
+    const url = res.ok ? res.data.discordUrl : null;
+    if (url) menu.insertBefore(entry('Le Discord de la bêta', () => window.open(url, '_blank', 'noopener')), menu.lastElementChild);
+  });
   accountButton.addEventListener('click', () => {
     menu.hidden = !menu.hidden;
     accountButton.setAttribute('aria-expanded', String(!menu.hidden));

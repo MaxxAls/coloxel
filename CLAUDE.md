@@ -3,7 +3,7 @@
 Jeu social en pixel art où chaque objet est inventé par un joueur : il le décrit en texte, un modèle IA produit une recette de formes, le moteur de rendu du jeu la dessine, et l'objet naît en exemplaire unique et numéroté.
 
 - Conception complète du jeu : `docs/conception.md`
-- **Phase en cours : phase 3, beta fermée.** Spec : `docs/phase-3-beta-fermee.md`. Commence par sa section « Avant de commencer » (restes de la phase 2). Ne construis rien qui appartient à une phase suivante (saisons, immeubles de groupe, comptes mineurs, messages privés) sans qu'on te le demande.
+- **Phase en cours : phase 3, beta fermée.** Spec : `docs/phase-3-beta-fermee.md`. Commence par sa section « Avant de commencer » (restes de la phase 2), puis « Avancement » : tout est construit sauf Stripe (étape 2). Ne construis rien qui appartient à une phase suivante (saisons, immeubles de groupe, comptes mineurs, messages privés) sans qu'on te le demande.
 - Phase précédente : phase 2, multijoueur, construite mais pas encore validée par de vrais testeurs : `docs/phase-2-multijoueur.md`
 - Phase 1, terminée : `docs/phase-1-alpha-solo.md`
 - Ajout demandé en cours de phase 2 : éditeur de personnage, boutique en Pixels et compagnons, sans paiement réel (`docs/personnage-boutique.md`). Crédits payants, Coloxs, VIP et marché restent à faire.

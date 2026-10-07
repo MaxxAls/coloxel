@@ -80,6 +80,12 @@ export function buildServer({
 
   app.get('/health', async () => ({ ok: true }));
 
+  // Where the community lives outside the game: the Discord of the beta, when there is one (DISCORD_INVITE_URL).
+  app.get('/api/community', async () => {
+    const url = process.env.DISCORD_INVITE_URL ?? '';
+    return { discordUrl: /^https:\/\/(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9_-]{2,40}$/.test(url) ? url : null };
+  });
+
   // Server-side render of the example objects. Phase 1 replaces this with
   // /api/items/:id.png backed by PostgreSQL (see docs/phase-1-alpha-solo.md).
   app.get<{ Params: { index: string } }>('/api/seeds/:index.png', async (req, reply) => {
