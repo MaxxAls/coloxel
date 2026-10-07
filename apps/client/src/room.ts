@@ -1,28 +1,4 @@
-// Room screen geometry. Grid and pathfinding live in @coloxel/world, shared with the server.
-
-import { N, type Cell } from '@coloxel/world';
+// Room screen geometry: shared with the server and the website (packages/render), grid and pathfinding in packages/world.
 
 export { N, findPath, type Cell } from '@coloxel/world';
-// Rooms are drawn at twice the old resolution: one cell is 64 x 32 px on the canvas.
-export const TW = 64;
-export const TH = 32;
-export const OX = 300;
-export const OY = 148;
-/** Height of the side walls, and the size of the room canvas. */
-export const WALL_H = 116;
-export const ROOM_W = 600;
-export const ROOM_H = 400;
-
-/** Screen position of the center of a tile. */
-export function tileCenter(i: number, j: number): { x: number; y: number } {
-  return { x: OX + (i - j) * (TW / 2), y: OY + (i + j) * (TH / 2) };
-}
-
-/** Tile under a screen point, or null outside the grid. */
-export function tileAt(x: number, y: number): Cell | null {
-  const a = (x - OX) / (TW / 2);
-  const b = (y - OY) / (TH / 2);
-  const i = Math.round((a + b) / 2);
-  const j = Math.round((b - a) / 2);
-  return i >= 0 && j >= 0 && i < N && j < N ? { i, j } : null;
-}
+export { OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, tileAt, tileCenter } from '@coloxel/render';

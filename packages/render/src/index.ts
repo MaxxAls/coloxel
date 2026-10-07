@@ -36,3 +36,25 @@ export {
   type Slot,
 } from './look';
 export { MAX_PETS, PET_SPECIES, petSpecies, type PetColor, type PetSpecies } from './pets';
+export {
+  AVATAR_H,
+  AVATAR_W,
+  LIE_H,
+  LIE_W,
+  OUTLINE,
+  Painter,
+  avatarPixels,
+  avatarSize,
+  mix2,
+  outlinePixels,
+  rgb,
+  showsFace,
+  tone,
+  type Facing,
+  type Frame,
+  type Pose,
+  type RGB,
+  type Tint,
+} from './avatar';
+export { OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, tileAt, tileCenter } from './room';
+export { paintRoom, type RoomLook } from './room-paint';
