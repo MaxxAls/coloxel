@@ -17,6 +17,22 @@ export interface InventoryItem {
   placement: { i: number; j: number } | null;
 }
 
+export interface BuildingApartment {
+  id: number;
+  floor: number;
+  slot: number;
+  owner: { id: string; nickname: string } | null;
+  mine: boolean;
+  /** The player may walk in (own apartment, or opened to the building). */
+  open: boolean;
+  visitors: number;
+}
+
+export interface VisitedApartment {
+  owner: { id: string; nickname: string };
+  items: InventoryItem[];
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -49,6 +65,8 @@ export const api = {
     call<{ item: InventoryItem; charges: number }>('POST', '/api/creations', { description }),
   inventory: () => call<{ items: InventoryItem[] }>('GET', '/api/inventory'),
   place: (itemId: string, i: number, j: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j }),
+  building: () => call<{ apartments: BuildingApartment[] }>('GET', '/api/building'),
+  apartment: (ownerId: string) => call<VisitedApartment>('GET', `/api/apartments/${ownerId}`),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
 };
 
