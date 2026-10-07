@@ -22,11 +22,15 @@
 | Annonces de l'équipe | Écrites depuis l'onglet « Annonces » du panel staff (brouillon, épinglée, modification, suppression). La plus récente s'affiche une fois dans le jeu. |
 | Rangs du personnel (l'émulateur donne à chaque droit et chaque commande un rang minimum, et interdit d'agir sur un rang égal ou supérieur) | **Rôles du personnel** : animateur, modérateur, super-modérateur, gérant, administrateur (`apps/server/src/staff/roles.ts`). Chaque rôle a ses permissions et ses limites (durée maximale des sourdines et suspensions). Personne n'agit sur un rôle égal ou supérieur, on ne nomme que des rôles strictement inférieurs au sien, tout changement de rôle est journalisé, et le rôle est relu en base à chaque requête (une rétrogradation compte tout de suite). Seuls gérants et administrateurs jouent pendant la maintenance. |
 | Classement des animateurs et événements du site | **Événements** organisés par les animateurs, annoncés sur le site (`/site/evenements`) et sur l'accueil, avec le classement des animateurs par événements tenus. |
+| « Wired » : déclencheurs, conditions, effets posés par le joueur | **Mécanismes** : jusqu'à 20 règles par appart, « quand… [si…] alors… ». Déclencheurs : quelqu'un entre, marche sur une case, clique sur un bouton, dit un mot, toutes les N secondes (5 au minimum). Conditions : nombre de joueurs, lampe allumée ou éteinte, joueur sur une case. Effets : allumer, éteindre ou inverser un meuble lumineux, téléporter le joueur, lui montrer un message (filtré), le faire danser. Éditeur dans le panneau de l'appart (menu « Mécanismes »), anneaux lumineux sur la case concernée, règles évaluées par le serveur même quand le propriétaire est absent. |
+| Meubles d'interaction (plaques, boutons, téléporteurs) | Trois pièces à la boutique : **plaque de pression** et **portail** (on marche dessus), **bouton rouge** (on clique). Les tapis sont désormais praticables. |
 | Mode maintenance | Interrupteur dans le panel staff : l'API et les salles refusent les joueurs (503), le staff, la connexion et le site restent accessibles. |
 
 ## À faire, dans l'ordre conseillé
 
-### 1. Mécanismes (déclencheurs programmables)
+### 1. Mécanismes (déclencheurs programmables) : fait
+
+La spec ci-dessous a été suivie, avec deux ajouts : le déclencheur « clic sur un bouton » et l'effet « danser ». Les garde-fous sont en place : une règle ne donne jamais de Pixels ni d'objet, 10 effets par seconde au plus par salle, et ce que fait une règle ne déclenche jamais une autre règle (une règle ne peut donc pas se nourrir elle-même).
 
 C'est la mécanique de l'émulateur qui donne le plus de profondeur : un joueur règle des réactions dans son appart (« quand quelqu'un marche sur cette case, allume la lampe »). Elle prolonge l'idée de Coloxel : les joueurs inventent, le jeu fait vivre.
 

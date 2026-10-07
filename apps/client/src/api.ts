@@ -152,6 +152,33 @@ export interface Quest {
   done: boolean;
 }
 
+/** The mechanisms of an apartment, as the server stores them (apps/server/src/rules/schema.ts). */
+export interface RuleCell {
+  i: number;
+  j: number;
+}
+export type RuleTrigger =
+  | { type: 'enter' }
+  | { type: 'step'; cell: RuleCell }
+  | { type: 'use'; cell: RuleCell }
+  | { type: 'say'; word: string }
+  | { type: 'every'; seconds: number };
+export type RuleCondition =
+  | { type: 'players'; op: '>=' | '<='; n: number }
+  | { type: 'lit'; piece: string; on: boolean }
+  | { type: 'on-cell'; cell: RuleCell };
+export type RuleEffect =
+  | { type: 'light'; piece: string; mode: 'on' | 'off' | 'toggle' }
+  | { type: 'teleport'; cell: RuleCell }
+  | { type: 'message'; text: string }
+  | { type: 'dance' };
+export interface Rule {
+  enabled: boolean;
+  trigger: RuleTrigger;
+  conditions: RuleCondition[];
+  effects: RuleEffect[];
+}
+
 export interface Announcement {
   id: number;
   title: string;
@@ -366,6 +393,8 @@ export const api = {
   ring: (ownerId: string) => call<{ status: 'open' | 'ringing' }>('POST', `/api/apartments/${ownerId}/ring`),
   answerBell: (visitorId: string, accept: boolean) => call<unknown>('POST', '/api/apartment/bell/answer', { visitorId, accept }),
   expel: (userId: string) => call<unknown>('POST', `/api/apartment/visitors/${userId}/expel`),
+  rules: () => call<{ rules: Rule[] }>('GET', '/api/apartment/rules'),
+  saveRules: (rules: Rule[]) => call<{ rules: Rule[] }>('PUT', '/api/apartment/rules', { rules }),
   announcements: () => call<{ announcements: Announcement[] }>('GET', '/api/announcements'),
   staffAnnouncements: () => call<{ announcements: Announcement[]; maintenance: boolean }>('GET', '/api/staff/announcements'),
   staffAnnounce: (draft: AnnouncementDraft) => call<{ id: number }>('POST', '/api/staff/announcements', draft),

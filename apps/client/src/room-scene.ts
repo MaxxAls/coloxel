@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
+import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
 import { showNotice } from './notice-dialog';
 import { wallet } from './wallet';
@@ -153,6 +154,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let inspect: (item: InventoryItem | FurnitureItem) => void = () => {};
   let setMessage: (text: string) => void = () => {};
   let refreshOwn: () => Promise<void> = async () => {};
+  /** Our furniture was read again: what shows it by name (the mechanisms) draws itself again. */
+  let onFurniture: () => void = () => {};
   let setPresent: (players: PlayerState[]) => void = () => {};
   let panelElement: HTMLElement;
 
@@ -191,6 +194,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       items = res.data.items;
       furniture = res.data.furniture;
+      onFurniture();
       if (selected && !items.some((it) => it.id === selected) && !furniture.some((f) => f.id === selected)) selected = null;
       panel.setItems(items);
       panel.setFurniture(furniture);
@@ -205,6 +209,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     // Name and opening of the apartment sit right under the player's name, then who is visiting.
     const settings = createApartmentSettings();
     panelElement.children[0]?.after(settings);
+    const rulesEditor = createRulesEditor({
+      furniture: () => furniture,
+      pickCell: (done) => {
+        pickingCell = done;
+      },
+      notify: (text) => host.notify(text),
+    });
+    settings.after(rulesEditor.element);
+    onFurniture = () => rulesEditor.rerender();
     const visitors = document.createElement('p');
     visitors.className = 'present small';
     visitors.setAttribute('role', 'status');
@@ -273,9 +286,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     const placed = new Set<string>();
     for (const thing of placedThings()) {
       const { i, j } = thing.placement;
-      occupied.add(cellKey(i, j));
       placed.add(thing.id);
       const entry = thing.key ? catalogueEntry(thing.key) : undefined;
+      // A rug, a pressure plate, a portal lies on the floor: one walks over it.
+      if (!entry?.walkable) occupied.add(cellKey(i, j));
       let prop = props.get(thing.id);
       if (!prop) {
         const s = new Sprite();
@@ -309,7 +323,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (halo) halo.sprite.visible = thing.on;
       const { x, y } = tileCenter(i, j);
       prop.sprite.position.set(x, y);
-      prop.sprite.zIndex = i + j;
+      prop.sprite.zIndex = i + j - (entry?.walkable ? 0.6 : 0);
       const light = lights.get(thing.id);
       if (light && entry?.glow) {
         light.sprite.position.set(x, y - entry.glow.z * 2);
@@ -649,10 +663,21 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     return found;
   };
 
+  /** The mechanisms editor asked for a cell: the next click on the room answers it. */
+  let pickingCell: ((cell: { i: number; j: number }) => void) | null = null;
+
   app.canvas.addEventListener(
     'click',
     async (ev) => {
       const { x, y } = toRoom(ev);
+      if (pickingCell) {
+        const picked = tileAt(x, y);
+        if (picked) {
+          pickingCell(picked);
+          pickingCell = null;
+        }
+        return;
+      }
       const who = !selected ? playerAt(x, y) : null;
       if (who) {
         showPlayerCard({
@@ -673,6 +698,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       const cell = tileAt(x, y);
       if (!cell) return;
+      // A button sets off the mechanisms of the apartment: the server checks it is one, and what happens.
+      if (!selected) {
+        const button = furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j && catalogueEntry(f.key)?.pressable);
+        if (button) {
+          room.use(cell.i, cell.j);
+          return;
+        }
+      }
       // In our own apartment, a click on a lamp, the fireplace or the TV switches it on or off.
       if (!selected && mine) {
         const light = furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j && isSwitchable(catalogueEntry(f.key)));
@@ -693,7 +726,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         // Clicking an item opens its card instead of walking onto it.
         const here =
           items.find((it) => it.placement?.i === cell.i && it.placement?.j === cell.j) ??
-          furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j);
+          furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j && !catalogueEntry(f.key)?.walkable);
         if (here) {
           inspect(here);
           return;
@@ -719,6 +752,41 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     { signal: abort.signal },
   );
 
+  // ----- Flashes -------------------------------------------------------------
+  // The server says where a rule just did something: a ring spreads out on the floor for a moment.
+  const fxLayer = new Graphics();
+  fxLayer.zIndex = 8800;
+  world.addChild(fxLayer);
+  const flashes: { i: number; j: number; color: number; at: number }[] = [];
+  const FLASH_MS = 750;
+  room.onFx((fx) => {
+    if (flashes.length < 24) flashes.push({ ...fx, at: performance.now() });
+  });
+  // What a rule says to us, shown like a thought of the apartment.
+  room.onRuleMessage((text) => {
+    host.notify(text);
+    chat.system(text);
+  });
+
+  function drawFlashes(now: number) {
+    fxLayer.clear();
+    for (let k = flashes.length - 1; k >= 0; k--) {
+      const f = flashes[k]!;
+      const age = (now - f.at) / FLASH_MS;
+      if (age >= 1) {
+        flashes.splice(k, 1);
+        continue;
+      }
+      const c = tileCenter(f.i, f.j);
+      for (const [grow, alpha] of [[0.5 + age * 0.9, 1 - age], [0.3 + age * 0.6, (1 - age) * 0.6]] as const) {
+        diamond(fxLayer, c.x, c.y, (TW / 2) * grow, (TH / 2) * grow);
+        fxLayer.stroke({ color: f.color, width: 3, alpha });
+      }
+      diamond(fxLayer, c.x, c.y, TW / 2, TH / 2);
+      fxLayer.fill({ color: f.color, alpha: 0.3 * (1 - age) });
+    }
+  }
+
   // ----- Frame loop --------------------------------------------------------
   // Dust drifting in the sunbeam of an apartment.
   const dust = new Graphics();
@@ -730,6 +798,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     const now = performance.now();
     syncPlayers(ticker.deltaMS, now);
     layoutBubbles(now);
+    drawFlashes(now);
 
     if (!reduceMotion) {
       for (const prop of props.values()) {
@@ -776,7 +845,9 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
   // The owner rearranged the apartment while we are visiting: show what is there now.
   async function reloadVisit() {
-    if (mine || target.kind !== 'apartment') return;
+    // Our own apartment: a rule just lit or put out something, read it again.
+    if (mine) return void refreshOwn();
+    if (target.kind !== 'apartment') return;
     const visit = await api.apartment(target.ownerId);
     if (closing || !visit.ok) return;
     items = visit.data.items;

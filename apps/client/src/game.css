@@ -2013,3 +2013,93 @@ body.admin .staff .win-bar button.win-close {
 .role-matrix td.no {
   color: var(--muted);
 }
+
+/* ---------- Mechanisms editor ---------- */
+
+.rules-editor {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rules-editor > summary {
+  cursor: pointer;
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--accent);
+  padding: 4px 0;
+}
+.rules-editor p {
+  margin: 4px 0;
+}
+.rule-list {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.rule {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.rule.off {
+  opacity: 0.55;
+}
+.rule-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rule-builder {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: #1b1530;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+.rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rule-label {
+  min-width: 52px;
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 8px;
+  color: var(--accent);
+}
+.rule-row .params,
+.rule-row .cell-field {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rule-builder select,
+.rule-builder input:not(.num) {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #120f22;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 7px;
+  width: auto;
+  max-width: 100%;
+}
+.rule-builder input.num {
+  width: 56px;
+}
+.rule-builder button {
+  font-size: 12px;
+  padding: 4px 8px;
+}

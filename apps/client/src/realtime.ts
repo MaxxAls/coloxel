@@ -32,6 +32,12 @@ export interface PlayerState {
 export interface BuildingRoom {
   /** Every player in the room, with the position the server last decided. */
   players(): PlayerState[];
+  /** "I click the button at (i, j)": the server checks there is one, and what it sets off. */
+  use(i: number, j: number): void;
+  /** A flash the server wants everybody to see on a cell (a rule just did something there). */
+  onFx(callback: (fx: { i: number; j: number; color: number }) => void): void;
+  /** A message a rule of the apartment shows us. */
+  onRuleMessage(callback: (text: string) => void): void;
   /** "I want to walk to (i, j)". The server computes the path. */
   moveTo(i: number, j: number): void;
   /** I changed what I wear or my companion: the server reads it again from its records. */
@@ -79,6 +85,15 @@ function wrap(room: Room): BuildingRoom {
     },
     moveTo(i, j) {
       room.send('move', { i, j });
+    },
+    use(i, j) {
+      room.send('use', { i, j });
+    },
+    onFx(callback) {
+      room.onMessage('fx', (m: { i: number; j: number; color?: number }) => callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 }));
+    },
+    onRuleMessage(callback) {
+      room.onMessage('rule-message', (m: { text: string }) => callback(m.text));
     },
     refreshAppearance() {
       room.send('refresh');

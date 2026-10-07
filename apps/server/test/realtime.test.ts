@@ -38,7 +38,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     pool = createPool(url);
     // This file signs up far more players than the real building holds.
     await pool.query(
-      'INSERT INTO apartments (id, floor, slot) SELECT n, 10 + n, 0 FROM generate_series(31, 120) AS n',
+      'INSERT INTO apartments (id, floor, slot) SELECT n, 10 + n, 0 FROM generate_series(31, 400) AS n',
     );
     app = buildServer({
       pool,
