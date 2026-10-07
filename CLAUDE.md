@@ -3,7 +3,8 @@
 Jeu social en pixel art où chaque objet est inventé par un joueur : il le décrit en texte, un modèle IA produit une recette de formes, le moteur de rendu du jeu la dessine, et l'objet naît en exemplaire unique et numéroté.
 
 - Conception complète du jeu : `docs/conception.md`
-- **Phase en cours : phase 1, alpha solo.** Spec : `docs/phase-1-alpha-solo.md`. Ne construis rien qui appartient à une phase suivante (multijoueur, chat, marché, paiement) sans qu'on te le demande.
+- **Phase en cours : phase 2, multijoueur.** Spec : `docs/phase-2-multijoueur.md`. Commence par sa section « Avant de commencer » (vérification de la phase 1). Ne construis rien qui appartient à une phase suivante (marché, monnaies, VIP, paiement, messages privés, comptes mineurs) sans qu'on te le demande.
+- Phase précédente, terminée : `docs/phase-1-alpha-solo.md`
 - Prototype d'origine (référence visuelle et comportementale) : `prototype/atelier-pixel.html`
 
 ## Stack
