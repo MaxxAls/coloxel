@@ -15,6 +15,8 @@ import { createVisitPanel } from './visit-panel';
 const STEP_MS = 480;
 /** Screen pixels per millisecond: one cell (about 36 px) per server step, a touch faster so that the avatar never waits for the next step. */
 const WALK_SPEED = (Math.hypot(TW / 2, TH / 2) / STEP_MS) * 1.08;
+/** Avatars are drawn at the same two screen pixels per unit as the furniture: about 1.8 cells tall, like a person next to a chair. */
+const BODY_SCALE = 2;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
@@ -312,7 +314,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     shadow.fill({ color: 0x1b1530, alpha: 0.2 });
     const body = new Sprite(avatarTexture(look, 'front', 0));
     body.anchor.set(0.5, 1);
-    body.position.set(0, 10);
+    body.position.set(0, 10 * BODY_SCALE);
+    body.scale.set(BODY_SCALE);
     const label = new Text({
       text: p.nickname,
       style: {
@@ -431,7 +434,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const dx = goal.x - view.x;
       const dy = goal.y - view.y;
       const dist = Math.hypot(dx, dy);
-      const reach = (reduceMotion ? 1 : WALK_SPEED) * deltaMs;
+      // Walking is information, not decoration: it keeps its pace and its legs even when the system asks for less motion.
+      const reach = WALK_SPEED * deltaMs;
       if (dist <= reach || dist > 4 * TW) {
         view.x = goal.x;
         view.y = goal.y;
@@ -445,7 +449,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const pose: Pose = seated ? view.pose : 'stand';
 
       const phase = Math.floor(now / (STEP_MS / 4)) % 4;
-      const frame: Frame = view.moving && !reduceMotion ? WALK[phase]! : 0;
+      const frame: Frame = view.moving ? WALK[phase]! : 0;
       // Now and then the eyes close for a moment (a sleeper's stay closed); standing still, the avatar breathes.
       let blink = pose === 'lie';
       if (!blink && now >= view.blinkAt) {
@@ -455,25 +459,25 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       // Sitting and lying down face the same way as the furniture: toward the viewer's right.
       const facing: Facing = pose === 'stand' ? view.facing : 'front';
       view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && facing === 'front', pose);
-      view.body.scale.x = pose === 'stand' ? view.flip : 1;
+      view.body.scale.set((pose === 'stand' ? view.flip : 1) * BODY_SCALE, BODY_SCALE);
       // The avatar glides at a constant pace: no bounce while walking.
       const bob = 0;
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
-        view.body.position.set(8, -17);
+        view.body.position.set(8 * BODY_SCALE, -17 * BODY_SCALE);
       } else {
         view.body.anchor.set(0.5, 1);
         // Seated, the avatar sits a little forward of the middle of the seat.
-        view.body.position.set(pose === 'sit' ? 3 : 0, (pose === 'sit' ? 9 : 10) - Math.round(bob) - (pose === 'stand' ? breath : 0));
+        view.body.position.set(pose === 'sit' ? 3 * BODY_SCALE : 0, (pose === 'sit' ? 9 : 10) * BODY_SCALE - Math.round(bob) - (pose === 'stand' ? breath * BODY_SCALE : 0));
       }
       view.shadow.visible = pose === 'stand';
-      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -46 : pose === 'sit' ? -45 : -36 - Math.round(bob));
+      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -96 : pose === 'sit' ? -89 : -71 - Math.round(bob));
       view.zzz.forEach((zed, k) => {
         zed.visible = pose === 'lie' && !reduceMotion;
         if (!zed.visible) return;
         const t = fract(now / 2200 + k / 3);
-        zed.position.set(-6 + t * 18 + k * 2, -34 - t * 26);
+        zed.position.set(-6 + t * 18 + k * 2, -80 - t * 26);
         zed.alpha = Math.sin(t * Math.PI);
         zed.scale.set(0.6 + t * 0.6);
       });
