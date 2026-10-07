@@ -2,13 +2,21 @@ import type pg from 'pg';
 import { itemMaskedSql } from '../moderation/masking';
 
 // Single place deciding who may see into an apartment. The owner always can;
-// others depend on the owner's apartment_access: everybody in the building, or
-// the owner's friends only.
+// others depend on the owner's apartment_access: everybody in the building, the
+// owner's friends only, or friends plus whoever the owner let in at the door.
 // `host` is the apartment owner's users row; `viewer` is the SQL parameter holding the viewer's id.
-export const apartmentAccessSql = (viewer: string) =>
-  `(host.id = ${viewer} OR host.apartment_access = 'building' OR (host.apartment_access = 'friends' AND EXISTS (` +
-  `SELECT 1 FROM friendships fr WHERE fr.status = 'accepted' AND ` +
-  `((fr.requester_id = host.id AND fr.addressee_id = ${viewer}) OR (fr.requester_id = ${viewer} AND fr.addressee_id = host.id)))))`;
+export const apartmentAccessSql = (viewer: string) => {
+  const friend =
+    `EXISTS (SELECT 1 FROM friendships fr WHERE fr.status = 'accepted' AND ` +
+    `((fr.requester_id = host.id AND fr.addressee_id = ${viewer}) OR (fr.requester_id = ${viewer} AND fr.addressee_id = host.id)))`;
+  const letIn = `EXISTS (SELECT 1 FROM bell_grants bg WHERE bg.owner_id = host.id AND bg.visitor_id = ${viewer} AND bg.expires_at > now())`;
+  const expelled = `EXISTS (SELECT 1 FROM apartment_bans ab WHERE ab.owner_id = host.id AND ab.user_id = ${viewer} AND ab.expires_at > now())`;
+  return (
+    `(host.id = ${viewer} OR (NOT ${expelled} AND (host.apartment_access = 'building'` +
+    ` OR (host.apartment_access = 'friends' AND ${friend})` +
+    ` OR (host.apartment_access = 'bell' AND (${friend} OR ${letIn})))))`
+  );
+};
 export const APARTMENT_ACCESS_SQL = apartmentAccessSql('$2');
 
 // Can `viewerId` see the sprite of `itemId`? Either they own it, or it is
@@ -26,6 +34,12 @@ export async function findViewableItemRecipe<R>(pool: pg.Pool, itemId: string, v
     [itemId, viewerId],
   );
   return rows[0]?.recipe ?? null;
+}
+
+/** Was this player shown out of the apartment by its owner, not long ago? */
+export async function isExpelled(pool: pg.Pool, hostId: string, viewerId: string): Promise<boolean> {
+  const { rowCount } = await pool.query('SELECT 1 FROM apartment_bans WHERE owner_id = $1 AND user_id = $2 AND expires_at > now()', [hostId, viewerId]);
+  return (rowCount ?? 0) > 0;
 }
 
 // Can `viewerId` walk into `hostId`'s apartment? Same rule as the sprites.

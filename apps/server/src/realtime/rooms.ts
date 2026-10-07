@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
 import { N, findPath, inGrid, type Cell } from '@coloxel/world';
-import { canEnterApartment } from '../apartments/access';
+import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
 import type { QuestRecorder } from '../quests/engine';
@@ -20,6 +20,8 @@ export const POSE = { stand: 0, sit: 1, lie: 2 } as const;
 type Interaction = 'sit' | 'lie';
 /** Close code sent to a visitor when the owner closes the apartment on them. */
 export const CLOSED_BY_OWNER = 4003;
+/** Close code sent to a visitor the owner showed out. */
+export const EXPELLED = 4005;
 /** Presence topic carrying the changes of one apartment. */
 export const apartmentTopic = (ownerId: string) => `apartment:${ownerId.toLowerCase()}`;
 export const SPAWN: Cell = { i: 7, j: 0 };
@@ -384,7 +386,8 @@ export class ApartmentRoom extends BuildingRoom {
     for (const client of [...this.clients]) {
       const user = client.auth as SessionUser | undefined;
       if (!user || user.id.toLowerCase() === this.ownerId) continue;
-      if (!(await canEnterApartment(pool, this.ownerId, user.id))) client.leave(CLOSED_BY_OWNER, 'Le propriétaire a fermé son appart');
+      if (await isExpelled(pool, this.ownerId, user.id)) client.leave(EXPELLED, 'Le propriétaire t’a invité à sortir');
+      else if (!(await canEnterApartment(pool, this.ownerId, user.id))) client.leave(CLOSED_BY_OWNER, 'Le propriétaire a fermé son appart');
     }
   }
 

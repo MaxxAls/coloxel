@@ -9,8 +9,9 @@ import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } fro
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { showPlayerCard } from './player-card';
+import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
-import { CLOSED_BY_OWNER, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
+import { CLOSED_BY_OWNER, EXPELLED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
@@ -655,6 +656,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           at: { x: ev.clientX, y: ev.clientY },
           notify: (text) => host.notify(text),
           onFriendsChanged: () => host.friendsChanged(),
+          onExpel: mine
+            ? async () => {
+                const res = await api.expel(who.id);
+                host.notify(res.ok ? `${who.nickname} a été invité à sortir.` : res.error);
+              }
+            : undefined,
           onReport: () => openReportDialog({ kind: 'player', id: who.id, label: `le joueur ${who.nickname}` }, (text) => host.notify(text)),
         });
         return;
@@ -778,6 +785,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onMessage('decor', () => void reloadVisit());
 
   let closing = false;
+  // Somebody rings at our door, or answers a ring of ours.
+  room.onRing((ring) => showRing(ring.visitorId, ring.nickname, (text) => host.notify(text)));
+  room.onBellAnswer((answer) => host.notify(answer.text));
+
   // A challenge was completed: the Pixels are already ours, the server paid them.
   room.onQuest((text) => {
     host.notify(text);
@@ -797,7 +808,13 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       setTimeout(() => location.reload(), 1200);
       return;
     }
-    host.notify(code === CLOSED_BY_OWNER ? 'Le propriétaire vient de fermer son appart.' : 'Tu as été déconnecté de la salle.');
+    host.notify(
+      code === CLOSED_BY_OWNER
+        ? 'Le propriétaire vient de fermer son appart.'
+        : code === EXPELLED
+          ? 'Le propriétaire t’a invité à sortir.'
+          : 'Tu as été déconnecté de la salle.',
+    );
     host.go({ kind: 'building' });
   });
 

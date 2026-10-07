@@ -9,6 +9,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 
 const ACCESS: { value: ApartmentAccess; label: string; hint: string }[] = [
   { value: 'closed', label: 'Fermé', hint: 'Personne d’autre ne peut entrer chez toi.' },
+  { value: 'bell', label: 'Sur sonnette', hint: 'Tes amis entrent. Les autres sonnent, et tu décides.' },
   { value: 'friends', label: 'Ouvert aux amis', hint: 'Seuls tes amis peuvent te rendre visite.' },
   { value: 'building', label: 'Ouvert à l’immeuble', hint: 'Tous les habitants peuvent te rendre visite.' },
 ];

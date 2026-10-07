@@ -10,6 +10,8 @@ export interface PlayerCardOptions {
   onReport?(): void;
   /** The friends list changed: let it read again. */
   onFriendsChanged(): void;
+  /** The owner of this apartment shows the player out. */
+  onExpel?(): void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
@@ -61,6 +63,16 @@ export function showPlayerCard(options: PlayerCardOptions) {
       onReport();
     });
     card.append(report);
+  }
+  const onExpel = options.onExpel;
+  if (onExpel) {
+    const out = el('button', undefined, 'Faire sortir');
+    out.type = 'button';
+    out.addEventListener('click', () => {
+      closePlayerCard();
+      onExpel();
+    });
+    card.append(out);
   }
   card.append(close);
 

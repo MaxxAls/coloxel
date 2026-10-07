@@ -49,6 +49,7 @@ interface ApartmentRow {
   owner_id: string | null;
   nickname: string | null;
   open: boolean;
+  bell: boolean | null;
 }
 
 interface PlacedRow {
@@ -78,7 +79,7 @@ export function registerBuildingRoutes(
     const [{ rows }, present] = await Promise.all([
       pool.query<ApartmentRow>(
         `SELECT a.id, a.floor, a.slot, a.name, a.wall_style, a.floor_style, a.owner_id, host.nickname,
-                COALESCE(${apartmentAccessSql('$1')}, false) AS open
+                COALESCE(${apartmentAccessSql('$1')}, false) AS open, host.apartment_access = 'bell' AS bell
            FROM apartments a
            LEFT JOIN users host ON host.id = a.owner_id
           ORDER BY a.floor DESC, a.slot`,
@@ -97,6 +98,8 @@ export function registerBuildingRoutes(
         owner: r.owner_id ? { id: r.owner_id, nickname: r.nickname } : null,
         mine: r.owner_id === req.user!.id,
         open: r.open,
+        // Closed to this player for now, but they may ring.
+        canRing: !r.open && r.bell === true,
         visitors: r.owner_id ? (present.apartments.get(r.owner_id) ?? 0) : 0,
       })),
     };
@@ -173,7 +176,7 @@ export function registerBuildingRoutes(
         .pipe(z.string().max(30, 'Nom trop long (30 caractères max)'))
         .nullable()
         .optional(),
-      access: z.enum(['closed', 'friends', 'building'], 'Accès invalide').optional(),
+      access: z.enum(['closed', 'bell', 'friends', 'building'], 'Accès invalide').optional(),
       floor: z.string('Sol invalide').refine((id) => FLOORS.some((f) => f.id === id), 'Sol inconnu').optional(),
       wall: z.string('Papier peint invalide').refine((id) => WALLS.some((w) => w.id === id), 'Papier peint inconnu').optional(),
     })

@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, type Ticker } from 'pixi.js';
 import { floorStyle, wallStyle } from '@coloxel/render';
+import { ringAndWait } from './bell';
 import { api, apartmentTitle, type BuildingApartment } from './api';
 import { FONT, type Scene, type SceneHost } from './scene';
 
@@ -498,7 +499,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
   title.textContent = 'L’immeuble';
   const intro = document.createElement('p');
   intro.className = 'muted small';
-  intro.textContent = 'Clique sur un appartement éclairé pour y entrer. Les silhouettes montrent qui est chez soi.';
+  intro.textContent = 'Clique sur un appartement éclairé pour y entrer, ou sur un appart à sonnette pour sonner. Les silhouettes montrent qui est chez soi.';
   const legend = document.createElement('ul');
   legend.className = 'legend';
   for (const [swatch, text] of [
@@ -590,6 +591,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
       const a = target.apartment;
       if (!a.owner) return host.notify('Cet appartement est libre : un nouveau voisin arrivera bientôt.');
       if (a.mine || a.open) return host.go({ kind: 'apartment', ownerId: a.owner.id });
+      if (a.canRing) return void ringAndWait(host, a.owner.id, a.owner.nickname);
       host.notify(`L’appartement de ${a.owner.nickname} est fermé.`);
     },
     { signal: abort.signal },

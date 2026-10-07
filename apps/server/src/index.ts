@@ -7,6 +7,7 @@ import { registerBuildingRoutes, type NotifyApartment, type Occupancy } from './
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
 import { registerAvatarRoutes } from './avatar/routes';
+import { registerVisitorRoutes } from './apartments/visitors';
 import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
 import { makeQuestRecorder } from './quests/engine';
@@ -82,6 +83,7 @@ export function buildServer({
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
       registerFriendRoutes(scope, pool, locate, notifyApartment, guards, quest);
       registerReportRoutes(scope, pool, guards);
+      registerVisitorRoutes(scope, pool, { notifyUser, notifyApartment, locate }, guards);
       registerNoticeRoutes(scope, pool);
       registerStaffRoutes(scope, pool, notifyUser, notifyApartment);
       registerWalletRoutes(scope, pool, guards);

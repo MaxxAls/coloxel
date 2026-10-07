@@ -693,6 +693,48 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
   });
 
+  describe('doorbell and showing out', () => {
+    it('shows out, with its own code, a visitor the owner expels, and keeps them out', async () => {
+      const owner = await signUp('db_owner');
+      const pest = await signUp('db_pest');
+      await setAccess(owner.id, 'building');
+      const host = await joinApartment(owner, owner.id);
+      const visitor = await joinApartment(pest, owner.id);
+      let code = 0;
+      visitor.onLeave((c: number) => (code = c));
+      await until(() => host.state?.players?.size === 2);
+      const res = await app.inject({ method: 'POST', url: `/api/apartment/visitors/${pest.id}/expel`, cookies: { coloxel_sid: owner.sid } });
+      expect(res.statusCode).toBe(200);
+      await until(() => code === 4005, 4000);
+      await until(() => host.state?.players?.size === 1);
+      await expect(joinApartment(pest, owner.id)).rejects.toThrow(/fermé/);
+    });
+
+    it('tells the owner who rings, and the visitor what the owner answered, on their open connections', async () => {
+      const owner = await signUp('db2_owner');
+      const caller = await signUp('db2_caller');
+      await app.inject({ method: 'PUT', url: '/api/apartment', payload: { access: 'bell' }, cookies: { coloxel_sid: owner.sid } });
+      const home = await joinApartment(owner, owner.id);
+      const hall = await joinHall(caller);
+      const rings: { visitorId: string; nickname: string }[] = [];
+      const answers: { accepted: boolean }[] = [];
+      home.onMessage('ring', (m: { visitorId: string; nickname: string }) => rings.push(m));
+      hall.onMessage('bell-answer', (m: { accepted: boolean }) => answers.push(m));
+      await until(() => hall.state?.players?.size === 1);
+
+      const rung = await app.inject({ method: 'POST', url: `/api/apartments/${owner.id}/ring`, cookies: { coloxel_sid: caller.sid } });
+      expect(rung.statusCode).toBe(202);
+      await until(() => rings.length === 1, 3000);
+      expect(rings[0]).toEqual({ visitorId: caller.id, nickname: 'db2_caller' });
+      await app.inject({ method: 'POST', url: '/api/apartment/bell/answer', payload: { visitorId: caller.id, accept: true }, cookies: { coloxel_sid: owner.sid } });
+      await until(() => answers.length === 1, 3000);
+      expect(answers[0]!.accepted).toBe(true);
+      // The door is open: the visitor goes in.
+      const inside = await joinApartment(caller, owner.id);
+      await until(() => home.state?.players?.size === 2 && !!playerOf(inside, caller.id));
+    });
+  });
+
   describe('chat', () => {
     interface Heard {
       chat: { id: number; from: string; nickname: string; text: string }[];

@@ -382,7 +382,7 @@ body {
 }
 .access {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
 .access button {
@@ -1810,4 +1810,34 @@ body.in-game {
 }
 .quest.done .quest-bar span {
   background: #6be07a;
+}
+
+/* ---------- Doorbell ---------- */
+
+.ring-stack {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: grid;
+  gap: 8px;
+}
+.ring-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #231d3f;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(10, 6, 30, 0.6);
+  animation: toast-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.ring-card p {
+  margin: 0;
+  font-weight: 600;
+}
+.ring-buttons {
+  display: flex;
+  gap: 8px;
 }

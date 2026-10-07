@@ -45,6 +45,8 @@ export interface BuildingApartment {
   mine: boolean;
   /** The player may walk in (own apartment, or opened to the building). */
   open: boolean;
+  /** Closed to the player for now, but on the doorbell: they may ring. */
+  canRing?: boolean;
   visitors: number;
 }
 
@@ -57,7 +59,7 @@ export interface VisitedApartment {
   furniture: FurnitureItem[];
 }
 
-export type ApartmentAccess = 'closed' | 'friends' | 'building';
+export type ApartmentAccess = 'closed' | 'bell' | 'friends' | 'building';
 
 export interface MyApartment {
   id: number;
@@ -280,6 +282,9 @@ export const api = {
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
   quests: () => call<{ quests: Quest[] }>('GET', '/api/quests'),
+  ring: (ownerId: string) => call<{ status: 'open' | 'ringing' }>('POST', `/api/apartments/${ownerId}/ring`),
+  answerBell: (visitorId: string, accept: boolean) => call<unknown>('POST', '/api/apartment/bell/answer', { visitorId, accept }),
+  expel: (userId: string) => call<unknown>('POST', `/api/apartment/visitors/${userId}/expel`),
   friends: () => call<FriendsData>('GET', '/api/friends'),
   askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
   acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),

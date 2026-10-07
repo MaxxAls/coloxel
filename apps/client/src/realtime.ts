@@ -11,6 +11,8 @@ const client = new Client(url);
 export const CLOSED_BY_OWNER = 4003;
 /** The server sent us out because the account was suspended or banned. */
 export const SUSPENDED = 4004;
+/** The server sent us out because the owner showed us out. */
+export const EXPELLED = 4005;
 
 export interface PlayerState {
   id: string;
@@ -42,6 +44,10 @@ export interface BuildingRoom {
   onChat(callback: (message: ChatMessage) => void): void;
   /** The server did not show what we said, and tells us why. */
   onChatRefused(callback: (refusal: { reason: string; message: string }) => void): void;
+  /** Somebody rings at our door (we own the apartment we are in, or are anywhere in the building). */
+  onRing(callback: (ring: { visitorId: string; nickname: string }) => void): void;
+  /** The owner answered a ring we made. */
+  onBellAnswer(callback: (answer: { accepted: boolean; text: string }) => void): void;
   /** A challenge tier was reached: the server tells us what it paid. */
   onQuest(callback: (text: string) => void): void;
   /** The staff or the server speaks to us (a warning, a mute). */
@@ -87,6 +93,12 @@ function wrap(room: Room): BuildingRoom {
     },
     onChatRefused(callback) {
       room.onMessage('chat-refused', (m: { reason: string; message: string }) => callback(m));
+    },
+    onRing(callback) {
+      room.onMessage('ring', (m: { visitorId: string; nickname: string }) => callback(m));
+    },
+    onBellAnswer(callback) {
+      room.onMessage('bell-answer', (m: { accepted: boolean; text: string }) => callback(m));
     },
     onQuest(callback) {
       room.onMessage('quest', (m: { text: string }) => callback(m.text));
