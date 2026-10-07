@@ -167,7 +167,7 @@ export interface StaffReportGroup {
   firstAt: string;
   lastAt: string;
   reasons: Record<string, number>;
-  reports: { id: number; reporter: string; reason: ReportReason; details: string | null; at: string }[];
+  reports: { id: number; reporter: string; reason: ReportReason; details: string | null; context: string | null; at: string }[];
   itemState: 'hidden' | 'cleared' | null;
   masked: boolean;
 }

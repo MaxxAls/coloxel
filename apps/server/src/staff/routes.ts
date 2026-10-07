@@ -101,6 +101,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
     reason: string;
     details: string | null;
     snapshot: string;
+    context: string | null;
     created_at: Date;
   }
 
@@ -122,7 +123,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
 
     const { rows } = await pool.query<ReportRow>(
       `SELECT r.id, r.kind, r.target_key, r.target_user_id, tu.nickname AS target_nickname, rp.nickname AS reporter,
-              r.reason, r.details, r.snapshot, r.created_at
+              r.reason, r.details, r.snapshot, r.context, r.created_at
          FROM reports r
          JOIN users rp ON rp.id = r.reporter_id
          LEFT JOIN users tu ON tu.id = r.target_user_id
@@ -138,7 +139,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
       firstAt: Date;
       lastAt: Date;
       reasons: Record<string, number>;
-      reports: { id: number; reporter: string; reason: string; details: string | null; at: Date }[];
+      reports: { id: number; reporter: string; reason: string; details: string | null; context: string | null; at: Date }[];
       itemState: 'hidden' | 'cleared' | null;
       masked: boolean;
     }
@@ -165,7 +166,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
       g.count++;
       g.lastAt = r.created_at;
       g.reasons[r.reason] = (g.reasons[r.reason] ?? 0) + 1;
-      g.reports.push({ id: Number(r.id), reporter: r.reporter, reason: r.reason, details: r.details, at: r.created_at });
+      g.reports.push({ id: Number(r.id), reporter: r.reporter, reason: r.reason, details: r.details, context: r.context, at: r.created_at });
     }
     const itemIds = [...groups.values()].filter((g) => g.kind === 'item').map((g) => g.targetKey);
     if (itemIds.length) {

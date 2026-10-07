@@ -1841,3 +1841,14 @@ body.in-game {
   display: flex;
   gap: 8px;
 }
+
+.chat-context {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: #120f22;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 12px;
+}

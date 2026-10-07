@@ -27,6 +27,19 @@ interface Target {
   key: string;
   userId: string | null;
   snapshot: string;
+  /** What was said around it, oldest first. */
+  context?: string;
+}
+
+/** The last messages that were shown in a room up to a point: what a moderator needs to understand a report. */
+async function recentChat(pool: pg.Pool, room: string, upTo: string | null): Promise<string | undefined> {
+  const { rows } = await pool.query<{ nickname: string; text: string }>(
+    `SELECT u.nickname, c.text FROM chat_log c JOIN users u ON u.id = c.user_id
+      WHERE c.room = $1 AND NOT c.blocked AND ($2::bigint IS NULL OR c.id <= $2)
+      ORDER BY c.id DESC LIMIT 8`,
+    [room, upTo],
+  );
+  return rows.length ? rows.reverse().map((r) => `${r.nickname} : ${r.text}`).join(String.fromCharCode(10)) : undefined;
 }
 
 /** Looks up what the player wants to report, as it is right now. Null: it does not exist or is not theirs to report. */
@@ -41,7 +54,7 @@ async function findTarget(pool: pg.Pool, reporterId: string, kind: ReportKind, i
     const m = rows[0];
     if (!m) return null;
     if (m.user_id === reporterId) return { error: 'Tu ne peux pas te signaler toi-même.' };
-    return { key: id, userId: m.user_id, snapshot: `${m.nickname} : ${m.text}` };
+    return { key: id, userId: m.user_id, snapshot: `${m.nickname} : ${m.text}`, context: await recentChat(pool, m.room, id) };
   }
   if (!UUID.test(id)) return null;
   const key = id.toLowerCase();
@@ -64,7 +77,14 @@ async function findTarget(pool: pg.Pool, reporterId: string, kind: ReportKind, i
   const u = rows[0];
   if (!u) return null;
   if (u.id === reporterId) return { error: 'Tu ne peux pas te signaler toi-même.' };
-  if (kind === 'player') return { key, userId: u.id, snapshot: u.nickname };
+  if (kind === 'player') {
+    // Where the player last spoke, if they did lately.
+    const last = await pool.query<{ room: string }>(
+      `SELECT room FROM chat_log WHERE user_id = $1 AND NOT blocked AND created_at > now() - interval '1 hour' ORDER BY id DESC LIMIT 1`,
+      [u.id],
+    );
+    return { key, userId: u.id, snapshot: u.nickname, context: last.rows[0] ? await recentChat(pool, last.rows[0].room, null) : undefined };
+  }
   if (kind === 'apartment_name') {
     if (!u.name) return { error: 'Cet appart n’a pas de nom.' };
     return { key, userId: u.id, snapshot: `Nom de l’appart de ${u.nickname} : ${u.name}` };
@@ -84,10 +104,10 @@ export function registerReportRoutes(app: FastifyInstance, pool: pg.Pool, guards
     if ('error' in target) return reply.code(400).send({ error: target.error });
 
     const { rowCount } = await pool.query(
-      `INSERT INTO reports (reporter_id, kind, target_key, target_user_id, reason, details, snapshot)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO reports (reporter_id, kind, target_key, target_user_id, reason, details, snapshot, context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (reporter_id, kind, target_key) DO NOTHING`,
-      [req.user.id, kind, target.key, target.userId, reason, details || null, target.snapshot],
+      [req.user.id, kind, target.key, target.userId, reason, details || null, target.snapshot, target.context ?? null],
     );
     // Reporting twice is not an error: it simply counts once.
     return reply.code(rowCount ? 201 : 200).send({ ok: true, already: !rowCount });

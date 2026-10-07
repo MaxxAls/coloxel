@@ -132,6 +132,30 @@ describe.skipIf(!available)('reports (PostgreSQL)', () => {
     expect(await rowsOf(eli)).toEqual([]);
   });
 
+  it('keeps what was said in the room around a reported message or player', async () => {
+    const a = await signUp('rc_a');
+    const b = await signUp('rc_b');
+    const c = await signUp('rc_c');
+    await say(a, 'bonjour');
+    await say(b, 'salut a', false);
+    await say(c, 'lien interdit exemple.com', true); // blocked: nobody saw it
+    const bad = await say(c, 'tu es nul');
+    await say(a, 'après le message');
+    expect((await report(a, { kind: 'message', targetId: bad, reason: 'insult' })).statusCode).toBe(201);
+    const lines = (await pool.query('SELECT context FROM reports WHERE reporter_id = $1', [a.id])).rows[0].context.split(String.fromCharCode(10));
+    expect(lines.slice(-3)).toEqual(['rc_a : bonjour', 'rc_b : salut a', 'rc_c : tu es nul']);
+    expect(lines.join(' ')).not.toMatch(/exemple\.com|après/);
+
+    // A player report carries what the player said last in their room.
+    expect((await report(b, { kind: 'player', targetId: c.id, reason: 'insult' })).statusCode).toBe(201);
+    const ctx = (await pool.query('SELECT context FROM reports WHERE reporter_id = $1', [b.id])).rows[0].context as string;
+    expect(ctx).toMatch(/rc_c : tu es nul/);
+    // Somebody who has not spoken leaves no context.
+    const quiet = await signUp('rc_quiet');
+    await report(a, { kind: 'player', targetId: quiet.id, reason: 'spam' });
+    expect((await pool.query('SELECT context FROM reports WHERE reporter_id = $1 AND target_user_id = $2', [a.id, quiet.id])).rows[0].context).toBeNull();
+  });
+
   it('only lets a player report a creation they can see', async () => {
     const gus = await signUp('rp_gus');
     const hal = await signUp('rp_hal');

@@ -29,6 +29,16 @@ const KIND_LABELS: Record<ReportKind, string> = {
 };
 const REASON_LABELS = Object.fromEntries(REASONS) as Record<string, string>;
 const SANCTION_LABELS: Record<SanctionKind, string> = { warning: 'Avertissement', mute: 'Sourdine', suspension: 'Suspension', ban: 'Bannissement' };
+/** Ready-made sanctions for the usual cases: they fill the form, the staff member can still change anything. */
+const TEMPLATES: { label: string; order: SanctionOrder }[] = [
+  { label: 'Insultes : sourdine 1 h', order: { kind: 'mute', minutes: 60, reason: 'Insultes envers d’autres joueurs.' } },
+  { label: 'Spam : sourdine 10 min', order: { kind: 'mute', minutes: 10, reason: 'Messages répétés ou publicité.' } },
+  { label: 'Infos personnelles : avertissement', order: { kind: 'warning', reason: 'Ne partage jamais d’informations personnelles (téléphone, adresse, réseaux sociaux).' } },
+  { label: 'Contenu inapproprié : avertissement', order: { kind: 'warning', reason: 'Ce que tu as créé ou écrit ne respecte pas les règles du jeu.' } },
+  { label: 'Harcèlement : suspension 24 h', order: { kind: 'suspension', minutes: 24 * 60, reason: 'Harcèlement envers d’autres joueurs.' } },
+  { label: 'Récidive grave : suspension 7 jours', order: { kind: 'suspension', minutes: 7 * 24 * 60, reason: 'Comportement répété malgré les avertissements.' } },
+];
+
 const DURATIONS: [number, string][] = [
   [10, '10 minutes'],
   [60, '1 heure'],
@@ -110,6 +120,8 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     reason.placeholder = 'Motif (obligatoire, le joueur le verra)';
     reason.maxLength = 300;
     reason.setAttribute('aria-label', 'Motif');
+    const template = select<number>([[-1, 'Modèle…'], ...TEMPLATES.map((t, k) => [k, t.label] as [number, string])], -1);
+    template.setAttribute('aria-label', 'Modèle de sanction');
     const submit = button(submitLabel, () => {}, 'primary');
     submit.type = 'submit';
     const sync = () => {
@@ -117,7 +129,15 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     };
     kinds.addEventListener('change', sync);
     sync();
-    form.append(kinds, duration, reason, submit);
+    template.addEventListener('change', () => {
+      const t = TEMPLATES[Number(template.value)];
+      if (!t) return;
+      kinds.value = t.order.kind;
+      if (t.order.minutes !== undefined) duration.value = String(t.order.minutes);
+      reason.value = t.order.reason;
+      sync();
+    });
+    form.append(template, kinds, duration, reason, submit);
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       submit.disabled = true;
@@ -164,6 +184,13 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
       who.append(el('p', 'muted small', `${when(r.at)} · ${r.reporter} · ${REASON_LABELS[r.reason] ?? r.reason}${r.details ? ` — « ${r.details} »` : ''}`));
     }
     text.append(who);
+    const context = g.reports.find((r) => r.context)?.context;
+    if (context) {
+      const around = el('details', 'small');
+      around.append(el('summary', undefined, 'Ce qui se disait juste avant'));
+      around.append(el('pre', 'chat-context', context));
+      text.append(around);
+    }
     if (g.targetUser) {
       const user = g.targetUser;
       text.append(link(`Fiche de ${user.nickname}`, () => openPlayer(user.id)));
