@@ -1,3 +1,4 @@
+import type { RoomLayout } from '@coloxel/world';
 import { SPRITE_VERSION, type Look, type Slot } from '@coloxel/render';
 
 // Thin wrappers over the server API. The server decides everything; these only send intentions.
@@ -55,6 +56,8 @@ export interface VisitedApartment {
   name: string | null;
   floor: string;
   wall: string;
+  /** The shape of the room: cells with a floor, their levels, the door. */
+  layout: RoomLayout;
   items: InventoryItem[];
   furniture: FurnitureItem[];
 }
@@ -69,6 +72,9 @@ export interface MyApartment {
   access: ApartmentAccess;
   floorStyle: string;
   wallStyle: string;
+  layout: RoomLayout;
+  /** After a change of shape: how many pieces went back to the inventory. */
+  putAway?: number;
 }
 
 export interface NavigatorData {
@@ -387,7 +393,13 @@ export const api = {
   building: () => call<{ apartments: BuildingApartment[] }>('GET', '/api/building'),
   apartment: (ownerId: string) => call<VisitedApartment>('GET', `/api/apartments/${ownerId}`),
   myApartment: () => call<MyApartment>('GET', '/api/apartment'),
-  updateApartment: (body: { name?: string | null; access?: ApartmentAccess; floor?: string; wall?: string }) =>
+  updateApartment: (body: {
+    name?: string | null;
+    access?: ApartmentAccess;
+    floor?: string;
+    wall?: string;
+    layout?: { preset: string } | RoomLayout;
+  }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
   quests: () => call<{ quests: Quest[] }>('GET', '/api/quests'),

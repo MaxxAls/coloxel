@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
+import { createShapeEditor } from './room-shape';
 import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
 import { showAlert, showSummon } from './alerts';
@@ -16,7 +17,8 @@ import { showPlayerCard } from './player-card';
 import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
 import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
-import { N, OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
+import { hasFloor, levelAt, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
+import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 
@@ -110,6 +112,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let items: InventoryItem[] = [];
   let furniture: FurnitureItem[] = [];
   let look = { floor: 'parquet', wall: 'violet' };
+  let shape: RoomLayout = DEFAULT_LAYOUT;
   if (target.kind === 'apartment' && !mine) {
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
@@ -119,7 +122,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     items = visit.data.items;
     furniture = visit.data.furniture;
     look = { floor: visit.data.floor, wall: visit.data.wall };
+    shape = visit.data.layout;
+  } else if (mine) {
+    const own = await api.myApartment();
+    if (own.ok) {
+      look = { floor: own.data.floorStyle, wall: own.data.wallStyle };
+      shape = own.data.layout;
+    }
   }
+  setRoomLayout(shape);
 
   const joined = target.kind === 'hall' ? await joinHall() : await joinApartment(target.ownerId);
   if (!joined.ok) {
@@ -139,11 +150,25 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let floor: Sprite | null = null;
   function drawFloor() {
     floor?.destroy();
-    floor = roomSprite(target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall));
+    floor = roomSprite(target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall), shape);
     floor.zIndex = -3;
     world.addChild(floor);
   }
   drawFloor();
+
+  /** The owner changed the look or the shape of the room: paint it again, and everything standing on it follows. */
+  function changeRoom(floorId: string, wallId: string, layout: RoomLayout) {
+    const reshaped = layout.cells !== shape.cells || layout.door.i !== shape.door.i || layout.door.j !== shape.door.j;
+    if (floorId === look.floor && wallId === look.wall && !reshaped) return;
+    look = { floor: floorId, wall: wallId };
+    shape = layout;
+    setRoomLayout(shape);
+    drawFloor();
+    if (reshaped) {
+      drawFloorMask();
+      syncItems();
+    }
+  }
 
   const marks = new Graphics();
   marks.zIndex = -1;
@@ -151,7 +176,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
   const itemSprites = new Map<string, Sprite>();
   const occupied = new Set<string>();
-  const blocked = (i: number, j: number) => occupied.has(cellKey(i, j));
+  const blocked = (i: number, j: number) => occupied.has(cellKey(i, j)) || !hasFloor(shape, i, j);
   let selected: string | null = null;
 
   // ----- Around the room: the card of a piece, the windows, the banner -----------------
@@ -302,10 +327,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       inventory?.setFurniture(furniture);
       inventory?.setSelected(selected);
       syncItems();
-      if (mineRes.ok && (mineRes.data.floorStyle !== look.floor || mineRes.data.wallStyle !== look.wall)) {
-        look = { floor: mineRes.data.floorStyle, wall: mineRes.data.wallStyle };
-        drawFloor();
-      }
+      if (mineRes.ok) changeRoom(mineRes.data.floorStyle, mineRes.data.wallStyle, mineRes.data.layout);
     };
     // Name, opening and mechanisms of the apartment live in a window of their own.
     apartmentElement = document.createElement('div');
@@ -319,7 +341,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       },
       notify: (text) => host.notify(text),
     });
-    apartmentElement.append(createApartmentSettings(), rulesEditor.element);
+    apartmentElement.append(createApartmentSettings(), createShapeEditor(), rulesEditor.element);
     onFurniture = () => rulesEditor.rerender();
     info = createInfoCard({
       title: 'Mon appart',
@@ -917,13 +939,18 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   world.addChild(partyLayer);
   // The lights stay on the floor: they do not spill over the walls or outside the room.
   const floorMask = new Graphics();
-  {
-    const top = tileCenter(0, 0);
-    const east = tileCenter(N - 1, 0);
-    const south = tileCenter(N - 1, N - 1);
-    const west = tileCenter(0, N - 1);
-    floorMask.poly([top.x, top.y - TH / 2, east.x + TW / 2, east.y, south.x, south.y + TH / 2, west.x - TW / 2, west.y]).fill(0xffffff);
+  function drawFloorMask() {
+    floorMask.clear();
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const level = levelAt(shape, i, j);
+        if (level === null) continue;
+        const c = tileCenter(i, j);
+        floorMask.poly([c.x, c.y - TH / 2, c.x + TW / 2, c.y, c.x, c.y + TH / 2, c.x - TW / 2, c.y]).fill(0xffffff);
+      }
+    }
   }
+  drawFloorMask();
   world.addChild(floorMask);
   partyLayer.mask = floorMask;
   const confettiLayer = new Graphics();
@@ -1080,10 +1107,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     items = visit.data.items;
     furniture = visit.data.furniture;
     syncItems();
-    if (visit.data.floor !== look.floor || visit.data.wall !== look.wall) {
-      look = { floor: visit.data.floor, wall: visit.data.wall };
-      drawFloor();
-    }
+    changeRoom(visit.data.floor, visit.data.wall, visit.data.layout);
   }
   room.onMessage('decor', () => void reloadVisit());
 

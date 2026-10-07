@@ -401,6 +401,44 @@ body {
   margin: 0;
 }
 
+.shape-editor {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.shape-editor h2 {
+  margin: 0;
+}
+.shape-editor p {
+  margin: 0;
+}
+.shape-presets,
+.shape-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.shape-presets button,
+.shape-tools button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.shape-tools button.active {
+  background: var(--accent);
+  color: #2a2140;
+  font-weight: 600;
+}
+.shape-canvas {
+  max-width: 100%;
+  height: auto;
+  touch-action: none;
+  cursor: crosshair;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #17132a;
+}
+
 .inventory.flash {
   outline: 2px solid var(--accent);
   outline-offset: 4px;

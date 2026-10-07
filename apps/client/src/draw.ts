@@ -1,5 +1,6 @@
 import { Graphics, Sprite, Texture } from 'pixi.js';
 import { floorStyle, wallStyle } from '@coloxel/render';
+import { DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
 import { paintRoom, type RoomLook } from './room-paint';
 import { ROOM_H, ROOM_W } from './room';
 
@@ -28,14 +29,14 @@ export const HALL_LOOK: RoomLook = {
 // A painted room takes a fraction of a second: keep the ones already made.
 const cache = new Map<string, Texture>();
 
-export function roomTexture(look: RoomLook): Texture {
-  const key = JSON.stringify(look);
+export function roomTexture(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): Texture {
+  const key = JSON.stringify([look, layout]);
   let tex = cache.get(key);
   if (!tex) {
     const canvas = document.createElement('canvas');
     canvas.width = ROOM_W;
     canvas.height = ROOM_H;
-    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(paintRoom(look)), ROOM_W, ROOM_H), 0, 0);
+    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(paintRoom(look, layout)), ROOM_W, ROOM_H), 0, 0);
     tex = Texture.from(canvas);
     tex.source.scaleMode = 'nearest';
     if (cache.size >= 12) cache.delete(cache.keys().next().value!);
@@ -44,6 +45,6 @@ export function roomTexture(look: RoomLook): Texture {
   return tex;
 }
 
-export function roomSprite(look: RoomLook): Sprite {
-  return new Sprite(roomTexture(look));
+export function roomSprite(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): Sprite {
+  return new Sprite(roomTexture(look, layout));
 }
