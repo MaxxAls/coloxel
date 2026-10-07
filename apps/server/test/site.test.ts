@@ -121,7 +121,7 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       await staffMember('site_team_lead');
       const home = (await page('/site')).body;
       expect(home).toMatch(/joueurs/);
-      expect(home).toMatch(/<strong>5<\/strong>en ligne/);
+      expect(home).toMatch(/<strong>5<\/strong><span>en ligne/);
       expect((await page('/site/equipe')).body).toContain('site_team_lead');
       expect((await page('/site/statut')).body).toContain('Le jeu est ouvert');
       expect((await page('/site/classement')).statusCode).toBe(200);
@@ -184,10 +184,53 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       expect(body.indexOf('site_rank_b')).toBeLessThan(body.indexOf('site_rank_a'));
       expect(body).toContain('2 objets');
       // Visited, but closed: not in the apartments ranking (b appears only among the inventors).
-      const visited = body.slice(body.indexOf('Les apparts les plus visités'));
+      const visited = body.slice(body.indexOf('Apparts les plus visités'));
       expect(visited).toContain('site_rank_a');
       expect(visited).not.toContain('site_rank_b');
       expect(visited).toContain('2 visiteurs');
+    });
+  });
+
+  describe('sign in and sign up pages', () => {
+    it('serves the sign-in and sign-up pages to visitors, and sends players who are already in to the game', async () => {
+      const login = await page('/site/connexion');
+      expect(login.statusCode).toBe(200);
+      expect(login.body).toContain('data-login');
+      expect(login.body).toContain('autocomplete="current-password"');
+      const register = await page('/site/inscription');
+      expect(register.statusCode).toBe(200);
+      expect(register.body).toContain('data-register');
+      expect(register.body).toContain('18 ans');
+      // A player who is signed in has nothing to do there: off to the game.
+      const player = await signUp('site_inside');
+      for (const path of ['/site/connexion', '/site/inscription']) {
+        const res = await app.inject({ method: 'GET', url: path, cookies: as(player) });
+        expect(res.statusCode, path).toBe(302);
+        expect(res.headers.location).toMatch(/^http/);
+      }
+    });
+
+    it('shows a visitor the sign-up call and a player their own summary, never anybody else’s', async () => {
+      const visitor = (await page('/site')).body;
+      expect(visitor).toContain('/site/inscription');
+      expect(visitor).toContain('data-login');
+      expect(visitor).not.toContain('data-logout');
+      const player = await signUp('site_member');
+      const mine = (await app.inject({ method: 'GET', url: '/site', cookies: as(player) })).body;
+      expect(mine).toContain('site_member');
+      expect(mine).toContain('data-logout');
+      expect(mine).not.toContain('data-login');
+      expect(mine).not.toMatch(/@test\.dev/);
+    });
+
+    it('serves the scripts of the pages, and only those', async () => {
+      for (const name of ['site.js', 'city.js']) {
+        const res = await page(`/site/assets/${name}`);
+        expect(res.statusCode, name).toBe(200);
+        expect(res.headers['content-type']).toMatch(/javascript/);
+      }
+      expect((await page('/site/assets/..%2Fsettings.ts')).statusCode).toBe(404);
+      expect((await page('/site/assets/secret.js')).statusCode).toBe(404);
     });
   });
 

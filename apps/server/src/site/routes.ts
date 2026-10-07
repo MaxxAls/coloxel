@@ -1,26 +1,24 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { renderSprite, type Recipe } from '@coloxel/render';
+import type { Presence } from '../building/routes';
 import { itemMaskedSql } from '../moderation/masking';
 import { filterText } from '../moderation/text-filter';
-import type { Presence } from '../building/routes';
 import { spriteToPng } from '../sprite-png';
 import { findAnnouncement, listAnnouncements, type Announcement } from './announcements';
 import { isMaintenance } from './settings';
+import { esc, icon, logo, page, type PageOptions } from './theme';
 
-// The public website of the game: news, rankings, profiles, the team, the state of the game.
-// Everything here is readable by anybody, signed in or not, so it only ever shows what a player
-// already shows to the whole building: a nickname, the creations (name and number), the name of
-// an apartment that is open. Never an email, a birth date, who is where, what was said, a description
-// typed by a player (it could hold anything), nor anything the staff or the reports have masked.
-
-const esc = (text: unknown) =>
-  String(text ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+// The public website of the game: a landing page that makes people want to play, news, rankings,
+// profiles, the team, the state of the game, and the sign-in and sign-up pages (the game itself
+// sends visitors here to get an account).
+//
+// Everything readable without signing in only shows what a player already shows to the whole
+// building: a nickname, the creations (name and number), the name of an apartment that is open.
+// Never an email, a birth date, who is where, what was said, a description typed by a player
+// (it could hold anything), nor anything the staff or the reports have masked.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const frDate = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' });
@@ -30,63 +28,10 @@ const paragraphs = (text: string) =>
     .split(/\n{2,}/)
     .map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`)
     .join('');
+const excerpt = (text: string, n = 150) => (text.length > n ? `${text.slice(0, n).trimEnd()}…` : text);
 
-const STYLE = `
-:root{--bg:#17132a;--card:#231d3f;--line:#3b3366;--text:#f1ecff;--muted:#a79fcb;--accent:#ffc857}
-*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(ellipse at 20% 0%,#2c1f5c 0%,transparent 55%),var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
-a{color:var(--accent)}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:14px 24px;background:#1b1530;border-bottom:2px solid var(--line)}
-header .logo{font-family:'Press Start 2P',ui-monospace,monospace;font-size:16px;color:var(--accent);text-decoration:none}
-nav{display:flex;flex-wrap:wrap;gap:4px 16px;flex:1}
-nav a{color:var(--muted);text-decoration:none;padding:4px 2px}
-nav a.on,nav a:hover{color:var(--text);border-bottom:2px solid var(--accent)}
-.play{background:var(--accent);color:#2a2140;font-weight:700;padding:8px 18px;border-radius:8px;text-decoration:none}
-main{max-width:960px;margin:0 auto;padding:24px 16px 48px}
-h1{font-size:28px;margin:0 0 8px;color:var(--accent)}
-h2{font-size:20px;margin:28px 0 10px}
-.lead{color:var(--muted);margin:0 0 20px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
-.stat strong{display:block;font-size:28px;color:var(--accent)}
-.news article{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:12px}
-.news h3{margin:0 0 4px}
-.muted{color:var(--muted)}.small{font-size:14px}
-.pin{background:var(--accent);color:#2a2140;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:6px}
-.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;list-style:none;padding:0}
-.items li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;text-align:center}
-.items img{width:96px;height:112px;object-fit:contain;image-rendering:auto;background:#120f22;border-radius:8px}
-table{width:100%;border-collapse:collapse}
-td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
-.rank{width:40px;color:var(--muted)}
-footer{border-top:1px solid var(--line);padding:18px 24px;color:var(--muted);text-align:center;font-size:14px}
-.ok{color:#6be07a}.bad{color:#ff8a80}
-`;
-
-interface Layout {
-  title: string;
-  active?: string;
-  body: string;
-  clientUrl: string;
-}
-
-const NAV: [string, string, string][] = [
-  ['home', '/site', 'Accueil'],
-  ['news', '/site/actualites', 'Actualités'],
-  ['ranking', '/site/classement', 'Classement'],
-  ['team', '/site/equipe', 'L’équipe'],
-  ['status', '/site/statut', 'État du jeu'],
-];
-
-function layout({ title, active, body, clientUrl }: Layout): string {
-  const links = NAV.map(([key, href, label]) => `<a href="${href}"${key === active ? ' class="on"' : ''}>${label}</a>`).join('');
-  return `<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} · Coloxel</title><style>${STYLE}</style></head>
-<body><header><a class="logo" href="/site">COLOXEL</a><nav aria-label="Navigation">${links}</nav><a class="play" href="${esc(clientUrl)}">Jouer</a></header>
-<main>${body}</main>
-<footer>Coloxel : un jeu où chaque objet est inventé par un joueur et n’existe qu’en un seul exemplaire.</footer></body></html>`;
-}
+const asset = (name: string) => readFileSync(fileURLToPath(new URL(`./assets/${name}`, import.meta.url)), 'utf8');
+const ASSETS: Record<string, string> = { 'city.js': asset('city.js'), 'site.js': asset('site.js') };
 
 interface PublicItem {
   id: string;
@@ -107,84 +52,215 @@ async function publicItems(pool: pg.Pool, where: string, params: unknown[], limi
   return rows.filter((r) => filterText(r.name).ok).slice(0, limit);
 }
 
-const itemList = (items: PublicItem[]) =>
-  items.length
-    ? `<ul class="items">${items
-        .map(
-          (i) =>
-            `<li><img src="/site/objet/${esc(i.id)}.png" alt="" width="96" height="112" loading="lazy"><div><strong>${esc(i.name)}</strong></div><div class="muted small">n° ${String(i.serial).padStart(4, '0')} · <a href="/site/joueur/${encodeURIComponent(i.creator)}">${esc(i.creator)}</a></div></li>`,
-        )
-        .join('')}</ul>`
-    : '<p class="muted">Rien à montrer pour l’instant.</p>';
+const serialLabel = (n: number) => String(n).padStart(4, '0');
+const playerLink = (nick: string) => `/site/joueur/${encodeURIComponent(nick)}`;
 
-const newsBlock = (list: Announcement[]) =>
+const pieces = (items: PublicItem[]) =>
+  items
+    .map(
+      (i) =>
+        `<a class="piece" href="${playerLink(i.creator)}"><div class="pic"><img src="/site/objet/${esc(i.id)}.png" alt="" width="132" height="154" loading="lazy"></div><span class="serial">n° ${serialLabel(i.serial)}</span><b>${esc(i.name)}</b><small>par ${esc(i.creator)}</small></a>`,
+    )
+    .join('');
+
+const grid = (items: PublicItem[]) =>
+  items.length ? `<div class="strip-row" style="flex-wrap:wrap;overflow:visible">${pieces(items)}</div>` : '<p class="muted">Rien à montrer pour l’instant.</p>';
+
+const posts = (list: Announcement[]) =>
   list
     .map(
       (a) =>
-        `<article><h3><a href="/site/actualites/${a.id}">${esc(a.title)}</a>${a.pinned ? '<span class="pin">épinglé</span>' : ''}</h3><div class="muted small">${frDate(a.createdAt)}</div>${paragraphs(a.body.slice(0, 280) + (a.body.length > 280 ? '…' : ''))}</article>`,
+        `<a class="post" href="/site/actualites/${a.id}"><span class="chip${a.pinned ? ' gold' : ''}">${a.pinned ? 'À la une · ' : ''}${esc(frDate(a.createdAt))}</span><h3>${esc(a.title)}</h3><p>${esc(excerpt(a.body))}</p></a>`,
     )
     .join('');
 
 export interface SiteDeps {
   occupancy?: () => Promise<Presence>;
-  /** Where the game itself is served (the "Jouer" button). */
+  /** Where the game itself is served: the "Jouer" buttons and the place sign-in leads to. */
   clientUrl?: string;
 }
 
 export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: SiteDeps = {}) {
-  const clientUrl = deps.clientUrl ?? process.env.CLIENT_URL ?? 'http://localhost:5173';
-  const html = (reply: FastifyReply, code: number, page: Layout) =>
-    reply.code(code).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'public, max-age=30').send(layout(page));
-  const notFound = (reply: FastifyReply) =>
-    html(reply, 404, { title: 'Page introuvable', clientUrl, body: '<h1>Page introuvable</h1><p class="lead">Cette page n’existe pas (ou plus). <a href="/site">Retour à l’accueil</a>.</p>' });
+  const gameUrl = deps.clientUrl ?? process.env.CLIENT_URL ?? 'http://localhost:5173';
 
-  app.get('/site', async (_req, reply) => {
+  const html = (req: FastifyRequest, reply: FastifyReply, code: number, options: Omit<PageOptions, 'gameUrl' | 'user'>) =>
+    reply
+      .code(code)
+      .header('content-type', 'text/html; charset=utf-8')
+      // Pages change with who is looking: never shared between visitors.
+      .header('cache-control', 'private, no-cache')
+      .send(page({ ...options, gameUrl, user: req.user ? { nickname: req.user.nickname } : null }));
+
+  const notFound = (req: FastifyRequest, reply: FastifyReply) =>
+    html(req, reply, 404, {
+      title: 'Page introuvable',
+      body: '<main class="wrap page"><h1 class="px">Page introuvable</h1><p class="lead">Cette page n’existe pas (ou plus).</p><a class="btn gold" href="/site">Retour à l’accueil</a></main>',
+    });
+
+  // ----- Scripts of the pages ---------------------------------------------------
+  app.get<{ Params: { name: string } }>('/site/assets/:name', async (req, reply) => {
+    const body = ASSETS[req.params.name];
+    if (!body) return reply.code(404).send('Introuvable');
+    return reply.header('content-type', 'text/javascript; charset=utf-8').header('cache-control', 'public, max-age=300').send(body);
+  });
+
+  // ----- Home ---------------------------------------------------------------------
+  app.get('/site', async (req, reply) => {
     const [players, serial, news, items, present, maintenance] = await Promise.all([
       pool.query<{ n: string }>('SELECT count(*) AS n FROM users'),
       pool.query<{ last_value: number }>('SELECT last_value FROM item_serial WHERE id = 1'),
       listAnnouncements(pool, { limit: 3 }),
-      publicItems(pool, '', [], 8),
+      publicItems(pool, '', [], 12),
       deps.occupancy ? deps.occupancy().catch(() => null) : Promise.resolve(null),
       isMaintenance(pool),
     ]);
     const online = present ? present.hall + [...present.apartments.values()].reduce((a, b) => a + b, 0) : 0;
+
+    // The card beside the headline: a sign-in form for a visitor, a small summary for a player.
+    let card: string;
+    if (req.user) {
+      const [me, mine, friends] = await Promise.all([
+        pool.query<{ pixels: number }>('SELECT pixels FROM users WHERE id = $1', [req.user.id]),
+        pool.query<{ n: string }>('SELECT count(*) AS n FROM items WHERE creator_id = $1', [req.user.id]),
+        pool.query<{ n: string }>(`SELECT count(*) AS n FROM friendships WHERE status = 'accepted' AND (requester_id = $1 OR addressee_id = $1)`, [req.user.id]),
+      ]);
+      card = `<div class="panel"><h2 class="px">Ton appart t’attend</h2>
+<div class="me-line"><span>Pseudo</span><strong>${esc(req.user.nickname)}</strong></div>
+<div class="me-line"><span>${icon('gem', 14)} Pixels</span><strong>${me.rows[0]?.pixels ?? 0}</strong></div>
+<div class="me-line"><span>${icon('wand', 14)} Objets inventés</span><strong>${Number(mine.rows[0]!.n)}</strong></div>
+<div class="me-line"><span>${icon('friends', 14)} Amis</span><strong>${Number(friends.rows[0]!.n)}</strong></div>
+<p style="margin:16px 0 0"><a class="btn gold big" style="width:100%" href="${esc(gameUrl)}">${icon('play', 18)} Jouer</a></p></div>`;
+    } else {
+      card = `<div class="panel"><h2 class="px">Déjà un compte ?</h2>
+<form class="form" data-login novalidate>
+<label class="field">Email<input name="email" type="email" autocomplete="email" required placeholder="toi@exemple.fr"></label>
+<label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="current-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
+<p class="form-error" role="alert"></p>
+<button class="btn gold" type="submit">Entrer dans l’immeuble</button>
+<p class="hint">Pas encore de compte ? <a href="/site/inscription">Crée le tien, c’est gratuit</a>.</p>
+</form></div>`;
+    }
+
+    const cta = req.user
+      ? `<a class="btn gold big" href="${esc(gameUrl)}">${icon('play', 18)} Jouer maintenant</a><a class="btn ghost big" href="/site/actualites">Les nouveautés</a>`
+      : `<a class="btn gold big" href="/site/inscription">${icon('star', 18)} Créer mon compte</a><a class="btn ghost big" href="/site/connexion">J’ai déjà un compte</a>`;
+
     const body = `
-<h1>Coloxel</h1>
-<p class="lead">Décris un objet, une IA en dessine la recette, le moteur du jeu le dessine, et il naît en exemplaire unique et numéroté. Chaque objet est inventé par un joueur.</p>
-${maintenance ? '<p class="card bad">Le jeu est en maintenance pour le moment.</p>' : ''}
-<div class="cards">
-  <div class="card stat"><strong>${Number(players.rows[0]!.n)}</strong>joueurs</div>
-  <div class="card stat"><strong>${serial.rows[0]?.last_value ?? 0}</strong>objets uniques créés</div>
-  <div class="card stat"><strong>${online}</strong>en ligne maintenant</div>
+<section class="hero"><canvas id="city" aria-hidden="true"></canvas>
+<div class="wrap hero-in"><div>
+<span class="eyebrow">${icon('star', 14)} Un jeu social en pixel art</span>
+<h1 class="px">Invente un objet.<br><em>Il n’existera qu’une seule fois.</em></h1>
+<p class="lead">Décris-le avec des mots : une IA en dessine la recette, le jeu le dessine, et il naît en exemplaire unique et numéroté. Décore ton appart, rends visite à tes voisins, montre ce que tu as inventé.</p>
+<div class="cta">${cta}</div>
+<p class="stamp">Gratuit · Réservé aux adultes pendant l’alpha · Chat filtré et équipe de modération</p>
+</div>${card}</div></section>
+
+<div class="wrap stats"><div class="stats-in">
+<div class="stat"><strong>${Number(players.rows[0]!.n)}</strong><span>joueurs</span></div>
+<div class="stat"><strong>${serial.rows[0]?.last_value ?? 0}</strong><span>objets uniques</span></div>
+<div class="stat"><strong>${online}</strong><span>en ligne</span></div>
+<div class="stat"><strong class="live${maintenance ? ' off' : ''}"><i></i></strong><span>${maintenance ? 'En maintenance' : 'Le jeu est ouvert'}</span></div>
+</div></div>
+
+<div class="wrap">
+<section class="block reveal"><div class="head"><div><h2 class="px">Un immeuble à habiter</h2><p>Chaque joueur a son appart dans un immeuble commun. Ce que tu y poses, c’est toi qui l’as inventé.</p></div></div>
+<div class="tiles">
+<div class="tile" style="--c:var(--pink)"><div class="ico">${icon('wand', 26)}</div><h3>Invente</h3><p>Écris « une lampe en forme de lune » : l’objet apparaît, unique, avec son numéro et ton nom dessus.</p></div>
+<div class="tile" style="--c:var(--gold)"><div class="ico">${icon('home', 26)}</div><h3>Décore</h3><p>Meubles gratuits, sols, papiers peints, lumières à allumer : fais de ton appart un endroit à toi.</p></div>
+<div class="tile" style="--c:var(--teal)"><div class="ico">${icon('friends', 26)}</div><h3>Rencontre</h3><p>Visite les voisins, discute, sonne aux portes, ajoute des amis et retrouve-les en un clic.</p></div>
+<div class="tile" style="--c:var(--blue)"><div class="ico">${icon('shield', 26)}</div><h3>Joue sereinement</h3><p>Messages filtrés, signalements, une équipe qui veille : l’immeuble reste agréable pour tous.</p></div>
+</div></section>
+
+<section class="block reveal"><div class="head"><div><h2 class="px">Comment ça marche</h2></div></div>
+<ol class="steps">
+<li><b>Tu décris</b><span>Quelques mots suffisent : « un fauteuil en forme de champignon ».</span></li>
+<li><b>Le jeu dessine</b><span>Une IA écrit la recette, notre moteur la transforme en pixels.</span></li>
+<li><b>Il naît unique</b><span>Un numéro, un créateur, une date : personne d’autre n’aura le même.</span></li>
+<li><b>Tu le montres</b><span>Pose-le chez toi, fais visiter, et regarde ce que les autres inventent.</span></li>
+</ol></section>
+
+<section class="block reveal" data-strip><div class="head"><div><h2 class="px">Ils viennent de naître</h2><p>Les dernières créations des joueurs, chacune en un seul exemplaire.</p></div>
+<div class="arrows"><button class="btn small" type="button" data-scroll="-1" aria-label="Précédent">‹</button><button class="btn small" type="button" data-scroll="1" aria-label="Suivant">›</button></div></div>
+${items.length ? `<div class="strip-row">${pieces(items)}</div>` : '<p class="muted">Le premier objet attend son inventeur. Ce sera peut-être le tien !</p>'}
+</section>
+
+<section class="block reveal"><div class="head"><div><h2 class="px">Les nouvelles</h2></div><a class="btn ghost small" href="/site/actualites">Tout voir</a></div>
+${news.length ? `<div class="news">${posts(news)}</div>` : '<p class="muted">Pas encore d’actualité.</p>'}</section>
 </div>
-<h2>Actualités</h2>
-<div class="news">${news.length ? newsBlock(news) : '<p class="muted">Pas encore d’actualité.</p>'}</div>
-<p><a href="/site/actualites">Toutes les actualités</a></p>
-<h2>Dernières créations</h2>
-${itemList(items)}`;
-    return html(reply, 200, { title: 'Accueil', active: 'home', clientUrl, body });
+
+${
+  req.user
+    ? ''
+    : `<section class="band reveal"><div class="wrap"><h2 class="px">Ton appart est prêt à être meublé</h2><p>Crée ton compte en une minute : tu arrives dans un appart déjà installé, avec des Pixels pour commencer.</p><a class="btn gold big" href="/site/inscription">${icon('play', 18)} Commencer à jouer</a></div></section>`
+}`;
+    return html(req, reply, 200, { title: 'Accueil', active: 'home', body, city: true });
   });
 
+  // ----- Sign in and sign up (the game sends people here) -----------------------------
+  app.get('/site/connexion', async (req, reply) => {
+    if (req.user) return reply.redirect(gameUrl);
+    const body = `<main class="auth-page"><canvas id="city" aria-hidden="true"></canvas>
+<div class="panel auth-card">${logo()}<h1 class="px">Content de te revoir</h1><p class="sub">Entre dans l’immeuble.</p>
+<form class="form" data-login novalidate>
+<label class="field">Email<input name="email" type="email" autocomplete="email" required placeholder="toi@exemple.fr"></label>
+<label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="current-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
+<p class="form-error" role="alert"></p>
+<button class="btn gold big" type="submit">Se connecter</button>
+</form>
+<p class="switch">Pas encore de compte ? <a href="/site/inscription">Crée le tien</a> · <a href="/site">Retour au site</a></p></div></main>`;
+    return html(req, reply, 200, { title: 'Connexion', body, bare: true, city: true });
+  });
+
+  app.get('/site/inscription', async (req, reply) => {
+    if (req.user) return reply.redirect(gameUrl);
+    const body = `<main class="auth-page"><canvas id="city" aria-hidden="true"></canvas>
+<div class="panel auth-card">${logo()}<h1 class="px">Bienvenue dans l’immeuble</h1><p class="sub">Trois petites étapes, et ton appart est à toi.</p>
+<form class="form" data-register novalidate>
+<ol class="dots" aria-hidden="true"><li></li><li></li><li></li></ol>
+<div class="step form">
+<label class="field">Choisis ton pseudo<input name="nickname" autocomplete="username" maxlength="20" placeholder="Capitaine_Pixel" required></label>
+<p class="hint">3 à 20 caractères : lettres, chiffres, _ et -. C’est le nom que verront les autres joueurs : n’y mets rien de personnel.</p>
+<div class="row"><button class="btn gold" type="button" data-next>Continuer</button></div></div>
+<div class="step form" hidden>
+<label class="field">Ton email<input name="email" type="email" autocomplete="email" placeholder="toi@exemple.fr" required></label>
+<label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="new-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
+<label class="field">Encore une fois<input name="password2" type="password" autocomplete="new-password" required></label>
+<p class="hint">8 caractères au moins. L’email ne sera jamais montré aux autres joueurs.</p>
+<div class="row"><button class="btn ghost" type="button" data-back>Retour</button><button class="btn gold" type="button" data-next>Continuer</button></div></div>
+<div class="step form" hidden>
+<label class="field">Ta date de naissance<input name="birth" type="date" autocomplete="bday" required></label>
+<p class="hint">Coloxel est réservé aux adultes (18 ans et plus) pendant l’alpha. Ta date de naissance n’est jamais affichée.</p>
+<label class="check"><input type="checkbox" name="rules"><span>Je respecte les autres joueurs, je ne partage aucune information personnelle et j’accepte que l’équipe modère le jeu.</span></label>
+<div class="row"><button class="btn ghost" type="button" data-back>Retour</button><button class="btn gold" type="submit">Créer mon compte</button></div></div>
+<p class="form-error" role="alert"></p>
+</form>
+<p class="switch">Déjà un compte ? <a href="/site/connexion">Connecte-toi</a> · <a href="/site">Retour au site</a></p></div></main>`;
+    return html(req, reply, 200, { title: 'Inscription', body, bare: true, city: true });
+  });
+
+  // ----- News -----------------------------------------------------------------------
   app.get<{ Querystring: { avant?: string } }>('/site/actualites', async (req, reply) => {
     const before = req.query.avant && /^\d{1,15}$/.test(req.query.avant) ? Number(req.query.avant) : undefined;
-    const list = await listAnnouncements(pool, { limit: 11, before });
-    const more = list.length > 10;
-    const shown = list.slice(0, 10);
-    const body = `<h1>Actualités</h1><div class="news">${shown.length ? newsBlock(shown) : '<p class="muted">Rien ici.</p>'}</div>${
-      more ? `<p><a href="/site/actualites?avant=${shown[shown.length - 1]!.id}">Plus anciennes</a></p>` : ''
-    }`;
-    return html(reply, 200, { title: 'Actualités', active: 'news', clientUrl, body });
+    const list = await listAnnouncements(pool, { limit: 13, before });
+    const more = list.length > 12;
+    const shown = list.slice(0, 12);
+    const body = `<main class="wrap page"><h1 class="px">Actualités</h1><p class="lead">Les nouveautés du jeu, racontées par l’équipe.</p>
+${shown.length ? `<div class="news">${posts(shown)}</div>` : '<p class="muted">Rien ici pour l’instant.</p>'}
+${more ? `<p style="margin-top:22px"><a class="btn ghost" href="/site/actualites?avant=${shown[shown.length - 1]!.id}">Plus anciennes</a></p>` : ''}</main>`;
+    return html(req, reply, 200, { title: 'Actualités', active: 'news', body });
   });
 
   app.get<{ Params: { id: string } }>('/site/actualites/:id', async (req, reply) => {
-    if (!/^\d{1,15}$/.test(req.params.id)) return notFound(reply);
+    if (!/^\d{1,15}$/.test(req.params.id)) return notFound(req, reply);
     const a = await findAnnouncement(pool, Number(req.params.id));
-    if (!a) return notFound(reply);
-    const body = `<h1>${esc(a.title)}</h1><p class="lead">${frDate(a.createdAt)} · par ${esc(a.author)}</p>${paragraphs(a.body)}<p><a href="/site/actualites">← Actualités</a></p>`;
-    return html(reply, 200, { title: a.title, active: 'news', clientUrl, body });
+    if (!a) return notFound(req, reply);
+    const body = `<main class="wrap page"><article class="article"><span class="chip${a.pinned ? ' gold' : ''}">${esc(frDate(a.createdAt))} · par ${esc(a.author)}</span>
+<h1 class="px">${esc(a.title)}</h1>${paragraphs(a.body)}<p style="margin-top:26px"><a class="btn ghost" href="/site/actualites">← Toutes les actualités</a></p></article></main>`;
+    return html(req, reply, 200, { title: a.title, active: 'news', body, description: excerpt(a.body, 160) });
   });
 
-  app.get('/site/classement', async (_req, reply) => {
+  // ----- Rankings ----------------------------------------------------------------------
+  app.get('/site/classement', async (req, reply) => {
     const [creators, visited] = await Promise.all([
       pool.query<{ nickname: string; n: string }>(
         `SELECT u.nickname, count(*) AS n FROM items it JOIN users u ON u.id = it.creator_id
@@ -199,31 +275,33 @@ ${itemList(items)}`;
           WHERE q.event = 'visit' GROUP BY u.id, u.nickname, a.name ORDER BY count(*) DESC, lower(u.nickname) LIMIT 10`,
       ),
     ]);
-    const rows = <T,>(list: T[], line: (r: T, k: number) => string) =>
-      list.length ? `<table>${list.map((r, k) => `<tr><td class="rank">${k + 1}</td>${line(r, k)}</tr>`).join('')}</table>` : '<p class="muted">Pas encore de classement.</p>';
-    const link = (nick: string) => `<a href="/site/joueur/${encodeURIComponent(nick)}">${esc(nick)}</a>`;
-    const body = `<h1>Classement</h1>
-<h2>Les inventeurs</h2>${rows(creators.rows, (r) => `<td>${link(r.nickname)}</td><td>${Number(r.n)} objets</td>`)}
-<h2>Les apparts les plus visités</h2>${rows(visited.rows, (r) => `<td>${esc(r.name ?? `Chez ${r.nickname}`)}</td><td>${link(r.nickname)}</td><td>${Number(r.n)} visiteurs</td>`)}`;
-    return html(reply, 200, { title: 'Classement', active: 'ranking', clientUrl, body });
+    const rows = <T,>(list: T[], line: (r: T) => string) =>
+      list.length ? `<table class="rank">${list.map((r, k) => `<tr><td>${k + 1}</td>${line(r)}</tr>`).join('')}</table>` : '<p class="muted">Pas encore de classement.</p>';
+    const link = (nick: string) => `<a href="${playerLink(nick)}">${esc(nick)}</a>`;
+    const flatName = (name: string | null, nick: string) => esc(name && filterText(name).ok ? name : `Chez ${nick}`);
+    const body = `<main class="wrap page"><h1 class="px">Classement</h1><p class="lead">Ceux qui inventent le plus, et les apparts où l’on se presse.</p>
+<div class="two"><section><h2 class="px" style="font-size:13px">${icon('wand', 16)} Les inventeurs</h2>${rows(creators.rows, (r) => `<td><b>${link(r.nickname)}</b></td><td>${Number(r.n)} objets</td>`)}</section>
+<section><h2 class="px" style="font-size:13px">${icon('home', 16)} Apparts les plus visités</h2>${rows(visited.rows, (r) => `<td><b>${flatName(r.name, r.nickname)}</b><br><small class="muted">de ${link(r.nickname)}</small></td><td>${Number(r.n)} visiteurs</td>`)}</section></div></main>`;
+    return html(req, reply, 200, { title: 'Classement', active: 'ranking', body });
   });
 
-  app.get('/site/equipe', async (_req, reply) => {
+  // ----- Team and state of the game ----------------------------------------------------
+  app.get('/site/equipe', async (req, reply) => {
     const { rows } = await pool.query<{ nickname: string }>("SELECT nickname FROM users WHERE role = 'staff' ORDER BY lower(nickname)");
-    const body = `<h1>L’équipe</h1><p class="lead">Elle veille sur le jeu, répond aux signalements et garde l’immeuble agréable pour tous.</p>${
-      rows.length ? `<ul>${rows.map((r) => `<li>${esc(r.nickname)}</li>`).join('')}</ul>` : '<p class="muted">Personne pour l’instant.</p>'
-    }`;
-    return html(reply, 200, { title: 'L’équipe', active: 'team', clientUrl, body });
+    const body = `<main class="wrap page"><h1 class="px">L’équipe</h1><p class="lead">Elle veille sur le jeu, répond aux signalements et garde l’immeuble agréable pour tous. Un souci ? Signale-le en jeu : un membre de l’équipe le lira.</p>
+${rows.length ? `<ul class="team">${rows.map((r) => `<li>${icon('shield', 18)} ${esc(r.nickname)}</li>`).join('')}</ul>` : '<p class="muted">Personne pour l’instant.</p>'}</main>`;
+    return html(req, reply, 200, { title: 'L’équipe', active: 'team', body });
   });
 
-  app.get('/site/statut', async (_req, reply) => {
+  app.get('/site/statut', async (req, reply) => {
     const maintenance = await isMaintenance(pool);
-    const body = `<h1>État du jeu</h1><p class="card">${
-      maintenance ? '<span class="bad">En maintenance</span> : le jeu revient dans quelques instants.' : '<span class="ok">Le jeu est ouvert.</span> Bonne partie !'
-    }</p>`;
-    return html(reply, 200, { title: 'État du jeu', active: 'status', clientUrl, body });
+    const body = `<main class="wrap page"><h1 class="px">État du jeu</h1><div class="box" style="max-width:620px"><p class="live${maintenance ? ' off' : ''}" style="font-size:20px;font-weight:800;margin:0 0 6px"><i></i> ${
+      maintenance ? '<span class="bad">En maintenance</span>' : '<span class="ok">Le jeu est ouvert</span>'
+    }</p><p class="muted" style="margin:0">${maintenance ? 'Le jeu revient dans quelques instants.' : 'Tout fonctionne. Bonne partie !'}</p></div></main>`;
+    return html(req, reply, 200, { title: 'État du jeu', active: 'status', body });
   });
 
+  // ----- Profiles and sprites ----------------------------------------------------------
   app.get<{ Params: { nickname: string } }>('/site/joueur/:nickname', async (req, reply) => {
     const { rows } = await pool.query<{ id: string; nickname: string; role: string; created_at: Date; access: string; name: string | null }>(
       `SELECT u.id, u.nickname, u.role, u.created_at, u.apartment_access AS access, a.name
@@ -231,16 +309,16 @@ ${itemList(items)}`;
       [req.params.nickname],
     );
     const p = rows[0];
-    if (!p) return notFound(reply);
+    if (!p) return notFound(req, reply);
     const [items, count] = await Promise.all([
       publicItems(pool, 'AND it.creator_id = $1', [p.id], 24),
       pool.query<{ n: string }>(`SELECT count(*) AS n FROM items it WHERE it.creator_id = $1 AND NOT ${itemMaskedSql('it')}`, [p.id]),
     ]);
     const flat = p.access === 'building' ? `ouvert à tous${p.name && filterText(p.name).ok ? ` : « ${esc(p.name)} »` : ''}` : 'sur invitation';
-    const body = `<h1>${esc(p.nickname)}${p.role === 'staff' ? '<span class="pin">équipe</span>' : ''}</h1>
+    const body = `<main class="wrap page"><h1 class="px">${esc(p.nickname)}${p.role === 'staff' ? '<span class="badge">équipe</span>' : ''}</h1>
 <p class="lead">Membre depuis ${esc(frMonth(p.created_at))} · ${Number(count.rows[0]!.n)} objet(s) inventé(s) · appartement ${flat}</p>
-<h2>Ses créations</h2>${itemList(items)}`;
-    return html(reply, 200, { title: p.nickname, clientUrl, body });
+<div class="head"><div><h2 class="px" style="font-size:14px">Ses créations</h2></div></div>${grid(items)}</main>`;
+    return html(req, reply, 200, { title: p.nickname, body });
   });
 
   // Sprites of the creations shown above, and only of those: the same rule as the lists.
