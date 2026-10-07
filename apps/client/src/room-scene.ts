@@ -677,10 +677,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       } else {
         view.body.anchor.set(0.5, 1);
         // Seated, the avatar sits a little forward of the middle of the seat.
-        view.body.position.set(pose === 'sit' ? 3 * BODY_SCALE : 0, (pose === 'sit' ? 9 : 10) * BODY_SCALE - Math.round(bob) - (pose === 'stand' ? breath * BODY_SCALE : 0));
+        view.body.position.set(pose === 'sit' ? 3 * BODY_SCALE : 0, (pose === 'sit' ? 4 : 10) * BODY_SCALE - Math.round(bob) - (pose === 'stand' ? breath * BODY_SCALE : 0));
       }
       view.shadow.visible = pose === 'stand';
-      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -67 : -54 - Math.round(bob));
+      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -71 : -64 - Math.round(bob));
       view.zzz.forEach((zed, k) => {
         zed.visible = pose === 'lie' && !reduceMotion;
         if (!zed.visible) return;

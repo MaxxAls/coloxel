@@ -147,7 +147,7 @@ function drawRoom(scene: Canvas, plan: RoomPlan): void {
       draw: () => {
         if (!p.sit) shadow(scene, plan.x + c.x, plan.y + c.y + 1, 15, 7);
         const dx = plan.x + c.x - (w * BODY_SCALE) / 2 + (p.sit ? 3 * BODY_SCALE : 0);
-        const dy = plan.y + c.y + (p.sit ? 9 : 10) * BODY_SCALE - h * BODY_SCALE;
+        const dy = plan.y + c.y + (p.sit ? 4 : 10) * BODY_SCALE - h * BODY_SCALE;
         over(scene, pixels, w, h, dx, dy, BODY_SCALE);
       },
     });
