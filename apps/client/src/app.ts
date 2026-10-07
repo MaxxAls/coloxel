@@ -14,10 +14,11 @@ import { createHud } from './wallet';
 import { createWardrobe } from './wardrobe';
 import { windowBar } from './window';
 import { createRoomScene } from './room-scene';
-import { sameTarget, type Scene, type SceneHost, type Target } from './scene';
+import { sameTarget, type Scene, type SceneHost, type Target, type WindowKey } from './scene';
 
-const PANEL_WIDTH = 340;
-const BAR_SPACE = 100;
+/** Room left for the bottom bar, and for the cards at the top, when the scene is fitted to the window. */
+const DOCK_SPACE = 96;
+const TOP_SPACE = 12;
 
 /** Fade a freshly built scene in so room changes do not pop. */
 function fadeIn(stage: Container, app: Application) {
@@ -31,7 +32,14 @@ function fadeIn(stage: Container, app: Application) {
   app.ticker.add(step);
 }
 
-/** The game shell: one canvas, a side panel, the permanent bottom bar, and the scene being shown. */
+const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+/** The game shell: one canvas filling the window, a card at the top left, the windows, and one bar at the bottom for everything else. */
 export async function startApp(user: User) {
   const app = new Application();
   // The canvas is the whole window; the page's gradient shows through behind the scene.
@@ -48,59 +56,36 @@ export async function startApp(user: User) {
   app.stage.addChild(stage);
   // Handy for end-to-end scripts that click on scene coordinates (development only).
   if (import.meta.env.DEV) (window as unknown as { __stage: Container }).__stage = stage;
-  const vignette = document.createElement('div');
-  vignette.className = 'vignette';
-  const panelHost = document.createElement('div');
-  panelHost.className = 'window panel-host';
-  const panelBody = document.createElement('div');
-  panelBody.className = 'win-body';
-  const panelToggle = document.createElement('button');
-  panelToggle.type = 'button';
-  panelToggle.className = 'panel-toggle';
-  const toast = document.createElement('div');
-  toast.className = 'toast';
+  const vignette = make('div', 'vignette');
+  const toast = make('div', 'toast');
   toast.setAttribute('role', 'status');
   toast.hidden = true;
-  const nav = document.createElement('nav');
-  nav.className = 'navbar';
-  nav.setAttribute('aria-label', 'Navigation');
+  const infoSlot = make('div', 'info-slot');
   const hud = createHud({ notify: (text) => notify(text) });
-  document.body.append(app.canvas, vignette, hud, panelHost, panelToggle, nav, toast);
+
+  // The bottom bar: where to go, what to say, and the small things (history, account).
+  const dock = make('div', 'dock');
+  const nav = make('nav', 'dock-nav');
+  nav.setAttribute('aria-label', 'Navigation');
+  const chatSlot = make('div', 'dock-chat');
+  const dockEnd = make('div', 'dock-end');
+  dock.append(nav, chatSlot, dockEnd);
+  document.body.append(app.canvas, vignette, hud, infoSlot, dock, toast);
 
   let scene: Scene | null = null;
   let current: Target | null = null;
   let switching = 0;
 
-  // The panel floats over the right of the window; on a narrow window it starts hidden.
-  let panelOpen = innerWidth >= 900;
-  panelHost.append(
-    windowBar('Mon panneau', () => {
-      panelOpen = false;
-      syncPanel();
-    }),
-    panelBody,
-  );
-  const syncPanel = () => {
-    panelHost.hidden = !panelOpen;
-    panelToggle.textContent = panelOpen ? 'Masquer le panneau' : 'Panneau';
-    panelToggle.setAttribute('aria-expanded', String(panelOpen));
-    fit();
-  };
-  panelToggle.addEventListener('click', () => {
-    panelOpen = !panelOpen;
-    syncPanel();
-  });
-
   /** Scale the scene as large as the free part of the window allows, and centre it there. */
   function fit() {
     const { w, h } = scene?.size ?? { w: 600, h: 400 };
-    const availW = innerWidth - (panelOpen ? PANEL_WIDTH + 24 : 0);
-    const availH = innerHeight - BAR_SPACE;
+    const availW = innerWidth;
+    const availH = innerHeight - DOCK_SPACE - TOP_SPACE;
     const s = Math.min(availW / w, availH / h);
     // Whole steps when there is room (crisp pixels), finer steps on a small window.
     const scale = Math.max(0.5, s >= 2 ? Math.floor(s * 2) / 2 : Math.floor(s * 4) / 4);
     stage.scale.set(scale);
-    stage.position.set(Math.round((availW - w * scale) / 2), Math.round((availH - h * scale) / 2 + 8));
+    stage.position.set(Math.round((availW - w * scale) / 2), Math.round(TOP_SPACE + (availH - h * scale) / 2));
   }
   addEventListener('resize', fit);
 
@@ -129,6 +114,10 @@ export async function startApp(user: User) {
     go: (target) => void go(target),
     notify,
     friendsChanged: () => friends.refresh(),
+    openWindow: (key) => {
+      closeWindows(key ?? undefined);
+      if (key) floating[key].open();
+    },
   };
   const home: Target = { kind: 'apartment', ownerId: user.id };
 
@@ -145,6 +134,44 @@ export async function startApp(user: User) {
   });
   document.body.append(friends.element);
 
+  // ----- Windows the scene fills: inventory, apartment settings, what was said ------------
+  function floatingWindow(title: string, className: string) {
+    const root = make('section', `window float ${className}`);
+    root.hidden = true;
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', title);
+    const body = make('div', 'win-body');
+    const close = () => {
+      if (root.hidden) return;
+      root.hidden = true;
+      markActive();
+    };
+    root.append(windowBar(title, close), body);
+    document.body.append(root);
+    return {
+      root,
+      body,
+      close,
+      open: () => {
+        root.hidden = false;
+        markActive();
+      },
+      isOpen: () => !root.hidden,
+      toggle() {
+        if (root.hidden) this.open();
+        else close();
+      },
+    };
+  }
+  const floating: Record<WindowKey, ReturnType<typeof floatingWindow>> = {
+    inventory: floatingWindow('Inventaire', 'inventory-window'),
+    apartment: floatingWindow('Mon appartement', 'apartment-window'),
+    history: floatingWindow('Ce qui s’est dit', 'history-window'),
+  };
+  addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') for (const w of Object.values(floating)) w.close();
+  });
+
   // Windows float over the scene, one at a time.
   const closeWindows = (except?: string) => {
     if (except !== 'navigator') navigator.close();
@@ -153,6 +180,7 @@ export async function startApp(user: User) {
     if (except !== 'quests') quests.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
+    for (const [key, w] of Object.entries(floating)) if (except !== key) w.close();
   };
 
   // Buying furniture or changing the apartment's look works from anywhere; the apartment on screen, if it is ours, follows.
@@ -183,7 +211,6 @@ export async function startApp(user: User) {
     /** Highlighted while this is where the player is (or what is open). */
     active: () => boolean;
     run?: () => void | Promise<void>;
-    soon?: boolean;
   }
   const items: Item[] = [
     { key: 'building', label: 'Immeuble', active: () => current?.kind === 'building', run: () => go({ kind: 'building' }) },
@@ -196,14 +223,14 @@ export async function startApp(user: User) {
     {
       key: 'inventory',
       label: 'Inventaire',
-      active: () => false,
-      // The inventory lives in the panel of the player's own apartment.
+      active: () => floating.inventory.isOpen(),
+      // The inventory belongs to the player's own apartment: from elsewhere, go home first.
       run: async () => {
-        await go(home);
-        const list = document.querySelector<HTMLElement>('.panel .inventory');
-        list?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        list?.classList.add('flash');
-        setTimeout(() => list?.classList.remove('flash'), 900);
+        const wasOpen = floating.inventory.isOpen();
+        closeWindows('inventory');
+        if (!(current && sameTarget(current, home))) await go(home);
+        if (wasOpen) floating.inventory.close();
+        else floating.inventory.open();
       },
     },
     { key: 'catalogue', label: 'Boutique', active: () => shop.isOpen(), run: () => {
@@ -228,27 +255,77 @@ export async function startApp(user: User) {
     },
   ];
   const buttons = new Map<string, HTMLButtonElement>();
-  function addButton(item: Item) {
-    const b = document.createElement('button');
+  function addButton(item: Item, into: HTMLElement = nav) {
+    const b = make('button');
     b.type = 'button';
-    const label = document.createElement('span');
-    label.textContent = item.label;
-    b.append(pixelIcon(item.key === 'staff' ? 'lock' : item.key === 'quests' ? 'star' : item.key), label);
+    b.setAttribute('aria-label', item.label);
+    b.title = item.label;
+    b.dataset.key = item.key;
+    b.append(pixelIcon(item.key === 'staff' ? 'lock' : item.key === 'quests' ? 'star' : item.key === 'history' ? 'chat' : item.key), make('span', undefined, item.label));
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
     if (item.key === 'friends') b.dataset.friendsToggle = '';
     if (item.key === 'quests') b.dataset.questsToggle = '';
     if (item.key === 'catalogue') b.dataset.shopToggle = '';
     if (item.key === 'person') b.dataset.wardrobeToggle = '';
-    if (item.soon) {
-      b.disabled = true;
-      b.title = 'Bientôt disponible';
-    } else {
-      b.addEventListener('click', () => void item.run?.());
-    }
+    b.addEventListener('click', () => void item.run?.());
     buttons.set(item.key, b);
-    nav.append(b);
+    into.append(b);
   }
   for (const item of items) addButton(item);
+
+  // The small things at the end of the bar: what was said, and the account.
+  const history: Item = {
+    key: 'history',
+    label: 'Historique',
+    active: () => floating.history.isOpen(),
+    run: () => {
+      closeWindows('history');
+      floating.history.toggle();
+    },
+  };
+  items.push(history);
+  addButton(history, dockEnd);
+
+  const account = make('div', 'account');
+  const accountButton = make('button', 'account-button', user.nickname);
+  accountButton.type = 'button';
+  accountButton.setAttribute('aria-haspopup', 'menu');
+  accountButton.setAttribute('aria-expanded', 'false');
+  const menu = make('div', 'account-menu');
+  menu.hidden = true;
+  menu.setAttribute('role', 'menu');
+  const entry = (label: string, run: () => void) => {
+    const b = make('button', undefined, label);
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.addEventListener('click', () => {
+      menu.hidden = true;
+      accountButton.setAttribute('aria-expanded', 'false');
+      run();
+    });
+    return b;
+  };
+  menu.append(
+    entry('Mon profil sur le site', () => window.open(`/site/joueur/${encodeURIComponent(user.nickname)}`, '_blank', 'noopener')),
+    entry('Le site de Coloxel', () => window.open('/site', '_blank', 'noopener')),
+    entry('Se déconnecter', async () => {
+      await api.logout();
+      location.reload();
+    }),
+  );
+  accountButton.addEventListener('click', () => {
+    menu.hidden = !menu.hidden;
+    accountButton.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  addEventListener('pointerdown', (ev) => {
+    if (!menu.hidden && !account.contains(ev.target as Node)) {
+      menu.hidden = true;
+      accountButton.setAttribute('aria-expanded', 'false');
+    }
+  });
+  account.append(accountButton, menu);
+  dockEnd.append(account);
+
   api.staffMe().then(async (res) => {
     if (!res.ok) return;
     // Only staff downloads the administration.
@@ -275,9 +352,7 @@ export async function startApp(user: User) {
     if (!b) return;
     b.querySelector('.bar-badge')?.remove();
     if (count > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'bar-badge';
-      badge.textContent = String(count);
+      const badge = make('span', 'bar-badge', String(count));
       badge.setAttribute('aria-label', `${count} en attente`);
       b.append(badge);
     }
@@ -285,8 +360,31 @@ export async function startApp(user: User) {
   function markActive() {
     for (const item of items) {
       const active = item.active();
-      buttons.get(item.key)!.classList.toggle('active', active);
-      buttons.get(item.key)!.setAttribute('aria-pressed', String(active));
+      buttons.get(item.key)?.classList.toggle('active', active);
+      buttons.get(item.key)?.setAttribute('aria-pressed', String(active));
+    }
+  }
+
+  /** What each window shows for the scene on screen. */
+  function fillWindows(next: Scene | null) {
+    infoSlot.replaceChildren(...(next ? [next.info] : []));
+    const nothing = (text: string) => {
+      const p = make('p', 'muted', text);
+      return p;
+    };
+    floating.inventory.body.replaceChildren(next?.inventory ?? nothing('Ton inventaire est dans ton appart : va chez toi pour poser tes objets.'));
+    floating.apartment.body.replaceChildren(next?.apartment ?? nothing('Les réglages sont ceux de ton appart : va chez toi pour les changer.'));
+    floating.history.body.replaceChildren(next?.history ?? nothing('Rien n’a été dit ici.'));
+    // Where one types: in a room. In the building there is nobody to talk to.
+    if (next?.chatBar) chatSlot.replaceChildren(next.chatBar);
+    else {
+      const idle = make('div', 'chat-bar idle');
+      const input = make('input');
+      input.disabled = true;
+      input.placeholder = 'Entre dans une salle pour discuter';
+      input.setAttribute('aria-label', 'Discussion indisponible ici');
+      idle.append(input);
+      chatSlot.replaceChildren(idle);
     }
   }
 
@@ -294,12 +392,12 @@ export async function startApp(user: User) {
     closeWindows();
     if (current && sameTarget(current, target)) return;
     const ticket = ++switching;
-    nav.classList.add('busy');
+    dock.classList.add('busy');
     // Leaving a scene leaves its realtime room: we are never in two places at once.
     scene?.destroy();
     scene = null;
     current = null;
-    panelBody.replaceChildren();
+    fillWindows(null);
 
     const created =
       target.kind === 'building' ? await createBuildingScene(host) : await createRoomScene(host, target);
@@ -308,7 +406,7 @@ export async function startApp(user: User) {
       if (!('error' in created)) created.destroy();
       return;
     }
-    nav.classList.remove('busy');
+    dock.classList.remove('busy');
     if ('error' in created) {
       notify(created.error);
       // Fall back to the building, unless that is what just failed.
@@ -318,13 +416,13 @@ export async function startApp(user: User) {
     }
     scene = created;
     current = target;
-    panelBody.replaceChildren(created.panel);
+    fillWindows(created);
     fadeIn(stage, app);
     fit();
     markActive();
   }
 
-  syncPanel();
+  fit();
   await go(home);
 
   // The news: the newest one is shown once, when it is new to this browser.
@@ -338,9 +436,7 @@ export async function startApp(user: User) {
       // Private window: the news will come back next time, which is harmless.
     }
     if (latest.id > seen) {
-      showNotice(`${latest.title}
-
-${latest.body}`, () => {
+      showNotice(`${latest.title}\n\n${latest.body}`, () => {
         try {
           localStorage.setItem('coloxel.news', String(latest.id));
         } catch {

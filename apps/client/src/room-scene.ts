@@ -1,6 +1,6 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
-import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
+import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
@@ -9,7 +9,9 @@ import { showNotice } from './notice-dialog';
 import { wallet } from './wallet';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
-import { createPanel } from './panel';
+import { createFurniCard, type FurniAction } from './furni-card';
+import { createInfoCard, type InfoCard } from './info-card';
+import { createPanel, type Panel } from './panel';
 import { showPlayerCard } from './player-card';
 import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
@@ -17,7 +19,6 @@ import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, 
 import { N, OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
-import { createVisitPanel } from './visit-panel';
 
 /** Same as the server's step: one cell every 480 ms. */
 const STEP_MS = 480;
@@ -153,115 +154,204 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const blocked = (i: number, j: number) => occupied.has(cellKey(i, j));
   let selected: string | null = null;
 
-  // ----- Panel -------------------------------------------------------------
-  let inspect: (item: InventoryItem | FurnitureItem) => void = () => {};
-  let setMessage: (text: string) => void = () => {};
+  // ----- Around the room: the card of a piece, the windows, the banner -----------------
+  const furniCard = createFurniCard();
+  const setMessage = (text: string) => host.notify(text);
   let refreshOwn: () => Promise<void> = async () => {};
   /** Our furniture was read again: what shows it by name (the mechanisms) draws itself again. */
   let onFurniture: () => void = () => {};
   let setPresent: (players: PlayerState[]) => void = () => {};
-  let panelElement: HTMLElement;
+  let inventory: Panel | null = null;
+  let inventoryElement: HTMLElement | undefined;
+  let apartmentElement: HTMLElement | undefined;
+  let info: InfoCard;
+
+  // While a piece is chosen, a banner says so: the next click on a free cell puts it there.
+  const banner = document.createElement('div');
+  banner.className = 'placing-banner';
+  banner.hidden = true;
+  const bannerText = document.createElement('span');
+  const bannerCancel = document.createElement('button');
+  bannerCancel.type = 'button';
+  bannerCancel.textContent = 'Annuler';
+  banner.append(bannerText, bannerCancel);
+  document.body.append(banner);
+  const nameOfPiece = (id: string) => items.find((it) => it.id === id)?.name ?? furniture.find((f) => f.id === id)?.name ?? 'cet objet';
+  function select(id: string | null) {
+    selected = id;
+    inventory?.setSelected(id);
+    banner.hidden = id === null;
+    if (id) bannerText.textContent = `Pose « ${nameOfPiece(id)} » : clique sur une case libre.`;
+  }
+  bannerCancel.addEventListener('click', () => select(null));
+
+  const date = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  /** What a piece says about itself, and what the player may do with it: shown next to the bottom bar. */
+  function inspect(piece: InventoryItem | FurnitureItem) {
+    const creation = 'serial' in piece;
+    const actions: FurniAction[] = [];
+    const lines: string[] = [];
+    if (creation) {
+      lines.push(`« ${piece.description} »`);
+      lines.push(`N° ${String(piece.serial).padStart(4, '0')} · Exemplaire ${piece.editionNumber}/${piece.editionSize}`);
+      lines.push(`Créé par ${piece.creator} le ${date(piece.createdAt)}${piece.underReview ? ' · En revue : les autres joueurs ne le voient plus pour l’instant.' : ''}`);
+    } else {
+      lines.push('Mobilier de base · gratuit, en quantité illimitée.');
+      lines.push('Ni numéroté, ni échangeable.');
+    }
+    if (mine) {
+      if (piece.placement) {
+        actions.push({ label: 'Déplacer', kind: 'primary', run: () => (furniCard.hide(), select(piece.id)) });
+        if (!creation && isSwitchable(catalogueEntry(piece.key))) {
+          const lit = piece.on !== false;
+          actions.push({
+            label: lit ? 'Éteindre' : 'Allumer',
+            run: async () => {
+              const res = await api.setLight(piece.id, !lit);
+              if (!res.ok) setMessage(res.error);
+              await refreshOwn();
+              furniCard.hide();
+            },
+          });
+        }
+        actions.push({
+          label: 'Ranger',
+          run: async () => {
+            const res = await api.pickUp(piece.id);
+            setMessage(res.ok ? 'Objet repris dans ton inventaire.' : res.error);
+            furniCard.hide();
+            await refreshOwn();
+          },
+        });
+      } else {
+        actions.push({ label: 'Poser', kind: 'primary', run: () => (furniCard.hide(), select(piece.id)) });
+      }
+      if (!creation) {
+        actions.push({
+          label: 'Jeter',
+          kind: 'danger',
+          run: async () => {
+            const res = await api.throwFurniture(piece.id);
+            setMessage(res.ok ? 'Meuble jeté.' : res.error);
+            furniCard.hide();
+            await refreshOwn();
+          },
+        });
+      }
+    } else if (creation) {
+      actions.push({
+        label: 'Signaler',
+        run: () => {
+          furniCard.hide();
+          openReportDialog({ kind: 'item', id: piece.id, label: `la création « ${piece.name} »` }, (text) => host.notify(text));
+        },
+      });
+    }
+    furniCard.show({ image: creation ? itemSpriteUrl(piece.id) : furnitureSpriteUrl(piece.key), name: piece.name, lines, actions });
+  }
+
+  const HINT = 'Clique sur une case pour t’y rendre, sur un siège pour t’asseoir. Clic sur un objet : sa fiche.';
+  const hint = document.createElement('p');
+  hint.className = 'muted small';
+  hint.textContent = HINT;
 
   if (mine) {
-    const panel = createPanel(user, {
+    inventory = createPanel(user, {
       onChange: () => void refreshOwn(),
       onSelect: (id) => {
-        selected = id;
-        panel.setSelected(id);
-        panel.setMessage(id ? 'Clique sur une case libre pour poser l’objet.' : '');
+        select(id);
+        // The window is in the way of the room: let the player click.
+        if (id) host.openWindow(null);
       },
       onPickUp: async (id) => {
         const res = await api.pickUp(id);
-        panel.setMessage(res.ok ? 'Objet repris dans ton inventaire.' : res.error);
+        setMessage(res.ok ? 'Objet repris dans ton inventaire.' : res.error);
         await refreshOwn();
       },
-      onThrow: async (id) => {
-        const res = await api.throwFurniture(id);
-        panel.setMessage(res.ok ? 'Meuble jeté.' : res.error);
-        await refreshOwn();
-      },
-      onLogout: async () => {
-        await api.logout();
-        location.reload();
+      onInspect: (id) => {
+        const piece = items.find((it) => it.id === id) ?? furniture.find((f) => f.id === id);
+        if (!piece) return;
+        host.openWindow(null);
+        inspect(piece);
       },
     });
-    inspect = (item) => panel.inspect(item.id);
-    setMessage = panel.setMessage;
-    panel.setMessage('Clique sur une chaise ou un lit pour t’y installer, sur une lampe pour l’allumer ou l’éteindre. Clic droit sur un objet : sa fiche.');
+    inventoryElement = inventory.element;
     refreshOwn = async () => {
       const [res, mineRes] = await Promise.all([api.inventory(), api.myApartment()]);
       if (!res.ok) {
         if (res.status === 401) location.reload();
-        panel.setMessage(res.error);
+        setMessage(res.error);
         return;
       }
       items = res.data.items;
       furniture = res.data.furniture;
       onFurniture();
-      if (selected && !items.some((it) => it.id === selected) && !furniture.some((f) => f.id === selected)) selected = null;
-      panel.setItems(items);
-      panel.setFurniture(furniture);
-      panel.setSelected(selected);
+      if (selected && !items.some((it) => it.id === selected) && !furniture.some((f) => f.id === selected)) select(null);
+      inventory?.setItems(items);
+      inventory?.setFurniture(furniture);
+      inventory?.setSelected(selected);
       syncItems();
       if (mineRes.ok && (mineRes.data.floorStyle !== look.floor || mineRes.data.wallStyle !== look.wall)) {
         look = { floor: mineRes.data.floorStyle, wall: mineRes.data.wallStyle };
         drawFloor();
       }
     };
-    panelElement = panel.element;
-    // Name and opening of the apartment sit right under the player's name, then who is visiting.
-    const settings = createApartmentSettings();
-    panelElement.children[0]?.after(settings);
+    // Name, opening and mechanisms of the apartment live in a window of their own.
+    apartmentElement = document.createElement('div');
+    apartmentElement.className = 'apartment-body';
     const rulesEditor = createRulesEditor({
       furniture: () => furniture,
       pickCell: (done) => {
         pickingCell = done;
+        // The window would hide the room the player has to click on.
+        host.openWindow(null);
       },
       notify: (text) => host.notify(text),
     });
-    settings.after(rulesEditor.element);
+    apartmentElement.append(createApartmentSettings(), rulesEditor.element);
     onFurniture = () => rulesEditor.rerender();
-    const visitors = document.createElement('p');
-    visitors.className = 'present small';
-    visitors.setAttribute('role', 'status');
-    settings.after(visitors);
+    info = createInfoCard({
+      title: 'Mon appart',
+      actions: [
+        { label: 'Inventaire', run: () => host.openWindow('inventory') },
+        { label: 'Réglages', run: () => host.openWindow('apartment') },
+        { label: 'Historique', run: () => host.openWindow('history') },
+      ],
+      extra: [hint],
+    });
     setPresent = (players) => {
       const others = players.filter((p) => p.id !== user.id).map((p) => p.nickname);
-      visitors.textContent = others.length ? `Chez toi : ${others.join(', ')}` : 'Personne ne te rend visite pour l’instant.';
+      info.present.textContent = others.length ? `Chez toi : ${others.join(', ')}` : 'Personne ne te rend visite pour l’instant.';
     };
-    void panel.refreshCharges();
+    void inventory.refreshCharges();
+  } else if (target.kind === 'hall') {
+    info = createInfoCard({
+      title: 'Le hall',
+      subtitle: 'Le rez-de-chaussée de l’immeuble.',
+      actions: [
+        { label: 'Mon appart', run: () => host.go({ kind: 'apartment', ownerId: user.id }) },
+        { label: 'L’immeuble', run: () => host.go({ kind: 'building' }) },
+        { label: 'Historique', run: () => host.openWindow('history') },
+      ],
+      extra: [hint],
+    });
+    setPresent = (players) => (info.present.textContent = players.length > 1 ? `${players.length} personnes ici` : 'Tu es seul ici');
   } else {
-    const visit = createVisitPanel(
-      target.kind === 'hall'
-        ? {
-            title: 'Le hall',
-            subtitle: 'Le rez-de-chaussée de l’immeuble.',
-            links: [
-              ['Mon appart', () => host.go({ kind: 'apartment', ownerId: user.id })],
-              ['L’immeuble', () => host.go({ kind: 'building' })],
-            ],
-          }
-        : {
-            title: visitedTitle,
-            subtitle: `Appartement de ${visitedOwner}, tu es en visite.`,
-            report: {
-              named: visitedNamed,
-              run: (what) => {
-                const notify = (text: string) => host.notify(text);
-                if (what.kind === 'item') openReportDialog({ kind: 'item', id: what.item.id, label: `la création « ${what.item.name} »` }, notify);
-                else if (what.kind === 'apartment_name') openReportDialog({ kind: 'apartment_name', id: ownerId!, label: `le nom de l’appart de ${visitedOwner}` }, notify);
-                else openReportDialog({ kind: 'apartment', id: ownerId!, label: `l’appart de ${visitedOwner}` }, notify);
-              },
-            },
-            links: [
-              ['Retour chez moi', () => host.go({ kind: 'apartment', ownerId: user.id })],
-              ['L’immeuble', () => host.go({ kind: 'building' })],
-            ],
-          },
-    );
-    inspect = (item) => visit.inspect(item);
-    setPresent = (players) => visit.setPresent(players.length);
-    panelElement = visit.element;
+    const notify = (text: string) => host.notify(text);
+    info = createInfoCard({
+      title: visitedTitle,
+      subtitle: `Appartement de ${visitedOwner}, tu es en visite.`,
+      actions: [
+        { label: 'Retour chez moi', run: () => host.go({ kind: 'apartment', ownerId: user.id }) },
+        { label: 'L’immeuble', run: () => host.go({ kind: 'building' }) },
+        { label: 'Historique', run: () => host.openWindow('history') },
+        ...(visitedNamed ? [{ label: 'Signaler le nom', quiet: true, run: () => openReportDialog({ kind: 'apartment_name' as const, id: ownerId!, label: `le nom de l’appart de ${visitedOwner}` }, notify) }] : []),
+        { label: 'Signaler l’appart', quiet: true, run: () => openReportDialog({ kind: 'apartment', id: ownerId!, label: `l’appart de ${visitedOwner}` }, notify) },
+      ],
+      extra: [hint],
+    });
+    setPresent = (players) => (info.present.textContent = players.length > 1 ? `${players.length} personnes ici` : 'Tu es seul ici');
   }
 
   // ----- Objects -----------------------------------------------------------
@@ -549,60 +639,86 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   }
 
   // ----- Chat --------------------------------------------------------------
-  // What the server lets through shows as a bubble over the speaker and as a line in the panel.
+  // What the server lets through shows as a bubble over the speaker, and the bubbles pile up: a new one pushes the older ones
+  // above it up, so that a conversation reads from the bottom to the top. The history window keeps them all, with a way to report.
   const chat = createChat({
     me: user.id,
     say: (text) => room.say(text),
     onReport: (message) => openReportDialog({ kind: 'message', id: message.id, label: `ce message de ${message.nickname}` }, (text) => host.notify(text)),
   });
-  document.body.append(chat.bar);
-  panelElement.querySelector('.present')?.after(chat.log);
 
   const overlay = new Container();
   overlay.zIndex = 8500;
   world.addChild(overlay);
   interface Bubble {
     box: Container;
+    from: string;
     until: number;
     width: number;
     height: number;
+    /** How far above the speaker the bubble is going, and how far it has got. */
+    lift: number;
+    shown: number;
+    /** Where the speaker was last seen: the bubble stays there if they leave. */
+    x: number;
+    y: number;
   }
-  const bubbles = new Map<string, Bubble>();
+  const bubbles: Bubble[] = [];
   const BUBBLE_MAX_WIDTH = 150;
+  const NAME_COLORS = [0xd6405f, 0x2f7fd6, 0x238a5a, 0xb8741a, 0x7a52c9, 0xc2306f, 0x1f8a9d];
+  const colorOf = (id: string) => NAME_COLORS[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % NAME_COLORS.length]!;
+  const anchorOf = (from: string, fallback: { x: number; y: number }) => {
+    const view = views.get(from);
+    return view ? { x: Math.round(view.box.x), y: Math.round(view.box.y + view.label.y - 12) } : fallback;
+  };
 
   function showBubble(message: ChatMessage) {
-    bubbles.get(message.from)?.box.destroy({ children: true });
-    bubbles.delete(message.from);
+    const name = new Text({ text: message.nickname, style: { fontFamily: 'system-ui, sans-serif', fontSize: 10, fontWeight: '800', fill: colorOf(message.from) }, resolution: 2 });
     const text = new Text({
       text: message.text,
       style: { fontFamily: 'system-ui, sans-serif', fontSize: 11, fontWeight: '600', fill: 0x1b1530, wordWrap: true, wordWrapWidth: BUBBLE_MAX_WIDTH, breakWords: true },
       resolution: 2,
     });
-    const width = Math.ceil(text.width) + 12;
-    const height = Math.ceil(text.height) + 8;
+    const width = Math.ceil(Math.max(text.width, name.width)) + 14;
+    const height = Math.ceil(name.height + text.height) + 8;
     const box = new Container();
     const back = new Graphics();
     back.roundRect(-width / 2, -height - 5, width, height, 5).fill(0xffffff).stroke({ color: 0x1b1530, width: 1.5 });
     back.poly([-4, -5, 4, -5, 0, 0]).fill(0xffffff);
-    text.position.set(-width / 2 + 6, -height - 1);
-    box.addChild(back, text);
+    name.position.set(-width / 2 + 7, -height - 1);
+    text.position.set(-width / 2 + 7, -height - 1 + Math.ceil(name.height));
+    box.addChild(back, name, text);
     overlay.addChild(box);
-    bubbles.set(message.from, { box, until: performance.now() + Math.min(9000, 3500 + message.text.length * 60), width, height: height + 5 });
+
+    const anchor = anchorOf(message.from, { x: ROOM_W / 2, y: ROOM_H / 2 });
+    const bubble: Bubble = { box, from: message.from, until: performance.now() + Math.min(13000, 6000 + message.text.length * 70), width, height: height + 5, lift: 0, shown: 0, x: anchor.x, y: anchor.y };
+    // Whoever speaks at about the same place pushes the older bubbles up.
+    for (const other of bubbles) {
+      const there = anchorOf(other.from, other);
+      if (Math.abs(there.x - anchor.x) < (other.width + width) / 2 + 4) other.lift += bubble.height + 3;
+    }
+    bubbles.push(bubble);
   }
 
-  function layoutBubbles(now: number) {
-    for (const [id, bubble] of bubbles) {
-      const view = views.get(id);
-      if (!view || now > bubble.until) {
+  function layoutBubbles(now: number, deltaMs: number) {
+    for (let k = bubbles.length - 1; k >= 0; k--) {
+      const bubble = bubbles[k]!;
+      if (now > bubble.until || bubble.lift > 320) {
         bubble.box.destroy({ children: true });
-        bubbles.delete(id);
+        bubbles.splice(k, 1);
         continue;
       }
-      // Above the name tag, and never out of the room's picture.
-      const x = Math.min(ROOM_W - bubble.width / 2 - 4, Math.max(bubble.width / 2 + 4, Math.round(view.box.x)));
-      const y = Math.max(bubble.height + 4, Math.round(view.box.y + view.label.y - 12));
+      const anchor = anchorOf(bubble.from, bubble);
+      bubble.x = anchor.x;
+      bubble.y = anchor.y;
+      // Slide up to the place it was pushed to.
+      bubble.shown += (bubble.lift - bubble.shown) * Math.min(1, (deltaMs / 1000) * 12);
+      // Never out of the room's picture.
+      const x = Math.min(ROOM_W - bubble.width / 2 - 4, Math.max(bubble.width / 2 + 4, bubble.x));
+      const y = Math.max(bubble.height + 4, bubble.y - Math.round(bubble.shown));
       bubble.box.position.set(x, y);
-      bubble.box.alpha = Math.min(1, (bubble.until - now) / 500);
+      // Fading out at the end, and as it climbs away from its speaker.
+      bubble.box.alpha = Math.min(1, (bubble.until - now) / 700) * Math.max(0.35, 1 - bubble.lift / 420);
     }
   }
 
@@ -673,6 +789,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     'click',
     async (ev) => {
       const { x, y } = toRoom(ev);
+      // A click elsewhere puts the card of a piece away (a click on a piece shows its own).
+      furniCard.hide();
       if (pickingCell) {
         const picked = tileAt(x, y);
         if (picked) {
@@ -739,7 +857,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         // The server validates ownership and that the cell is free; we only send the intention.
         const res = await api.place(selected, cell.i, cell.j);
         if (res.ok) {
-          selected = null;
+          select(null);
           setMessage('Objet posé.');
         } else {
           setMessage(res.error);
@@ -884,7 +1002,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const tick = (ticker: Ticker) => {
     const now = performance.now();
     syncPlayers(ticker.deltaMS, now);
-    layoutBubbles(now);
+    layoutBubbles(now, ticker.deltaMS);
     drawFlashes(now);
     drawParty(now, ticker.deltaMS);
 
@@ -990,13 +1108,19 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   });
 
   return {
-    panel: panelElement,
+    info: info.element,
+    inventory: inventoryElement,
+    apartment: apartmentElement,
+    history: chat.log,
+    chatBar: chat.bar,
     size: { w: ROOM_W, h: ROOM_H },
     refresh: () => (mine ? refreshOwn() : undefined),
     refreshAppearance: () => room.refreshAppearance(),
     destroy() {
       closing = true;
       chat.destroy();
+      furniCard.destroy();
+      banner.remove();
       abort.abort();
       app.ticker.remove(tick);
       void room.leave();

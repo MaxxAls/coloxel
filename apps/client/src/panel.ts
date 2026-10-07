@@ -1,5 +1,5 @@
 import { furnitureThumb } from './thumb';
-import { api, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem, type User } from './api';
+import { api, itemSpriteUrl, type FurnitureItem, type InventoryItem, type User } from './api';
 
 export interface PanelHandlers {
   /** The inventory changed (creation); the room must be re-synced. */
@@ -7,9 +7,8 @@ export interface PanelHandlers {
   /** The player picked an item to place; null cancels. */
   onSelect(itemId: string | null): void;
   onPickUp(itemId: string): void;
-  /** Throw a piece of base furniture away (free to take again). */
-  onThrow(furnitureId: string): void;
-  onLogout(): void;
+  /** The player wants the card of this item. */
+  onInspect(itemId: string): void;
 }
 
 export interface Panel {
@@ -17,8 +16,6 @@ export interface Panel {
   setItems(items: InventoryItem[]): void;
   setFurniture(furniture: FurnitureItem[]): void;
   setSelected(itemId: string | null): void;
-  /** Show the item card for this item; null closes it. */
-  inspect(itemId: string | null): void;
   setMessage(text: string): void;
   refreshCharges(): Promise<void>;
 }
@@ -32,15 +29,9 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 
 const serialLabel = (n: number) => String(n).padStart(4, '0');
 
-export function createPanel(user: User, handlers: PanelHandlers): Panel {
-  const root = el('aside', 'panel');
-
-  const header = el('div', 'panel-head');
-  header.append(el('strong', undefined, user.nickname));
-  const logout = el('button', 'link', 'Déconnexion');
-  logout.type = 'button';
-  logout.addEventListener('click', handlers.onLogout);
-  header.append(logout);
+/** The inventory window: the form to invent an object, the creations, the base furniture. */
+export function createPanel(_user: User, handlers: PanelHandlers): Panel {
+  const root = el('div', 'inventory-body');
 
   // Creation form
   const form = el('form', 'create');
@@ -63,51 +54,18 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
   const message = el('p', 'message');
   message.setAttribute('role', 'status');
 
-  // Item card: everything the server stores about the item, nothing the client could invent.
-  const cardBox = el('section', 'item-card');
-  cardBox.hidden = true;
-  cardBox.setAttribute('aria-label', 'Fiche objet');
-  const cardHead = el('div', 'item-card-head');
-  cardHead.append(el('h2', undefined, 'Fiche objet'));
-  const cardClose = el('button', 'link', 'Fermer');
-  cardClose.type = 'button';
-  cardHead.append(cardClose);
-  const cardBody = el('div', 'item-card-body');
-  const cardImg = el('img');
-  cardImg.alt = '';
-  cardImg.width = 128;
-  cardImg.height = 149;
-  const cardMeta = el('div', 'meta');
-  const cardName = el('strong', 'name');
-  const cardDesc = el('p', 'muted small');
-  const cardSerial = el('p', 'small');
-  const cardCreator = el('p', 'muted small');
-  cardMeta.append(cardName, cardDesc, cardSerial, cardCreator);
-  cardBody.append(cardImg, cardMeta);
-  const cardActions = el('div', 'item-card-actions');
-  const cardPlace = el('button', 'primary');
-  cardPlace.type = 'button';
-  const cardPickUp = el('button', undefined, 'Reprendre');
-  cardPickUp.type = 'button';
-  const cardThrow = el('button', undefined, 'Jeter');
-  cardThrow.type = 'button';
-  cardThrow.hidden = true;
-  cardActions.append(cardPlace, cardPickUp, cardThrow);
-  cardBox.append(cardHead, cardBody, cardActions);
-
   const listTitle = el('h2', undefined, 'Mes créations');
   const list = el('ul', 'inventory');
   const empty = el('p', 'muted small', 'Rien pour l’instant : invente ton premier objet !');
   const furnitureTitle = el('h2', undefined, 'Mobilier de base');
   const furnitureList = el('ul', 'inventory furniture-list');
-  const furnitureEmpty = el('p', 'muted small', 'Prends des meubles gratuits dans le catalogue.');
+  const furnitureEmpty = el('p', 'muted small', 'Prends des meubles gratuits dans la boutique.');
 
-  root.append(header, form, message, cardBox, listTitle, list, empty, furnitureTitle, furnitureList, furnitureEmpty);
+  root.append(form, message, listTitle, list, empty, furnitureTitle, furnitureList, furnitureEmpty);
 
   let items: InventoryItem[] = [];
   let furniture: FurnitureItem[] = [];
   let selected: string | null = null;
-  let inspected: string | null = null;
   let busy = false;
 
   const setCharges = (n: number) => {
@@ -115,35 +73,18 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     create.disabled = busy || n <= 0;
   };
 
-  const renderCard = () => {
-    const item = items.find((it) => it.id === inspected);
-    const piece = item ? undefined : furniture.find((f) => f.id === inspected);
-    cardBox.hidden = !item && !piece;
-    cardThrow.hidden = !piece;
-    if (piece) {
-      // Base furniture is not a creation: no number, no creator, no edition.
-      cardImg.src = furnitureSpriteUrl(piece.key);
-      cardName.textContent = piece.name;
-      cardDesc.textContent = 'Gratuit, en quantité illimitée.';
-      cardSerial.textContent = 'Mobilier de base · pas une création';
-      cardCreator.textContent = 'Ni numéroté, ni échangeable.';
-      cardPlace.textContent = piece.id === selected ? 'Annuler' : piece.placement ? 'Déplacer' : 'Poser';
-      cardPickUp.hidden = !piece.placement;
-      return;
-    }
-    if (!item) return;
-    cardImg.src = itemSpriteUrl(item.id);
-    cardName.textContent = item.name;
-    cardDesc.textContent = `« ${item.description} »`;
-    cardSerial.textContent = `N° ${serialLabel(item.serial)} · Exemplaire ${item.editionNumber}/${item.editionSize}`;
-    const date = new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    cardCreator.textContent = `Créé par ${item.creator} le ${date}${item.underReview ? ' · En revue : les autres joueurs ne le voient plus pour l’instant.' : ''}`;
-    cardPlace.textContent = item.id === selected ? 'Annuler' : item.placement ? 'Déplacer' : 'Poser';
-    cardPickUp.hidden = !item.placement;
+  const inspectable = (info: HTMLElement, id: string) => {
+    info.tabIndex = 0;
+    info.addEventListener('click', () => handlers.onInspect(id));
+    info.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        handlers.onInspect(id);
+      }
+    });
   };
 
   const render = () => {
-    renderCard();
     list.replaceChildren();
     empty.hidden = items.length > 0;
     for (const item of items) {
@@ -162,6 +103,7 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
         el('span', 'muted small', `n° ${serialLabel(item.serial)} · ${item.editionNumber}/${item.editionSize}`),
         el('span', 'muted small', item.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
       );
+      inspectable(info, item.id);
 
       const action = el('button', undefined, item.placement ? 'Reprendre' : item.id === selected ? 'Annuler' : 'Poser');
       action.type = 'button';
@@ -169,16 +111,6 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
         if (item.placement) handlers.onPickUp(item.id);
         else handlers.onSelect(item.id === selected ? null : item.id);
       });
-
-      info.tabIndex = 0;
-      info.addEventListener('click', () => panel.inspect(item.id));
-      info.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') {
-          ev.preventDefault();
-          panel.inspect(item.id);
-        }
-      });
-
       li.append(img, info, action);
       list.append(li);
     }
@@ -193,14 +125,7 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
         el('span', 'muted small', 'Mobilier de base'),
         el('span', 'muted small', piece.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
       );
-      info.tabIndex = 0;
-      info.addEventListener('click', () => panel.inspect(piece.id));
-      info.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') {
-          ev.preventDefault();
-          panel.inspect(piece.id);
-        }
-      });
+      inspectable(info, piece.id);
       const action = el('button', undefined, piece.placement ? 'Reprendre' : piece.id === selected ? 'Annuler' : 'Poser');
       action.type = 'button';
       action.addEventListener('click', () => {
@@ -233,17 +158,6 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     }
   });
 
-  cardClose.addEventListener('click', () => panel.inspect(null));
-  cardPlace.addEventListener('click', () => {
-    if (inspected) handlers.onSelect(inspected === selected ? null : inspected);
-  });
-  cardPickUp.addEventListener('click', () => {
-    if (inspected) handlers.onPickUp(inspected);
-  });
-  cardThrow.addEventListener('click', () => {
-    if (inspected) handlers.onThrow(inspected);
-  });
-
   const panel: Panel = {
     element: root,
     setItems(next) {
@@ -252,16 +166,11 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     },
     setFurniture(next) {
       furniture = next;
-      if (inspected && !items.some((it) => it.id === inspected) && !furniture.some((f) => f.id === inspected)) inspected = null;
       render();
     },
     setSelected(id) {
       selected = id;
       render();
-    },
-    inspect(id) {
-      inspected = id;
-      renderCard();
     },
     setMessage(text) {
       message.textContent = text;

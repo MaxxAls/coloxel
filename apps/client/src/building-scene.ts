@@ -1,6 +1,7 @@
 import { Container, Graphics, Text, type Ticker } from 'pixi.js';
 import { floorStyle, wallStyle } from '@coloxel/render';
 import { ringAndWait } from './bell';
+import { createInfoCard } from './info-card';
 import { api, apartmentTitle, type BuildingApartment } from './api';
 import { FONT, type Scene, type SceneHost } from './scene';
 
@@ -492,11 +493,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
     }
   }
 
-  // ----- Panel -------------------------------------------------------------
-  const panel = document.createElement('aside');
-  panel.className = 'panel building-panel';
-  const title = document.createElement('h2');
-  title.textContent = 'L’immeuble';
+  // ----- Info card ---------------------------------------------------------
   const intro = document.createElement('p');
   intro.className = 'muted small';
   intro.textContent = 'Clique sur un appartement éclairé pour y entrer, ou sur un appart à sonnette pour sonner. Les silhouettes montrent qui est chez soi.';
@@ -514,22 +511,15 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
     li.append(dot, text);
     legend.append(li);
   }
-  const summary = document.createElement('p');
-  summary.className = 'present small';
-  summary.setAttribute('role', 'status');
-  const buttons = document.createElement('div');
-  buttons.className = 'visit-links';
-  const goHome = document.createElement('button');
-  goHome.type = 'button';
-  goHome.className = 'primary';
-  goHome.textContent = 'Mon appart';
-  goHome.addEventListener('click', () => host.go({ kind: 'apartment', ownerId: host.user.id }));
-  const goHall = document.createElement('button');
-  goHall.type = 'button';
-  goHall.textContent = 'Le hall';
-  goHall.addEventListener('click', () => host.go({ kind: 'hall' }));
-  buttons.append(goHome, goHall);
-  panel.append(title, intro, legend, summary, buttons);
+  const card = createInfoCard({
+    title: 'L’immeuble',
+    actions: [
+      { label: 'Mon appart', run: () => host.go({ kind: 'apartment', ownerId: host.user.id }) },
+      { label: 'Le hall', run: () => host.go({ kind: 'hall' }) },
+    ],
+    extra: [intro, legend],
+  });
+  const summary = card.present;
 
   const updateSummary = () => {
     const inside = apartments.reduce((n, a) => n + a.visitors, 0);
@@ -624,7 +614,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
   app.ticker.add(tick);
 
   return {
-    panel,
+    info: card.element,
     get size() {
       return { w: W, h: layout.height };
     },

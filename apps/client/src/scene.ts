@@ -9,6 +9,9 @@ export type Target =
 export const sameTarget = (a: Target, b: Target) =>
   a.kind === b.kind && (a.kind !== 'apartment' || a.ownerId === (b as typeof a).ownerId);
 
+/** The floating windows a scene may ask the game to open. */
+export type WindowKey = 'inventory' | 'apartment' | 'history';
+
 /** What a scene may ask of the application around it. */
 export interface SceneHost {
   app: Application;
@@ -21,11 +24,21 @@ export interface SceneHost {
   notify(text: string): void;
   /** The friends list may have changed (a request was sent from a player card). */
   friendsChanged(): void;
+  /** Open one of the windows the scene provides, or close them all (null). */
+  openWindow(key: WindowKey | null): void;
 }
 
 export interface Scene {
-  /** Shown in the side column while the scene is active. */
-  panel: HTMLElement;
+  /** The card at the top left: where we are, who is here, where to go. */
+  info: HTMLElement;
+  /** Our things and the form to invent one (only in our own apartment). */
+  inventory?: HTMLElement;
+  /** Name, opening and mechanisms of our apartment (only in our own apartment). */
+  apartment?: HTMLElement;
+  /** What was said lately, with a way to report it (rooms). */
+  history?: HTMLElement;
+  /** The line where the player types, put in the bottom bar (rooms). */
+  chatBar?: HTMLElement;
   /** Canvas size in game pixels; the application scales it to the window. */
   size: { w: number; h: number };
   /** Reload what the scene shows from the server (after furniture or the look changed). */
