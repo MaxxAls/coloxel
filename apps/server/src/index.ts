@@ -1,22 +1,22 @@
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
 import type pg from 'pg';
-import { PNG } from 'pngjs';
-import { SEEDS, renderSprite, type Sprite } from '@coloxel/render';
+import { SEEDS, renderSprite } from '@coloxel/render';
 import { registerAuthRoutes } from './auth/routes';
+import { modelFromEnv, type RecipeModel } from './creations/model';
+import { registerCreationRoutes } from './creations/routes';
+import { spriteToPng } from './sprite-png';
 
-export function spriteToPng(sprite: Sprite): Buffer {
-  const png = new PNG({ width: sprite.width, height: sprite.height });
-  png.data = Buffer.from(sprite.data);
-  return PNG.sync.write(png);
-}
+export { spriteToPng };
 
 export interface ServerDeps {
   /** Without a pool only the database-free routes are served (used by some tests). */
   pool?: pg.Pool;
+  /** Object generator. Defaults to the Anthropic API from env; null means not configured. */
+  model?: RecipeModel | null;
 }
 
-export function buildServer({ pool }: ServerDeps = {}) {
+export function buildServer({ pool, model = modelFromEnv() }: ServerDeps = {}) {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
   app.register(cookie);
 
@@ -30,7 +30,12 @@ export function buildServer({ pool }: ServerDeps = {}) {
     return reply.type('image/png').send(spriteToPng(renderSprite(seed.parts)));
   });
 
-  if (pool) app.register(async (scope) => registerAuthRoutes(scope, pool));
+  if (pool) {
+    app.register(async (scope) => {
+      registerAuthRoutes(scope, pool);
+      registerCreationRoutes(scope, pool, model);
+    });
+  }
 
   return app;
 }
