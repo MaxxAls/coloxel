@@ -5,9 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Coloxel</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #17132a; }
-      body { display: grid; place-items: center; }
+      :root {
+        --bg: #17132a;
+        --card: #231d3f;
+        --line: #3b3366;
+        --text: #f1ecff;
+        --muted: #a79fcb;
+        --accent: #ffc857;
+        --error: #ff8a80;
+      }
+      html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
       canvas { image-rendering: pixelated; }
+      [hidden] { display: none !important; }
+      .muted { color: var(--muted); }
+      .small { font-size: 13px; }
+      .error { color: var(--error); min-height: 1.4em; margin: 0; }
+      button { font: inherit; color: var(--text); background: var(--line); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+      button:hover:not(:disabled) { filter: brightness(1.2); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button.primary { background: var(--accent); color: #2a2140; font-weight: 600; padding: 9px 14px; }
+      button.link { background: none; color: var(--muted); text-decoration: underline; padding: 0; }
+      input { font: inherit; color: var(--text); background: #120f22; border: 1px solid var(--line); border-radius: 6px; padding: 8px; width: 100%; box-sizing: border-box; }
+      input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+      .auth { min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; width: 100%; max-width: 360px; display: grid; gap: 12px; }
+      .card h1 { margin: 0; font-size: 28px; color: var(--accent); }
+      .card p { margin: 0; }
+      .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .tabs button.active { background: var(--accent); color: #2a2140; font-weight: 600; }
+      .field { display: grid; gap: 4px; }
+      .field span { font-size: 13px; color: var(--muted); }
+
+      .game { min-height: 100vh; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 24px; padding: 12px 24px; box-sizing: border-box; }
+      .panel { width: 320px; max-width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; box-sizing: border-box; }
+      .panel h2 { margin: 4px 0 0; font-size: 16px; }
+      .panel-head { display: flex; justify-content: space-between; align-items: center; }
+      .create { display: grid; gap: 8px; }
+      .create label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+      .create p { margin: 0; }
+      .message { margin: 0; min-height: 1.4em; color: var(--accent); }
+      .inventory { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow-y: auto; }
+      .inventory li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }
+      .inventory li.selected { border-color: var(--accent); }
+      .inventory img { image-rendering: pixelated; background: #120f22; border-radius: 4px; }
+      .inventory .info { display: grid; min-width: 0; }
+      .inventory .info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     </style>
   </head>
   <body>
