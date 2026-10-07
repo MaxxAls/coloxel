@@ -18,7 +18,7 @@ export interface InventoryItem {
   createdAt: string;
   /** Reported by several players or hidden by the staff: only its owner still sees it. */
   underReview?: boolean;
-  placement: { i: number; j: number } | null;
+  placement: { i: number; j: number; rot: number } | null;
 }
 
 /** A piece of base furniture: free, not numbered, not tradeable. Not a creation. */
@@ -26,7 +26,7 @@ export interface FurnitureItem {
   id: string;
   key: string;
   name: string;
-  placement: { i: number; j: number } | null;
+  placement: { i: number; j: number; rot: number } | null;
   /** A piece that gives light: lit or switched off. Absent means lit. */
   on?: boolean;
 }
@@ -382,7 +382,8 @@ export const api = {
   takeFurniture: (key: string) => call<{ furniture: FurnitureItem }>('POST', '/api/furniture', { key }),
   setLight: (id: string, on: boolean) => call<{ on: boolean }>('PUT', `/api/furniture/${id}/light`, { on }),
   throwFurniture: (id: string) => call<unknown>('DELETE', `/api/furniture/${id}`),
-  place: (itemId: string, i: number, j: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j }),
+  /** `rot` is the number of quarter turns; left out, a move keeps the way the piece faces. */
+  place: (itemId: string, i: number, j: number, rot?: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j, rot }),
   building: () => call<{ apartments: BuildingApartment[] }>('GET', '/api/building'),
   apartment: (ownerId: string) => call<VisitedApartment>('GET', `/api/apartments/${ownerId}`),
   myApartment: () => call<MyApartment>('GET', '/api/apartment'),
@@ -450,5 +451,5 @@ export const api = {
   releasePet: (id: string) => call<{ pets: PetData[] }>('DELETE', `/api/pets/${id}`),
 };
 
-export const itemSpriteUrl = (id: string) => `/api/items/${id}.png?v=${SPRITE_VERSION}`;
-export const furnitureSpriteUrl = (key: string) => `/api/catalogue/${key}.png?v=${SPRITE_VERSION}`;
+export const itemSpriteUrl = (id: string, rot = 0) => `/api/items/${id}.png?v=${SPRITE_VERSION}${rot ? `&r=${rot}` : ''}`;
+export const furnitureSpriteUrl = (key: string, rot = 0) => `/api/catalogue/${key}.png?v=${SPRITE_VERSION}${rot ? `&r=${rot}` : ''}`;

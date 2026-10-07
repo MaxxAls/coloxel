@@ -345,3 +345,49 @@ export function spriteHash(s: Sprite): string {
   }
   return (h >>> 0).toString(16).padStart(8, '0');
 }
+
+/**
+ * Turn a recipe by quarter turns around the centre of its tile (x, y -> -y, x),
+ * so a piece of furniture can face another way. Flat screen-facing parts (circles,
+ * pixels) only move: they keep facing the player. Pure and total: unknown parts pass through.
+ */
+export function rotateParts<P extends { t?: unknown }>(parts: readonly P[], turns: number): P[] {
+  const n = ((Math.trunc(turns) % 4) + 4) % 4;
+  if (n === 0) return [...parts];
+  const spin = (x: number, y: number): [number, number] => {
+    let cx = x, cy = y;
+    for (let k = 0; k < n; k++) [cx, cy] = [-cy, cx];
+    return [cx, cy];
+  };
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  return parts.map((raw) => {
+    const p = raw as unknown as Record<string, unknown>;
+    switch (p.t) {
+      case 'box': {
+        if (!num(p.x0) || !num(p.x1) || !num(p.y0) || !num(p.y1)) return raw;
+        const a = spin(p.x0, p.y0);
+        const b = spin(p.x1, p.y1);
+        return { ...p, x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) } as unknown as P;
+      }
+      case 'cyl':
+      case 'sphere':
+      case 'circle':
+      case 'pix': {
+        if (!num(p.x) || !num(p.y)) return raw;
+        const [x, y] = spin(p.x, p.y);
+        return { ...p, x, y } as unknown as P;
+      }
+      case 'quad': {
+        if (!Array.isArray(p.pts)) return raw;
+        const pts = (p.pts as unknown[]).map((pt) => {
+          if (!Array.isArray(pt) || !num(pt[0]) || !num(pt[1])) return pt;
+          const [x, y] = spin(pt[0], pt[1]);
+          return [x, y, pt[2]];
+        });
+        return { ...p, pts } as unknown as P;
+      }
+      default:
+        return raw;
+    }
+  });
+}

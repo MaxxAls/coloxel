@@ -20,6 +20,8 @@ const placementSchema = z.object({
   itemId: z.string('Objet invalide').regex(UUID, 'Objet invalide'),
   i: coordinate,
   j: coordinate,
+  // Quarter turns; left out, a move keeps the way the piece already faces.
+  rot: z.number('Orientation invalide').int('Orientation invalide').min(0, 'Orientation invalide').max(3, 'Orientation invalide').optional(),
 });
 
 interface InventoryRow {
@@ -33,6 +35,7 @@ interface InventoryRow {
   created_at: Date;
   i: number | null;
   j: number | null;
+  rot: number | null;
   masked: boolean;
 }
 
@@ -41,7 +44,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
       `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
-              cr.nickname AS creator, it.created_at, p.i, p.j, ${itemMaskedSql('it')} AS masked
+              cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, ${itemMaskedSql('it')} AS masked
        FROM items it
        JOIN users cr ON cr.id = it.creator_id
        LEFT JOIN placements p ON p.item_id = it.id
@@ -49,8 +52,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
        ORDER BY it.serial`,
       [req.user.id],
     );
-    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null; lit: boolean | null }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j, p.lit
+    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null; rot: number | null; lit: boolean | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.lit
          FROM furniture f LEFT JOIN placements p ON p.furniture_id = f.id
         WHERE f.owner_id = $1
         ORDER BY f.created_at, f.id`,
@@ -62,7 +65,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         id: r.id,
         key: r.catalogue_key,
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
-        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j },
+        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0 },
         on: r.lit ?? true,
       })),
       items: rows.map((r) => ({
@@ -76,7 +79,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         createdAt: r.created_at,
         // Reported by several players, or hidden by the staff: only the owner still sees it, others do not.
         underReview: r.masked,
-        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j },
+        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0 },
       })),
     };
   });
@@ -90,7 +93,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Placement invalide' });
     }
-    const { itemId, i, j } = parsed.data;
+    const { itemId, i, j, rot } = parsed.data;
 
     // A creation or a piece of base furniture: the same rule for both, and the
     // object must belong to the player.
@@ -102,12 +105,14 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (creation.rowCount === 0 && furniture?.rowCount === 0) return reply.code(404).send({ error: 'Objet introuvable' });
     const column = creation.rowCount ? 'item_id' : 'furniture_id';
 
+    let saved: { rows: { rot: number }[] };
     try {
       // The UNIQUE (user_id, i, j) constraint arbitrates concurrent requests.
-      await pool.query(
-        `INSERT INTO placements (${column}, user_id, i, j) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, placed_at = now()`,
-        [itemId, user.id, i, j],
+      saved = await pool.query<{ rot: number }>(
+        `INSERT INTO placements (${column}, user_id, i, j, rot) VALUES ($1, $2, $3, $4, COALESCE($5::smallint, 0))
+         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, rot = COALESCE($5::smallint, placements.rot), placed_at = now()
+         RETURNING rot`,
+        [itemId, user.id, i, j, rot ?? null],
       );
     } catch (err) {
       if ((err as { code?: string }).code === '23505') {
@@ -118,7 +123,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     notify?.(user.id, 'decor');
     // Each object counts once, however often it is moved.
     quest?.(user.id, 'place', itemId);
-    return { placement: { itemId, i, j } };
+    return { placement: { itemId, i, j, rot: saved.rows[0]?.rot ?? 0 } };
   });
 
   app.delete<{ Params: { itemId: string } }>('/api/placements/:itemId', async (req, reply) => {

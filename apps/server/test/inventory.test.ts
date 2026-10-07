@@ -50,7 +50,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
   const inventory = async (sid: string) =>
     (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(sid) })).json().items as {
       id: string;
-      placement: { i: number; j: number } | null;
+      placement: { i: number; j: number; rot: number } | null;
     }[];
 
   it('requires a session', async () => {
@@ -68,7 +68,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect(await inventory(alice)).toEqual([expect.objectContaining({ id: a, placement: null })]);
     expect((await place(alice, { itemId: a, i: 3, j: 4 })).statusCode).toBe(200);
     const [item] = await inventory(alice);
-    expect(item!.placement).toEqual({ i: 3, j: 4 });
+    expect(item!.placement).toEqual({ i: 3, j: 4, rot: 0 });
     expect(item).toMatchObject({ serial: 1, editionNumber: 1, editionSize: 1, creator: 'alice' });
   });
 
@@ -78,7 +78,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
     expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
     expect((await place(sid, { itemId: id, i: 7, j: 7 })).statusCode).toBe(200);
-    expect((await inventory(sid))[0]!.placement).toEqual({ i: 7, j: 7 });
+    expect((await inventory(sid))[0]!.placement).toEqual({ i: 7, j: 7, rot: 0 });
   });
 
   it('refuses an occupied cell', async () => {
@@ -111,7 +111,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     await place(owner, { itemId: id, i: 1, j: 1 });
     const del = await app.inject({ method: 'DELETE', url: `/api/placements/${id}`, cookies: as(thief) });
     expect(del.statusCode).toBe(404);
-    expect((await inventory(owner))[0]!.placement).toEqual({ i: 1, j: 1 });
+    expect((await inventory(owner))[0]!.placement).toEqual({ i: 1, j: 1, rot: 0 });
   });
 
   it('refuses malformed placements', async () => {
@@ -199,10 +199,10 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
       const decor = async () =>
         (await app.inject({ method: 'GET', url: `/api/apartments/${ownerId}`, cookies: as(visitor) })).json().items as {
           id: string;
-          placement: { i: number; j: number };
+          placement: { i: number; j: number; rot: number };
         }[];
       const before = await decor();
-      expect(before).toEqual([expect.objectContaining({ id: ownerItem, placement: { i: 2, j: 2 } })]);
+      expect(before).toEqual([expect.objectContaining({ id: ownerItem, placement: { i: 2, j: 2, rot: 0 } })]);
 
       // Moving the owner's object, putting it away, adding to the owner's apartment: all refused.
       expect((await place(visitor, { itemId: ownerItem, i: 5, j: 5 })).statusCode).toBe(404);
@@ -220,6 +220,38 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
       });
       expect([200, 400]).toContain(forged.statusCode);
       expect(await decor()).toEqual(before);
+    });
+  });
+  describe('rotation', () => {
+    it('keeps the way a piece faces, serves a turned sprite, and refuses bad turns', async () => {
+      const sid = await signUp('turner');
+      const id = await createItem(sid);
+      const placed = await place(sid, { itemId: id, i: 3, j: 3 });
+      expect(placed.json().placement.rot).toBe(0);
+
+      const turned = await place(sid, { itemId: id, i: 3, j: 3, rot: 1 });
+      expect(turned.statusCode).toBe(200);
+      expect(turned.json().placement.rot).toBe(1);
+
+      // A move without a turn keeps the orientation.
+      const moved = await place(sid, { itemId: id, i: 4, j: 4 });
+      expect(moved.json().placement).toMatchObject({ i: 4, j: 4, rot: 1 });
+      const listed = (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(sid) })).json().items as {
+        id: string;
+        placement: { rot: number } | null;
+      }[];
+      expect(listed.find((it) => it.id === id)?.placement?.rot).toBe(1);
+
+      for (const rot of [4, -1, 1.5, 'x']) {
+        expect((await place(sid, { itemId: id, i: 4, j: 4, rot })).statusCode).toBe(400);
+      }
+
+      const sprite = (r: number) =>
+        app.inject({ method: 'GET', url: `/api/items/${id}.png?r=${r}`, cookies: as(sid) });
+      const [a, b, c] = await Promise.all([sprite(0), sprite(1), sprite(4)]);
+      expect(a.statusCode).toBe(200);
+      expect(a.rawPayload.equals(b.rawPayload)).toBe(false);
+      expect(a.rawPayload.equals(c.rawPayload)).toBe(true);
     });
   });
 });

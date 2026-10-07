@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { buildPrompt, extractJson, validateRecipe } from '@coloxel/generator';
-import { renderSprite, type Recipe } from '@coloxel/render';
+import { renderSprite, rotateParts, type Recipe } from '@coloxel/render';
 import { findViewableItemRecipe } from '../apartments/access';
 import { containsBannedWord } from '../auth/rules';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
@@ -120,7 +120,7 @@ export function registerCreationRoutes(
   });
 
   // Sprite rendered on demand by the shared engine from the stored recipe.
-  app.get<{ Params: { id: string } }>('/api/items/:id.png', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { r?: string } }>('/api/items/:id.png', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { id } = req.params;
     if (!UUID.test(id)) return reply.code(404).send({ error: 'Objet introuvable' });
@@ -130,11 +130,14 @@ export function registerCreationRoutes(
     const recipe = await findViewableItemRecipe<Recipe>(pool, id, req.user.id);
     if (!recipe) return reply.code(404).send({ error: 'Objet introuvable' });
 
-    let png = pngCache.get(id);
+    // ?r= is the number of quarter turns the piece was placed with.
+    const turns = Number(req.query.r) | 0;
+    const cacheKey = `${id}:${((turns % 4) + 4) % 4}`;
+    let png = pngCache.get(cacheKey);
     if (!png) {
-      png = spriteToPng(renderSprite(recipe.parts));
+      png = spriteToPng(renderSprite(rotateParts(recipe.parts, turns)));
       if (pngCache.size >= PNG_CACHE_MAX) pngCache.delete(pngCache.keys().next().value!);
-      pngCache.set(id, png);
+      pngCache.set(cacheKey, png);
     }
     return reply.header('cache-control', 'private, max-age=31536000, immutable').type('image/png').send(png);
   });

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, renderSprite } from '@coloxel/render';
+import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, renderSprite, rotateParts } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spriteToPng } from '../sprite-png';
@@ -50,14 +50,16 @@ export function registerFurnitureRoutes(
   });
 
   // Same engine as every other sprite, drawn on demand from the catalogue.
-  app.get<{ Params: { key: string } }>('/api/catalogue/:key.png', async (req, reply) => {
+  app.get<{ Params: { key: string }; Querystring: { r?: string } }>('/api/catalogue/:key.png', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const entry = catalogueEntry(req.params.key);
     if (!entry) return reply.code(404).send({ error: 'Meuble introuvable' });
-    let png = pngCache.get(entry.key);
+    const turns = Number(req.query.r) | 0;
+    const cacheKey = `${entry.key}:${((turns % 4) + 4) % 4}`;
+    let png = pngCache.get(cacheKey);
     if (!png) {
-      png = spriteToPng(renderSprite(entry.recipe.parts));
-      pngCache.set(entry.key, png);
+      png = spriteToPng(renderSprite(rotateParts(entry.recipe.parts, turns)));
+      pngCache.set(cacheKey, png);
     }
     return reply.header('cache-control', 'private, max-age=86400').type('image/png').send(png);
   });

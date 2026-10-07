@@ -130,7 +130,7 @@ describe.skipIf(!available)('building (PostgreSQL)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().owner).toEqual({ id: erin.id, nickname: 'erin' });
     expect(res.json().items).toEqual([
-      expect.objectContaining({ id: itemId, name: 'Lampe test', creator: 'erin', placement: { i: 2, j: 3 } }),
+      expect.objectContaining({ id: itemId, name: 'Lampe test', creator: 'erin', placement: { i: 2, j: 3, rot: 0 } }),
     ]);
     expect((await visit(frank.sid, '00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
     expect((await visit(frank.sid, 'pas-un-uuid')).statusCode).toBe(404);

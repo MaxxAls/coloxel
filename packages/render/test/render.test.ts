@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANCHOR_X, ANCHOR_Y, SCALE, SEEDS, SPRITE_H, SPRITE_W, project, renderSprite, spriteHash } from '../src';
+import { ANCHOR_X, ANCHOR_Y, SCALE, SEEDS, SPRITE_H, SPRITE_W, project, renderSprite, rotateParts, spriteHash } from '../src';
 
 const opaque = (d: Uint8ClampedArray) => {
   let n = 0;
@@ -102,5 +102,41 @@ describe('renderSprite', () => {
     };
     expect(red(half)).toBe(1);
     expect(red(one)).toBe(4);
+  });
+});
+
+describe('rotateParts', () => {
+  const box = { t: 'box', x0: -6, x1: 2, y0: -4, y1: 4, z0: 0, z1: 5, c: '#aa5522' } as const;
+  const lamp = { t: 'cyl', x: 5, y: 0, r: 2, z0: 0, z1: 9, side: '#888888' } as const;
+
+  it('is the identity for zero or four quarter turns', () => {
+    expect(rotateParts([box, lamp], 0)).toEqual([box, lamp]);
+    expect(rotateParts([box, lamp], 4)).toEqual([box, lamp]);
+    expect(rotateParts([box, lamp], -4)).toEqual([box, lamp]);
+  });
+
+  it('turns a box by a quarter turn and keeps its bounds ordered', () => {
+    const [turned] = rotateParts([box], 1);
+    expect(turned).toMatchObject({ x0: -4, x1: 4, y0: -6, y1: 2 });
+  });
+
+  it('moves a standing part around the centre and comes back after the other three turns', () => {
+    const [turned] = rotateParts([lamp], 1);
+    expect(turned).toMatchObject({ y: 5 });
+    expect(turned!.x).toBeCloseTo(0);
+    const [back] = rotateParts(rotateParts([lamp], 1), 3);
+    expect(back!.x).toBeCloseTo(5);
+    expect(back!.y).toBeCloseTo(0);
+  });
+
+  it('changes the sprite of an asymmetric piece, and only by the turn count modulo 4', () => {
+    const a = spriteHash(renderSprite([box, lamp]));
+    expect(spriteHash(renderSprite(rotateParts([box, lamp], 1)))).not.toBe(a);
+    expect(spriteHash(renderSprite(rotateParts([box, lamp], 5)))).toBe(spriteHash(renderSprite(rotateParts([box, lamp], 1))));
+  });
+
+  it('leaves what it does not know untouched', () => {
+    const junk = { t: 'weird', x: 1 };
+    expect(rotateParts([junk, { t: 'box' }], 1)).toEqual([junk, { t: 'box' }]);
   });
 });

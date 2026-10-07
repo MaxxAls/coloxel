@@ -203,6 +203,16 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     if (mine) {
       if (piece.placement) {
         actions.push({ label: 'Déplacer', kind: 'primary', run: () => (furniCard.hide(), select(piece.id)) });
+        const where = piece.placement;
+        actions.push({
+          label: 'Pivoter',
+          run: async () => {
+            const res = await api.place(piece.id, where.i, where.j, (where.rot + 1) % 4);
+            if (!res.ok) setMessage(res.error);
+            await refreshOwn();
+            furniCard.hide();
+          },
+        });
         if (!creation && isSwitchable(catalogueEntry(piece.key))) {
           const lit = piece.on !== false;
           actions.push({
@@ -248,7 +258,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         },
       });
     }
-    furniCard.show({ image: creation ? itemSpriteUrl(piece.id) : furnitureSpriteUrl(piece.key), name: piece.name, lines, actions });
+    furniCard.show({ image: creation ? itemSpriteUrl(piece.id, piece.placement?.rot) : furnitureSpriteUrl(piece.key, piece.placement?.rot), name: piece.name, lines, actions });
   }
 
   const HINT = 'Clique sur une case pour t’y rendre, sur un siège pour t’asseoir. Clic sur un objet : sa fiche.';
@@ -358,10 +368,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
     ...items.flatMap((it) =>
-      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: () => itemTexture(it.id) }] : [],
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: (rot: number) => itemTexture(it.id, rot) }] : [],
     ),
     ...furniture.flatMap((f) =>
-      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: () => furnitureTexture(f.key) }] : [],
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: (rot: number) => furnitureTexture(f.key, rot) }] : [],
     ),
   ];
 
@@ -370,6 +380,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     sprite: Sprite;
     anim?: 'sway' | 'flicker';
     phase: number;
+    /** Quarter turns of the texture on screen; -1 until the first one has loaded. */
+    rot: number;
   }
   const props = new Map<string, Prop>();
   const lights = new Map<string, { sprite: Sprite; flicker: boolean; base: number; phase: number }>();
@@ -390,14 +402,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         s.pivot.set(ANCHOR_X, ANCHOR_Y);
         itemSprites.set(thing.id, s);
         world.addChild(s);
-        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6 };
+        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6, rot: -1 };
         props.set(thing.id, prop);
-        thing.texture().then(
-          (t) => {
-            if (!s.destroyed) s.texture = t;
-          },
-          () => s.destroy(),
-        );
         if (entry?.glow) {
           const halo = new Sprite(glowTexture());
           halo.anchor.set(0.5);
@@ -408,6 +414,21 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           world.addChild(halo);
           lights.set(thing.id, { sprite: halo, flicker: !!entry.glow.flicker, base: 0.55, phase: Math.random() * 6 });
         }
+      }
+      // Turned: the server draws the piece again from the other side.
+      const rot = thing.placement.rot;
+      if (prop.rot !== rot) {
+        const first = prop.rot < 0;
+        prop.rot = rot;
+        const s = prop.sprite;
+        thing.texture(rot).then(
+          (t) => {
+            if (!s.destroyed && prop!.rot === rot) s.texture = t;
+          },
+          () => {
+            if (first) s.destroy();
+          },
+        );
       }
       // A switched-off lamp is dim and gives no light.
       prop.on = thing.on;

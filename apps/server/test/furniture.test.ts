@@ -21,7 +21,7 @@ interface Furniture {
   id: string;
   key: string;
   name: string;
-  placement: { i: number; j: number } | null;
+  placement: { i: number; j: number; rot: number } | null;
 }
 
 describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
@@ -50,7 +50,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
   const as = (sid: string) => ({ coloxel_sid: sid });
   const inventory = async (sid: string) =>
     (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(sid) })).json() as {
-      items: { id: string; placement: { i: number; j: number } | null }[];
+      items: { id: string; placement: { i: number; j: number; rot: number } | null }[];
       furniture: Furniture[];
     };
   const take = (sid: string, key: unknown) =>
@@ -95,7 +95,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     expect(inv.furniture).toHaveLength(STARTER_KIT.length);
     for (const piece of STARTER_KIT) {
       expect(inv.furniture).toContainEqual(
-        expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j } }),
+        expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot: 0 } }),
       );
     }
     // The kit is not a creation: nothing was numbered.
@@ -178,7 +178,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       expect((await place(ines.sid, piece.id, 2, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
-      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6 });
+      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6, rot: 0 });
 
       const del = await app.inject({ method: 'DELETE', url: `/api/placements/${piece.id}`, cookies: as(ines.sid) });
       expect(del.statusCode).toBe(204);
@@ -277,7 +277,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
         id: expect.any(String),
         key: expect.any(String),
         name: expect.any(String),
-        placement: { i: expect.any(Number), j: expect.any(Number) },
+        placement: { i: expect.any(Number), j: expect.any(Number), rot: 0 },
         on: true,
       });
       // The building view takes the wall color.
