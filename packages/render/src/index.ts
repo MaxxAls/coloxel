@@ -56,5 +56,5 @@ export {
   type RGB,
   type Tint,
 } from './avatar';
-export { OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, tileAt, tileCenter } from './room';
+export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, tileAt, tileCenter } from './room';
 export { paintRoom, type RoomLook } from './room-paint';

@@ -14,8 +14,8 @@ describe('room layouts', () => {
 
   it('reads levels and voids', () => {
     const stairs = preset('stairs');
-    expect(levelAt(stairs, 0, 0)).toBe(0);
-    expect(levelAt(stairs, 7, 3)).toBe(3);
+    expect(levelAt(stairs, 7, 0)).toBe(0);
+    expect(levelAt(stairs, 0, 3)).toBe(3);
     const ring = preset('ring');
     expect(levelAt(ring, 3, 3)).toBeNull();
     expect(voidKeys(ring).has(3 * N + 3)).toBe(true);

@@ -3,7 +3,8 @@
 // and the same function can be run in tests or a preview script.
 
 import type { FloorPattern, WallPattern } from './catalog';
-import { N, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H } from './room';
+import { DEFAULT_LAYOUT, N, hasFloor, levelAt, type RoomLayout } from '@coloxel/world';
+import { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H } from './room';
 
 type RGB = [number, number, number];
 
@@ -54,36 +55,9 @@ const bayer = (x: number, y: number) => (BAYER[((y & 3) << 2) | (x & 3)]! + 0.5)
 
 // ----- Geometry -----------------------------------------------------------------------
 
-const TOP_Y = OY - TH / 2;
-/** Half the room's width on screen, and the drop of a wall's bottom edge from the corner to its end. */
-const HALF_W = (N * TW) / 2;
-const DROP = (N * TH) / 2;
+/** Thickness of the floor slab along an edge that faces empty space. */
 const SLAB = 12;
 const CAP = 7;
-
-type Hit =
-  | { kind: 'floor'; u: number; v: number }
-  | { kind: 'left' | 'right'; u: number; v: number }
-  | null;
-
-/** What a canvas pixel shows: floor cell coordinates (0..8), or wall coordinates (u in cells from the corner, v in px up). */
-function locate(px: number, py: number): Hit {
-  const dx = px + 0.5 - OX, dy = py + 0.5 - OY;
-  const fi = (dx / (TW / 2) + dy / (TH / 2)) / 2 + 0.5;
-  const fj = (dy / (TH / 2) - dx / (TW / 2)) / 2 + 0.5;
-  if (fi >= 0 && fi < N && fj >= 0 && fj < N) return { kind: 'floor', u: fi, v: fj };
-  const sl = (OX - (px + 0.5)) / HALF_W;
-  if (sl > 0 && sl <= 1) {
-    const v = TOP_Y + DROP * sl - (py + 0.5);
-    if (v >= 0 && v < WALL_H) return { kind: 'left', u: N * sl, v };
-  }
-  const sr = (px + 0.5 - OX) / HALF_W;
-  if (sr > 0 && sr <= 1) {
-    const v = TOP_Y + DROP * sr - (py + 0.5);
-    if (v >= 0 && v < WALL_H) return { kind: 'right', u: N * sr, v };
-  }
-  return null;
-}
 
 // ----- Floor ----------------------------------------------------------------------------
 
@@ -406,10 +380,9 @@ function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py:
 
 // ----- Floor decor and light ------------------------------------------------------------
 
-function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py: number): RGB {
+function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py: number, wallDist: number): RGB {
   let out = c;
   // Contact shadow along the walls.
-  const wallDist = Math.min(u, v);
   if (wallDist < 0.45) out = tone(out, -0.16 * (1 - wallDist / 0.45) * (bayer(px, py) < 0.8 ? 1 : 0.5));
 
   if (look.decor === 'hall') {
@@ -440,53 +413,132 @@ function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py
 
 // ----- The whole room -------------------------------------------------------------------
 
-/** One RGBA pixel of the room, or null where the canvas stays empty. */
-function pixelAt(look: RoomLook, px: number, py: number): RGB | null {
-  const hit = locate(px, py);
-  if (hit) {
-    if (hit.kind === 'floor') return floorDecor(look, floorColor(look, hit.u, hit.v, px, py), hit.u, hit.v, px, py);
-    return wallColor(look, hit.kind, hit.u, hit.v, px, py);
-  }
+/** What a pixel of the wall mask says: which wall, and whether it is the top edge (for the thickness drawn above). */
+const LEFT = 1, RIGHT = 2, TOP = 4;
 
-  // The thickness of the floor along its two front edges.
-  for (let t = 1; t <= SLAB; t++) {
-    const above = locate(px, py - t);
-    if (above && above.kind === 'floor') {
-      const base = rgb(look.floor.a);
-      const left = px < OX;
-      let c = tone(base, left ? -0.4 : -0.55);
-      c = tone(c, (noise(px, py) - 0.5) * 0.05 - (t / SLAB) * 0.06);
-      if (t === 1) c = tone(rgb(look.floor.b), left ? -0.15 : -0.3);
-      return c;
-    }
-  }
-  // The thickness of the walls: a cap on top and a cut face at each end.
-  for (let t = 1; t <= CAP; t++) {
-    const l = locate(px + t, py + t / 2);
-    if (l && l.kind === 'left') {
-      const trim = rgb(look.wall.trim);
-      return l.v >= WALL_H - 2 ? tone(trim, 0.08 - (t / CAP) * 0.1) : tone(rgb(look.wall.left), -0.38 - (t / CAP) * 0.05);
-    }
-    const r = locate(px - t, py + t / 2);
-    if (r && r.kind === 'right') {
-      const trim = rgb(look.wall.trim);
-      return r.v >= WALL_H - 2 ? tone(trim, -0.08 - (t / CAP) * 0.1) : tone(rgb(look.wall.right), -0.48 - (t / CAP) * 0.05);
-    }
-  }
-  return null;
-}
-
-/** The painted room as RGBA bytes, ROOM_W x ROOM_H. Transparent outside the room. */
-export function paintRoom(look: RoomLook): Uint8ClampedArray {
+/**
+ * The painted room as RGBA bytes, ROOM_W x ROOM_H. Transparent outside the room.
+ *
+ * Painter's algorithm over the shape: walls along the outer back edges first, then every cell of floor from the back
+ * to the front (a raised cell is drawn higher, with its side faces down to the cell in front), then the thickness of
+ * the walls, then the outline.
+ */
+export function paintRoom(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): Uint8ClampedArray {
   const data = new Uint8ClampedArray(ROOM_W * ROOM_H * 4);
-  for (let y = 0; y < ROOM_H; y++) {
-    for (let x = 0; x < ROOM_W; x++) {
-      const c = pixelAt(look, x, y);
-      if (!c) continue;
-      const i = (y * ROOM_W + x) * 4;
-      data[i] = clamp(c[0]); data[i + 1] = clamp(c[1]); data[i + 2] = clamp(c[2]); data[i + 3] = 255;
+  const mask = new Uint8Array(ROOM_W * ROOM_H);
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < ROOM_W && y < ROOM_H;
+  const put = (x: number, y: number, c: RGB, wall = 0) => {
+    if (!inside(x, y)) return;
+    const o = (y * ROOM_W + x) * 4;
+    data[o] = clamp(c[0]); data[o + 1] = clamp(c[1]); data[o + 2] = clamp(c[2]); data[o + 3] = 255;
+    mask[y * ROOM_W + x] = wall;
+  };
+
+  // Is there floor anywhere behind this cell along i (left wall) or j (right wall)? If not, a wall stands here.
+  const openBehindI = (i: number, j: number) => {
+    for (let k = i - 1; k >= 0; k--) if (hasFloor(layout, k, j)) return false;
+    return true;
+  };
+  const openBehindJ = (i: number, j: number) => {
+    for (let k = j - 1; k >= 0; k--) if (hasFloor(layout, i, k)) return false;
+    return true;
+  };
+
+  const cells: { i: number; j: number; level: number }[] = [];
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      const level = levelAt(layout, i, j);
+      if (level !== null) cells.push({ i, j, level });
     }
   }
+
+  // Walls.
+  for (const { i, j, level } of cells) {
+    const lift = level * LEVEL_PX;
+    if (openBehindI(i, j)) {
+      // Left wall: in the plane i, from j to j + 1, going down-left on screen.
+      const xr = OX + (i - j) * (TW / 2);
+      for (let px = xr - TW / 2; px < xr; px++) {
+        const t = (xr - (px + 0.5)) / (TW / 2);
+        const baseY = OY - TH / 2 + (i + j + t) * (TH / 2);
+        for (let py = Math.floor(baseY - WALL_H); py < baseY - lift; py++) {
+          const v = baseY - (py + 0.5);
+          if (v < lift || v >= WALL_H) continue;
+          put(px, py, wallColor(look, 'left', j + t, v, px, py), LEFT | (v >= WALL_H - 2 ? TOP : 0));
+        }
+      }
+    }
+    if (openBehindJ(i, j)) {
+      // Right wall: in the plane j, from i to i + 1, going down-right.
+      const xl = OX + (i - j) * (TW / 2);
+      for (let px = xl; px < xl + TW / 2; px++) {
+        const t = (px + 0.5 - xl) / (TW / 2);
+        const baseY = OY - TH / 2 + (i + j + t) * (TH / 2);
+        for (let py = Math.floor(baseY - WALL_H); py < baseY - lift; py++) {
+          const v = baseY - (py + 0.5);
+          if (v < lift || v >= WALL_H) continue;
+          put(px, py, wallColor(look, 'right', i + t, v, px, py), RIGHT | (v >= WALL_H - 2 ? TOP : 0));
+        }
+      }
+    }
+  }
+
+  // Floor, back to front.
+  cells.sort((a, b) => a.i + a.j - (b.i + b.j) || a.i - b.i);
+  const base = rgb(look.floor.a);
+  for (const { i, j, level } of cells) {
+    const lift = level * LEVEL_PX;
+    const cx = OX + (i - j) * (TW / 2);
+    const cy = OY + (i + j) * (TH / 2) - lift;
+    const leftWall = openBehindI(i, j), rightWall = openBehindJ(i, j);
+    const isDoor = look.decor === 'apartment' && i === layout.door.i && j === layout.door.j;
+    for (let py = cy - TH / 2; py < cy + TH / 2; py++) {
+      for (let px = cx - TW / 2; px < cx + TW / 2; px++) {
+        const dx = px + 0.5 - cx, dy = py + 0.5 - cy;
+        const fu = (dx / (TW / 2) + dy / (TH / 2)) / 2 + 0.5;
+        const fv = (dy / (TH / 2) - dx / (TW / 2)) / 2 + 0.5;
+        if (fu < 0 || fu >= 1 || fv < 0 || fv >= 1) continue;
+        const wallDist = Math.min(leftWall ? fu : 9, rightWall ? fv : 9);
+        let c = floorDecor(look, floorColor(look, i + fu, j + fv, px, py), i + fu, j + fv, px, py, wallDist);
+        if (isDoor) c = doormat(c, fu, fv, px, py);
+        put(px, py, c);
+      }
+    }
+    // The sides: the slab of the floor facing empty space, or the step down to a lower cell.
+    const faces: [number, number, boolean][] = [[i, j + 1, true], [i + 1, j, false]];
+    for (const [ni, nj, left] of faces) {
+      const nl = levelAt(layout, ni, nj);
+      const h = nl === null ? lift + SLAB : Math.max(0, (level - nl) * LEVEL_PX);
+      if (h === 0) continue;
+      const x0 = left ? cx - TW / 2 : cx;
+      for (let px = x0; px < x0 + TW / 2; px++) {
+        const t = left ? (px + 0.5 - x0) / (TW / 2) : (x0 + TW / 2 - (px + 0.5)) / (TW / 2);
+        const top = Math.ceil(cy + (TH / 2) * t - 0.5);
+        for (let d = 0; d < h; d++) {
+          let c = tone(base, left ? -0.4 : -0.55);
+          c = tone(c, (noise(px, top + d) - 0.5) * 0.05 - (Math.min(d + 1, SLAB) / SLAB) * 0.06);
+          if (d === 0) c = tone(rgb(look.floor.b), left ? -0.15 : -0.3);
+          put(px, top + d, c);
+        }
+      }
+    }
+  }
+
+  // The thickness of the walls: a cap on top and a cut face at each end, over empty pixels only.
+  const wallPixels: number[] = [];
+  for (let k = 0; k < mask.length; k++) if (mask[k]) wallPixels.push(k);
+  const trim = rgb(look.wall.trim);
+  for (const k of wallPixels) {
+    const x = k % ROOM_W, y = (k - x) / ROOM_W;
+    const left = (mask[k]! & LEFT) !== 0, top = (mask[k]! & TOP) !== 0;
+    for (let t = 1; t <= CAP; t++) {
+      const tx = left ? x - t : x + t, ty = Math.round(y - t / 2);
+      if (!inside(tx, ty) || data[(ty * ROOM_W + tx) * 4 + 3] === 255) continue;
+      if (left) put(tx, ty, top ? tone(trim, 0.08 - (t / CAP) * 0.1) : tone(rgb(look.wall.left), -0.38 - (t / CAP) * 0.05));
+      else put(tx, ty, top ? tone(trim, -0.08 - (t / CAP) * 0.1) : tone(rgb(look.wall.right), -0.48 - (t / CAP) * 0.05));
+    }
+  }
+
   // Outline: every empty pixel touching the room, in the style guide's color.
   const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < ROOM_W && y < ROOM_H && data[(y * ROOM_W + x) * 4 + 3] === 255;
   const outline: number[] = [];
@@ -499,4 +551,13 @@ export function paintRoom(look: RoomLook): Uint8ClampedArray {
     data[i * 4] = OUTLINE[0]; data[i * 4 + 1] = OUTLINE[1]; data[i * 4 + 2] = OUTLINE[2]; data[i * 4 + 3] = 255;
   }
   return data;
+}
+
+/** A welcome mat on the cell of the door, so the way in can be seen from inside. */
+function doormat(c: RGB, fu: number, fv: number, px: number, py: number): RGB {
+  const edge = Math.min(fu, fv, 1 - fu, 1 - fv);
+  if (edge < 0.1) return c;
+  if (edge < 0.17) return [0xe0, 0xa0, 0x30];
+  if (edge < 0.22) return [0x6b, 0x24, 0x38];
+  return tone([0xa3, 0x35, 0x4c], (noise(px, py) - 0.5) * 0.1 + ((Math.floor(fu * 5) + Math.floor(fv * 5)) & 1 ? 0.05 : 0));
 }
