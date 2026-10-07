@@ -32,7 +32,10 @@ export function icon(name: string, size = 20): string {
   return `<svg class="icon" viewBox="0 0 8 8" width="${size}" height="${size}" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">${rects}</svg>`;
 }
 
-const STYLE = `
+/** Versions of the files the pages load, so that a browser keeps them for a year and fetches them again only when they change. */
+export const assetVersions: Record<string, string> = {};
+
+export const STYLE = `
 :root{--ink:#2a2140;--ink2:#4a3d7a;--paper:#fffdf6;--lav:#ece4ff;--lav2:#dcd0fb;--purple:#6b5bb8;--purple-d:#43388a;--navy:#231a4a;
 --gold:#ffc857;--gold-d:#c9921a;--pink:#ff5a7a;--teal:#2fc48d;--blue:#3ea7ff;--violet:#b78cff;--orange:#ff9a5a;--muted:#6f6794;
 --sky1:#2f93ff;--sky2:#7cc8ff;--sky3:#cfeeff}
@@ -328,7 +331,7 @@ export function page(o: PageOptions): string {
 <meta name="theme-color" content="#6b5bb8">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
-<style>${STYLE}</style><noscript><style>.reveal{opacity:1;transform:none}</style></noscript></head>
+<link rel="stylesheet" href="/site/assets/site.css?v=${assetVersions['site.css'] ?? '0'}"><noscript><style>.reveal{opacity:1;transform:none}</style></noscript></head>
 <body class="${esc(o.bodyClass ?? '')}" data-game="${esc(o.gameUrl)}">${top}${o.body}${foot}
-<script src="/site/assets/site.js" defer></script>${o.city ? '<script src="/site/assets/city.js" defer></script>' : ''}</body></html>`;
+<script src="/site/assets/site.js?v=${assetVersions['site.js'] ?? '0'}" defer></script>${o.city ? `<script src="/site/assets/city.js?v=${assetVersions['city.js'] ?? '0'}" defer></script>` : ''}</body></html>`;
 }

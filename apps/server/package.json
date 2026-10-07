@@ -20,6 +20,7 @@
     "@colyseus/redis-presence": "^0.18.5",
     "@colyseus/schema": "^5.0.36",
     "@colyseus/ws-transport": "^0.18.4",
+    "@fastify/compress": "^9.2.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/rate-limit": "^11.2.0",
     "@node-rs/argon2": "^2.2.2",

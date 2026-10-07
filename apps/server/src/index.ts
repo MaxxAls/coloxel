@@ -1,3 +1,4 @@
+import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
 import type pg from 'pg';
@@ -70,6 +71,8 @@ export function buildServer({
     // Behind a reverse proxy, the client IP comes from X-Forwarded-For: only trust it when told to.
     trustProxy: process.env.TRUST_PROXY === 'true',
   });
+  // Pages, scripts, styles and JSON travel compressed (pictures already are, and are left alone).
+  app.register(compress, { global: true, threshold: 1024, encodings: ['br', 'gzip'] });
   app.register(cookie);
 
   app.get('/health', async () => ({ ok: true }));

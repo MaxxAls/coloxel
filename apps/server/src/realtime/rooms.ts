@@ -661,6 +661,7 @@ export class ApartmentRoom extends BuildingRoom {
 
   private onChange = (kind: unknown) => {
     if (kind === 'decor') {
+      this.layoutCache = null;
       void this.revalidatePoses().then(() => this.broadcast('decor'));
     }
     else if (kind === 'access') void this.sendOutUnwelcome();
@@ -793,7 +794,23 @@ export class ApartmentRoom extends BuildingRoom {
     }
   }
 
+  /** The layout is asked at every click: it is remembered for a moment, and forgotten as soon as the decor changes. */
+  private layoutCache: { at: number; value: Promise<{ blocked: Set<number>; seats: Map<number, Interaction> }> } | null = null;
+
   protected override async layout() {
+    const now = Date.now();
+    if (!this.layoutCache || now - this.layoutCache.at > 1000) {
+      const value = this.readLayout();
+      this.layoutCache = { at: now, value };
+      // A failed read is not kept.
+      value.catch(() => {
+        if (this.layoutCache?.value === value) this.layoutCache = null;
+      });
+    }
+    return this.layoutCache.value;
+  }
+
+  private async readLayout() {
     const { rows } = await needDeps().pool.query<{ i: number; j: number; key: string | null }>(
       `SELECT p.i, p.j, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id

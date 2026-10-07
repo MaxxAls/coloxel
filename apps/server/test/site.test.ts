@@ -234,6 +234,35 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       expect((await page('/site')).body).not.toContain('admin.html');
     });
 
+    it('keeps the styles and scripts for a year under a versioned name, and a few minutes without', async () => {
+      const html = (await page('/site')).body;
+      const link = /\/site\/assets\/site\.css\?v=([0-9a-f]{8})/.exec(html);
+      expect(link).not.toBeNull();
+      expect(html).not.toContain('--ink');
+      const versioned = await page(`/site/assets/site.css?v=${link![1]}`);
+      expect(versioned.statusCode).toBe(200);
+      expect(versioned.headers['content-type']).toMatch(/text\/css/);
+      expect(versioned.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+      expect(versioned.body).toContain('--ink');
+      // A stale or missing version is served, but not kept for long.
+      expect((await page('/site/assets/site.css?v=00000000')).headers['cache-control']).toBe('public, max-age=300');
+      expect((await page('/site/assets/site.css')).headers['cache-control']).toBe('public, max-age=300');
+      expect(html).toMatch(/\/site\/assets\/site\.js\?v=[0-9a-f]{8}/);
+      expect((await page('/site/connexion')).body).toMatch(/\/site\/assets\/city\.js\?v=[0-9a-f]{8}/);
+    });
+
+    it('sends text compressed to browsers that accept it, and leaves pictures alone', async () => {
+      const gz = await app.inject({ method: 'GET', url: '/site', headers: { 'accept-encoding': 'gzip' } });
+      expect(gz.headers['content-encoding']).toBe('gzip');
+      const plain = await app.inject({ method: 'GET', url: '/site', headers: { 'accept-encoding': 'identity' } });
+      expect(plain.headers['content-encoding']).toBeUndefined();
+      expect(gz.rawPayload.length).toBeLessThan(plain.rawPayload.length);
+      const picture = await app.inject({ method: 'GET', url: '/site/scene.png', headers: { 'accept-encoding': 'gzip' } });
+      expect(picture.headers['content-encoding']).toBeUndefined();
+      const json = await app.inject({ method: 'GET', url: '/api/announcements', headers: { 'accept-encoding': 'gzip' } });
+      expect(json.statusCode).toBe(200);
+    }, 30000);
+
     it('serves the scripts of the pages, and only those', async () => {
       for (const name of ['site.js', 'city.js']) {
         const res = await page(`/site/assets/${name}`);

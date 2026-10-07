@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -12,7 +13,7 @@ import { avatarPng, heroScenePng } from './art';
 import { ROLES, STAFF_ROLES, isStaffRole, type RoleId } from '../staff/roles';
 import { hostRanking, upcomingEvents, type EventRow } from '../staff/team';
 import { isMaintenance, isStaff } from './settings';
-import { esc, icon, logo, page, type PageOptions } from './theme';
+import { STYLE, assetVersions, esc, icon, logo, page, type PageOptions } from './theme';
 
 // The public website of the game: a landing page that makes people want to play, news, rankings,
 // profiles, the team, the state of the game, and the sign-in and sign-up pages (the game itself
@@ -34,7 +35,12 @@ const paragraphs = (text: string) =>
 const excerpt = (text: string, n = 150) => (text.length > n ? `${text.slice(0, n).trimEnd()}…` : text);
 
 const asset = (name: string) => readFileSync(fileURLToPath(new URL(`./assets/${name}`, import.meta.url)), 'utf8');
-const ASSETS: Record<string, string> = { 'city.js': asset('city.js'), 'site.js': asset('site.js') };
+const ASSETS: Record<string, { body: string; type: string }> = {
+  'city.js': { body: asset('city.js'), type: 'text/javascript; charset=utf-8' },
+  'site.js': { body: asset('site.js'), type: 'text/javascript; charset=utf-8' },
+  'site.css': { body: STYLE, type: 'text/css; charset=utf-8' },
+};
+for (const [name, file] of Object.entries(ASSETS)) assetVersions[name] = createHash('sha1').update(file.body).digest('hex').slice(0, 8);
 
 interface PublicItem {
   id: string;
@@ -123,10 +129,15 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
     });
 
   // ----- Scripts and pictures of the pages ---------------------------------------
-  app.get<{ Params: { name: string } }>('/site/assets/:name', async (req, reply) => {
-    const body = ASSETS[req.params.name];
-    if (!body) return reply.code(404).send('Introuvable');
-    return reply.header('content-type', 'text/javascript; charset=utf-8').header('cache-control', 'public, max-age=300').send(body);
+  app.get<{ Params: { name: string }; Querystring: { v?: string } }>('/site/assets/:name', async (req, reply) => {
+    const file = ASSETS[req.params.name];
+    if (!file) return reply.code(404).send('Introuvable');
+    // Asked with its version: it never changes under that name, keep it for a year. Without: a few minutes.
+    const versioned = req.query.v === assetVersions[req.params.name];
+    return reply
+      .header('content-type', file.type)
+      .header('cache-control', versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=300')
+      .send(file.body);
   });
 
   // The picture of the home page: furnished apartments with people in them, drawn by the game's own engines (once).

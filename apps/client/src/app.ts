@@ -9,7 +9,7 @@ import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
 import { createQuests } from './quests';
 import { createShop } from './shop';
-import { createStaffPanel, type StaffPanel } from './staff-panel';
+import type { StaffPanel } from './staff-panel';
 import { createHud } from './wallet';
 import { createWardrobe } from './wardrobe';
 import { windowBar } from './window';
@@ -249,8 +249,10 @@ export async function startApp(user: User) {
     nav.append(b);
   }
   for (const item of items) addButton(item);
-  api.staffMe().then((res) => {
+  api.staffMe().then(async (res) => {
     if (!res.ok) return;
+    // Only staff downloads the administration.
+    const { createStaffPanel } = await import('./staff-panel');
     const panel = createStaffPanel({ me: res.data, onToggle: () => markActive(), notify: (text) => notify(text) });
     staff = panel;
     document.body.append(panel.element);
