@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { findPath, inGrid, type Cell } from '@coloxel/world';
+import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment } from '../apartments/access';
 import type { SessionUser } from '../auth/routes';
 import { authenticateConnection } from './auth';
@@ -91,14 +91,33 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const player = this.state.players.get(id);
       if (!player) return;
       const blocked = await this.blockedCells();
-      const path = findPath({ i: player.i, j: player.j }, parsed.data, (i, j) => blocked.has(i * 8 + j));
+      const path = findPath({ i: player.i, j: player.j }, parsed.data, (i, j) => blocked.has(i * N + j));
       if (path.length) this.paths.set(id, path);
       else this.paths.delete(id);
     });
   }
 
-  override onJoin(client: AuthedClient) {
+  /** The free cell closest to the door: not under an object, not under another player. */
+  private spawnCell(blocked: Set<number>): Cell {
+    const taken = new Set<number>(blocked);
+    this.state.players.forEach((p) => taken.add(p.i * N + p.j));
+    let best: Cell | null = null;
+    let bestDistance = Infinity;
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const d = Math.abs(i - SPAWN.i) + Math.abs(j - SPAWN.j);
+        if (!taken.has(i * N + j) && d < bestDistance) {
+          best = { i, j };
+          bestDistance = d;
+        }
+      }
+    }
+    return best ?? SPAWN;
+  }
+
+  override async onJoin(client: AuthedClient) {
     const user = userOf(client);
+    const blocked = await this.blockedCells();
     // One seat per player: a second connection replaces the first.
     const previous = this.clientsByUser.get(user.id);
     if (previous && previous !== client) previous.leave(4000, 'Connecté ailleurs');
@@ -107,8 +126,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const player = new Player();
     player.id = user.id;
     player.nickname = user.nickname;
-    player.i = SPAWN.i;
-    player.j = SPAWN.j;
+    // A second connection of the same player replaces the first: its old cell is free again.
+    this.state.players.delete(user.id);
+    const spawn = this.spawnCell(blocked);
+    player.i = spawn.i;
+    player.j = spawn.j;
     this.paths.delete(user.id);
     this.state.players.set(user.id, player);
   }
@@ -169,6 +191,6 @@ export class ApartmentRoom extends BuildingRoom {
       'SELECT i, j FROM placements WHERE user_id = $1',
       [this.ownerId],
     );
-    return new Set(rows.map((r) => r.i * 8 + r.j));
+    return new Set(rows.map((r) => r.i * N + r.j));
   }
 }

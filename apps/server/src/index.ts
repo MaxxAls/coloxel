@@ -17,7 +17,7 @@ export interface ServerDeps {
   pool?: pg.Pool;
   /** Object generator. Defaults to the Anthropic API from env; null means not configured. */
   model?: RecipeModel | null;
-  /** Request limits on login, registration and creations. Off by default under tests (NODE_ENV=test). */
+  /** Request limits on login, registration and creations. Off under tests (NODE_ENV=test) or with DISABLE_RATE_LIMIT=true (local dev). */
   rateLimits?: RateLimits | false;
   /** ioredis client for shared counters; in-memory counters without it. */
   redis?: unknown;
@@ -28,7 +28,7 @@ export interface ServerDeps {
 export function buildServer({
   pool,
   model = modelFromEnv(),
-  rateLimits = process.env.NODE_ENV === 'test' ? false : DEFAULT_LIMITS,
+  rateLimits = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === 'true' ? false : DEFAULT_LIMITS,
   redis,
   occupancy,
 }: ServerDeps = {}) {

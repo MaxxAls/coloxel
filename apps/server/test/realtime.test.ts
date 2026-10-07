@@ -120,6 +120,10 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     const b = await joinHall(dave);
     await until(() => [a, b].every((r) => playerOf(r, carol.id) && playerOf(r, dave.id)));
     expect(playerOf(b, carol.id)).toMatchObject(SPAWN);
+    // Dave arrived second: next to the door, not on top of Carol.
+    const daveStart = { ...playerOf(b, dave.id)! };
+    expect(daveStart).not.toEqual(SPAWN);
+    expect(Math.abs(daveStart.i - SPAWN.i) + Math.abs(daveStart.j - SPAWN.j)).toBe(1);
 
     a.send('move', { i: SPAWN.i, j: 3 });
     // Dave sees Carol walk: first a cell next to the spawn, then the target.
@@ -127,7 +131,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     expect(playerOf(b, carol.id)!.j).toBeLessThan(3);
     await until(() => playerOf(b, carol.id)!.j === 3, 3 * STEP_MS * 4 + 2000);
     expect(playerOf(b, carol.id)).toMatchObject({ i: SPAWN.i, j: 3 });
-    expect(playerOf(b, dave.id)).toMatchObject(SPAWN);
+    expect(playerOf(b, dave.id)).toMatchObject(daveStart);
   });
 
   it('ignores moves that are forged, malformed or out of the grid', async () => {
@@ -136,6 +140,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     const a = await joinHall(erin);
     const b = await joinHall(frank);
     await until(() => playerOf(b, erin.id) && playerOf(b, frank.id));
+    const frankStart = { ...playerOf(b, frank.id)! };
 
     // Naming another player in the message moves nobody: the strict schema rejects it.
     a.send('move', { i: 2, j: 2, id: frank.id });
@@ -143,7 +148,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     for (const bad of [{ i: -1, j: 0 }, { i: 8, j: 0 }, { i: 1.5, j: 1 }, { i: 'x', j: 1 }, null, 'move', [1, 2]]) a.send('move', bad);
     await new Promise((r) => setTimeout(r, STEP_MS * 4));
     expect(playerOf(b, erin.id)).toMatchObject(SPAWN);
-    expect(playerOf(b, frank.id)).toMatchObject(SPAWN);
+    expect(playerOf(b, frank.id)).toMatchObject(frankStart);
   });
 
   it('limits a client that floods messages, without taking the room down', async () => {
@@ -225,6 +230,34 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await setAccess(omar.id, 'closed');
       const late = await signUp('quentin');
       await expect(joinApartment(late, omar.id)).rejects.toThrow(/fermé/);
+    });
+
+    it('never makes a player appear on an object, nor on another player', async () => {
+      const uma = await signUp('uma');
+      const vic = await signUp('vic');
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/creations',
+        payload: { description: 'une lampe' },
+        cookies: { coloxel_sid: uma.sid },
+      });
+      // An object right on the door cell.
+      await app.inject({
+        method: 'PUT',
+        url: '/api/placements',
+        payload: { itemId: created.json().item.id, i: SPAWN.i, j: SPAWN.j },
+        cookies: { coloxel_sid: uma.sid },
+      });
+      await setAccess(uma.id, 'building');
+      const host = await joinApartment(uma, uma.id);
+      const guest = await joinApartment(vic, uma.id);
+      await until(() => playerOf(guest, uma.id) && playerOf(guest, vic.id));
+      const a = playerOf(guest, uma.id)!;
+      const b = playerOf(guest, vic.id)!;
+      expect(a).not.toMatchObject(SPAWN);
+      expect(b).not.toMatchObject(SPAWN);
+      expect({ i: a.i, j: a.j }).not.toEqual({ i: b.i, j: b.j });
+      await until(() => host.state?.players?.size === 2);
     });
 
     it('does not let a player walk through objects placed in the apartment', async () => {
