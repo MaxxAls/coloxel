@@ -5,6 +5,7 @@ import { SEEDS, renderSprite } from '@coloxel/render';
 import { registerAuthRoutes } from './auth/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
+import { registerInventoryRoutes } from './inventory/routes';
 import { spriteToPng } from './sprite-png';
 
 export { spriteToPng };
@@ -34,6 +35,7 @@ export function buildServer({ pool, model = modelFromEnv() }: ServerDeps = {}) {
     app.register(async (scope) => {
       registerAuthRoutes(scope, pool);
       registerCreationRoutes(scope, pool, model);
+      registerInventoryRoutes(scope, pool);
     });
   }
 

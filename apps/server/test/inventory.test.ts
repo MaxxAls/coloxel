@@ -1,0 +1,147 @@
+import type pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SEEDS } from '@coloxel/render';
+import type { RecipeModel } from '../src/creations/model';
+import { migrate } from '../src/db/migrate';
+import { createPool } from '../src/db/pool';
+import { buildServer } from '../src/index';
+
+const url = process.env.DATABASE_URL ?? 'postgres://coloxel:coloxel@localhost:5432/coloxel';
+const probe = createPool(url);
+const available = await probe.query('SELECT 1').then(
+  () => true,
+  () => false,
+);
+await probe.end();
+
+const model: RecipeModel = async () => JSON.stringify({ nom: 'Lampe test', parts: SEEDS[0]!.parts });
+
+describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
+  let pool: pg.Pool;
+  let app: ReturnType<typeof buildServer>;
+
+  beforeAll(async () => {
+    await migrate('down', url).catch(() => {});
+    await migrate('down', url).catch(() => {});
+    await migrate('up', url);
+    pool = createPool(url);
+    app = buildServer({ pool, model });
+  });
+  afterAll(async () => {
+    await app?.close();
+    await pool?.end();
+  });
+
+  async function signUp(nickname: string) {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { email: `${nickname}@test.dev`, password: 'motdepasse', nickname, birthDate: '1990-01-01' },
+    });
+    return res.cookies.find((c) => c.name === 'coloxel_sid')!.value;
+  }
+  const as = (sid: string) => ({ coloxel_sid: sid });
+  const createItem = async (sid: string, description = 'une lampe') =>
+    (await app.inject({ method: 'POST', url: '/api/creations', payload: { description }, cookies: as(sid) })).json()
+      .item.id as string;
+  const place = (sid: string, body: unknown) =>
+    app.inject({ method: 'PUT', url: '/api/placements', payload: body as object, cookies: as(sid) });
+  const inventory = async (sid: string) =>
+    (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(sid) })).json().items as {
+      id: string;
+      placement: { i: number; j: number } | null;
+    }[];
+
+  it('requires a session', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/inventory' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'PUT', url: '/api/placements', payload: {} })).statusCode).toBe(401);
+    const del = await app.inject({ method: 'DELETE', url: '/api/placements/00000000-0000-4000-8000-000000000000' });
+    expect(del.statusCode).toBe(401);
+  });
+
+  it('lists only the owner’s items with their placement', async () => {
+    const alice = await signUp('alice');
+    const bob = await signUp('bob');
+    const a = await createItem(alice);
+    await createItem(bob);
+    expect(await inventory(alice)).toEqual([expect.objectContaining({ id: a, placement: null })]);
+    expect((await place(alice, { itemId: a, i: 3, j: 4 })).statusCode).toBe(200);
+    const [item] = await inventory(alice);
+    expect(item!.placement).toEqual({ i: 3, j: 4 });
+    expect(item).toMatchObject({ serial: 1, editionNumber: 1, editionSize: 1, creator: 'alice' });
+  });
+
+  it('moves an already placed item, including onto its own cell', async () => {
+    const sid = await signUp('carol');
+    const id = await createItem(sid);
+    expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
+    expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
+    expect((await place(sid, { itemId: id, i: 7, j: 7 })).statusCode).toBe(200);
+    expect((await inventory(sid))[0]!.placement).toEqual({ i: 7, j: 7 });
+  });
+
+  it('refuses an occupied cell', async () => {
+    const sid = await signUp('dave');
+    const first = await createItem(sid, 'objet un');
+    const second = await createItem(sid, 'objet deux');
+    expect((await place(sid, { itemId: first, i: 2, j: 2 })).statusCode).toBe(200);
+    expect((await place(sid, { itemId: second, i: 2, j: 2 })).statusCode).toBe(409);
+    expect((await inventory(sid)).find((x) => x.id === second)!.placement).toBeNull();
+  });
+
+  it('lets only one of two simultaneous placements on the same cell win', async () => {
+    const sid = await signUp('erin');
+    const first = await createItem(sid, 'objet un');
+    const second = await createItem(sid, 'objet deux');
+    const codes = (
+      await Promise.all([place(sid, { itemId: first, i: 5, j: 5 }), place(sid, { itemId: second, i: 5, j: 5 })])
+    )
+      .map((r) => r.statusCode)
+      .sort();
+    expect(codes).toEqual([200, 409]);
+  });
+
+  it('refuses another player’s item', async () => {
+    const owner = await signUp('frank');
+    const thief = await signUp('gina');
+    const id = await createItem(owner);
+    expect((await place(thief, { itemId: id, i: 1, j: 1 })).statusCode).toBe(404);
+    expect((await inventory(thief)).length).toBe(0);
+    await place(owner, { itemId: id, i: 1, j: 1 });
+    const del = await app.inject({ method: 'DELETE', url: `/api/placements/${id}`, cookies: as(thief) });
+    expect(del.statusCode).toBe(404);
+    expect((await inventory(owner))[0]!.placement).toEqual({ i: 1, j: 1 });
+  });
+
+  it('refuses malformed placements', async () => {
+    const sid = await signUp('hugo');
+    const id = await createItem(sid);
+    for (const body of [
+      { itemId: id, i: 8, j: 0 },
+      { itemId: id, i: 0, j: -1 },
+      { itemId: id, i: 1.5, j: 0 },
+      { itemId: id, i: '1', j: 0 },
+      { itemId: 'pas-un-uuid', i: 0, j: 0 },
+      { i: 0, j: 0 },
+      null,
+    ]) {
+      expect((await place(sid, body)).statusCode).toBe(400);
+    }
+    expect((await place(sid, { itemId: '00000000-0000-4000-8000-000000000000', i: 0, j: 0 })).statusCode).toBe(404);
+    expect((await inventory(sid))[0]!.placement).toBeNull();
+  });
+
+  it('removes a placement and frees the cell', async () => {
+    const sid = await signUp('iris');
+    const first = await createItem(sid, 'objet un');
+    const second = await createItem(sid, 'objet deux');
+    await place(sid, { itemId: first, i: 4, j: 4 });
+    const del = await app.inject({ method: 'DELETE', url: `/api/placements/${first}`, cookies: as(sid) });
+    expect(del.statusCode).toBe(204);
+    expect((await app.inject({ method: 'DELETE', url: `/api/placements/${first}`, cookies: as(sid) })).statusCode).toBe(404);
+    expect((await place(sid, { itemId: second, i: 4, j: 4 })).statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: 'DELETE', url: '/api/placements/pas-un-uuid', cookies: as(sid) })).statusCode,
+    ).toBe(404);
+  });
+});
