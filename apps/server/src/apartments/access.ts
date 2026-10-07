@@ -20,3 +20,12 @@ export async function findViewableItemRecipe<R>(pool: pg.Pool, itemId: string, v
   );
   return rows[0]?.recipe ?? null;
 }
+
+// Can `viewerId` walk into `hostId`'s apartment? Same rule as the sprites.
+export async function canEnterApartment(pool: pg.Pool, hostId: string, viewerId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM users host WHERE host.id = $1 AND ${APARTMENT_ACCESS_SQL}`,
+    [hostId, viewerId],
+  );
+  return (rowCount ?? 0) > 0;
+}

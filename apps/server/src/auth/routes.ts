@@ -20,6 +20,16 @@ declare module 'fastify' {
 
 const sha256 = (token: string) => createHash('sha256').update(token).digest();
 
+/** The user behind a session cookie value, or null (unknown or expired). Shared by HTTP and WebSocket auth. */
+export async function findSessionUser(pool: pg.Pool, token: string): Promise<SessionUser | null> {
+  const { rows } = await pool.query<SessionUser>(
+    `SELECT u.id, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = $1 AND s.expires_at > now()`,
+    [sha256(token)],
+  );
+  return rows[0] ?? null;
+}
+
 // Verified against when the email is unknown, so login time does not reveal it.
 const dummyHashPromise = hash('coloxel-dummy-password');
 
@@ -46,12 +56,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
   app.addHook('onRequest', async (req: FastifyRequest) => {
     const token = req.cookies[SESSION_COOKIE];
     if (!token) return;
-    const { rows } = await pool.query<SessionUser>(
-      `SELECT u.id, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = $1 AND s.expires_at > now()`,
-      [sha256(token)],
-    );
-    req.user = rows[0] ?? null;
+    req.user = await findSessionUser(pool, token);
   });
 
   app.post('/api/auth/register', async (req, reply) => {

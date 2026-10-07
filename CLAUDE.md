@@ -13,8 +13,8 @@ Jeu social en pixel art où chaque objet est inventé par un joueur : il le déc
 | --- | --- |
 | Langage | TypeScript strict partout |
 | Client | Vite + PixiJS v8 (`apps/client`) |
-| Serveur | Node.js + Fastify (`apps/server`), Colyseus arrivera en phase 2 |
-| Données | PostgreSQL (Redis en phase 2) |
+| Serveur | Node.js + Fastify (`apps/server`), temps réel Colyseus dans le même processus (`apps/server/src/realtime`, port 2567) |
+| Données | PostgreSQL, Redis (présence temps réel) |
 | Moteur de rendu des objets | `packages/render`, pur TypeScript, sans DOM, utilisé par le client ET le serveur |
 | Générateur | `packages/generator` : prompt du modèle + validation des recettes |
 | Tests | Vitest |
@@ -25,6 +25,7 @@ Jeu social en pixel art où chaque objet est inventé par un joueur : il le déc
 apps/client        client de jeu (navigateur)
 apps/server        API + rendu serveur des objets
 packages/render    recette -> pixels (RGBA), identique partout
+packages/world     grille des salles et pathfinding, partagés client/serveur
 packages/generator prompt du modèle, validation et nettoyage des recettes
 docs/              conception, spec de phase, bible graphique
 prototype/         prototype Atelier Pixel, ne pas modifier
