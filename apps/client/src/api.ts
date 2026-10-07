@@ -21,6 +21,8 @@ export interface BuildingApartment {
   id: number;
   floor: number;
   slot: number;
+  /** The name its owner gave it, if any. */
+  name: string | null;
   owner: { id: string; nickname: string } | null;
   mine: boolean;
   /** The player may walk in (own apartment, or opened to the building). */
@@ -30,8 +32,28 @@ export interface BuildingApartment {
 
 export interface VisitedApartment {
   owner: { id: string; nickname: string };
+  name: string | null;
   items: InventoryItem[];
 }
+
+export type ApartmentAccess = 'closed' | 'friends' | 'building';
+
+export interface MyApartment {
+  id: number;
+  floor: number;
+  slot: number;
+  name: string | null;
+  access: ApartmentAccess;
+}
+
+export interface NavigatorData {
+  places: { kind: 'hall'; name: string; visitors: number }[];
+  open: { apartmentId: number; ownerId: string; nickname: string; name: string | null; mine: boolean; visitors: number }[];
+  friends: { ownerId: string; nickname: string; where: string }[];
+}
+
+/** What a player calls an apartment: the name its owner chose, or "Chez <pseudo>". */
+export const apartmentTitle = (name: string | null, nickname: string) => name ?? `Chez ${nickname}`;
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
@@ -67,6 +89,10 @@ export const api = {
   place: (itemId: string, i: number, j: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j }),
   building: () => call<{ apartments: BuildingApartment[] }>('GET', '/api/building'),
   apartment: (ownerId: string) => call<VisitedApartment>('GET', `/api/apartments/${ownerId}`),
+  myApartment: () => call<MyApartment>('GET', '/api/apartment'),
+  updateApartment: (body: { name?: string | null; access?: ApartmentAccess }) =>
+    call<MyApartment>('PUT', '/api/apartment', body),
+  navigator: () => call<NavigatorData>('GET', '/api/navigator'),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
 };
 

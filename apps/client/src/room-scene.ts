@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y } from '@coloxel/render';
-import { api, type InventoryItem } from './api';
+import { api, apartmentTitle, type InventoryItem } from './api';
+import { createApartmentSettings } from './apartment-settings';
 import { AVATAR_H, lookFor, type Facing, type Frame, type Look } from './avatar';
 import { APARTMENT_THEME, HALL_THEME, diamond, drawRoom } from './draw';
 import { createPanel } from './panel';
@@ -46,12 +47,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const mine = ownerId === user.id;
 
   // What the room contains, as the server tells it.
+  let visitedTitle = '';
   let visitedOwner = '';
   let items: InventoryItem[] = [];
   if (target.kind === 'apartment' && !mine) {
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
     visitedOwner = visit.data.owner.nickname;
+    visitedTitle = apartmentTitle(visit.data.name, visit.data.owner.nickname);
     items = visit.data.items;
   }
 
@@ -121,6 +124,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       syncItems();
     };
     panelElement = panel.element;
+    // Name and opening of the apartment sit right under the player's name.
+    panelElement.children[0]?.after(createApartmentSettings());
     void panel.refreshCharges();
   } else {
     const visit = createVisitPanel(
@@ -134,8 +139,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
             ],
           }
         : {
-            title: `Chez ${visitedOwner}`,
-            subtitle: 'Tu es en visite.',
+            title: visitedTitle,
+            subtitle: `Appartement de ${visitedOwner}, tu es en visite.`,
             links: [
               ['Retour chez moi', () => host.go({ kind: 'apartment', ownerId: user.id })],
               ['L’immeuble', () => host.go({ kind: 'building' })],

@@ -202,12 +202,12 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       const host = await joinApartment(sam, sam.id);
       const guest = await joinApartment(tess, sam.id);
       await until(() => playerOf(host, tess.id) && playerOf(guest, sam.id));
-      expect((await realtime.occupancy()).get(sam.id)).toBe(2);
+      expect((await realtime.occupancy()).apartments.get(sam.id)).toBe(2);
       await guest.leave();
       await until(async () => true);
       await new Promise((r) => setTimeout(r, 300));
-      expect((await realtime.occupancy()).get(sam.id)).toBe(1);
-      expect((await realtime.occupancy()).get(tess.id)).toBeUndefined();
+      expect((await realtime.occupancy()).apartments.get(sam.id)).toBe(1);
+      expect((await realtime.occupancy()).apartments.get(tess.id)).toBeUndefined();
     });
 
     it('cannot be entered by forcing the room id with another owner’s options', async () => {

@@ -1,5 +1,5 @@
 import { Container, Graphics, Text, type Ticker } from 'pixi.js';
-import { api, type BuildingApartment } from './api';
+import { api, apartmentTitle, type BuildingApartment } from './api';
 import { FONT, type Scene, type SceneHost } from './scene';
 
 const W = 300;
@@ -47,9 +47,10 @@ const shortName = (name: string) => (name.length > 5 ? name.slice(0, 5) : name);
 
 function statusText(a: BuildingApartment): string {
   if (!a.owner) return 'Appartement libre';
-  if (a.mine) return `Ton appart${a.visitors > 1 ? ` · ${a.visitors} personnes` : ''}`;
   const people = a.visitors > 0 ? ` · ${a.visitors} ${a.visitors > 1 ? 'personnes' : 'personne'} dedans` : '';
-  return `${a.owner.nickname} · ${a.open ? 'ouvert' : 'fermé'}${people}`;
+  if (a.mine) return `${a.name ?? 'Ton appart'}${people}`;
+  const owner = a.name ? ` · ${a.owner.nickname}` : '';
+  return `${apartmentTitle(a.name, a.owner.nickname)}${owner} · ${a.open ? 'ouvert' : 'fermé'}${people}`;
 }
 
 export async function createBuildingScene(host: SceneHost): Promise<Scene | { error: string }> {

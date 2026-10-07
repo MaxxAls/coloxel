@@ -20,6 +20,7 @@ interface Apartment {
   id: number;
   floor: number;
   slot: number;
+  name: string | null;
   owner: { id: string; nickname: string } | null;
   mine: boolean;
   open: boolean;
@@ -30,12 +31,13 @@ describe.skipIf(!available)('building (PostgreSQL)', () => {
   let pool: pg.Pool;
   let app: ReturnType<typeof buildServer>;
   let present = new Map<string, number>();
+  let hallCount = 0;
 
   beforeAll(async () => {
     await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
-    app = buildServer({ pool, model, occupancy: async () => present });
+    app = buildServer({ pool, model, occupancy: async () => ({ apartments: present, hall: hallCount }) });
   });
   afterAll(async () => {
     await app?.close();

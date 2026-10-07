@@ -3,6 +3,7 @@ import { Server, matchMaker } from '@colyseus/core';
 import { RedisPresence } from '@colyseus/redis-presence';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
+import type { Presence } from '../building/routes';
 import { ApartmentRoom, HallRoom, configureRooms } from './rooms';
 
 export interface RealtimeOptions {
@@ -19,7 +20,7 @@ export interface Realtime {
   server: Server;
   port: number;
   /** Players currently inside each apartment, by owner id (for the building view). */
-  occupancy(): Promise<Map<string, number>>;
+  occupancy(): Promise<Presence>;
   close(): Promise<void>;
 }
 
@@ -51,12 +52,13 @@ export async function startRealtime({
     port: actualPort,
     async occupancy() {
       const rooms = await matchMaker.query({ name: 'apartment' });
-      const present = new Map<string, number>();
+      const apartments = new Map<string, number>();
       for (const room of rooms) {
         const ownerId = (room.metadata as { ownerId?: string } | undefined)?.ownerId;
-        if (ownerId && room.clients > 0) present.set(ownerId, (present.get(ownerId) ?? 0) + room.clients);
+        if (ownerId && room.clients > 0) apartments.set(ownerId, (apartments.get(ownerId) ?? 0) + room.clients);
       }
-      return present;
+      const halls = await matchMaker.query({ name: 'hall' });
+      return { apartments, hall: halls.reduce((n, room) => n + room.clients, 0) };
     },
     close: () => server.gracefullyShutdown(false),
   };

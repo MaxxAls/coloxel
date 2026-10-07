@@ -1,11 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import { z } from 'zod';
 import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
+import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Players currently inside each apartment, by owner id. Supplied by the realtime server. */
-export type Occupancy = () => Promise<Map<string, number>>;
+/** Who is where right now. Supplied by the realtime server. */
+export interface Presence {
+  /** Players inside each apartment, by owner id. */
+  apartments: Map<string, number>;
+  /** Players in the hall. */
+  hall: number;
+}
+export type Occupancy = () => Promise<Presence>;
+const nobody = (): Presence => ({ apartments: new Map(), hall: 0 });
 
 /** Move a new player into the first free apartment. Run inside the sign-up transaction. */
 export async function assignApartment(client: pg.PoolClient, userId: string): Promise<number | null> {
@@ -23,6 +32,7 @@ interface ApartmentRow {
   id: number;
   floor: number;
   slot: number;
+  name: string | null;
   owner_id: string | null;
   nickname: string | null;
   open: boolean;
@@ -48,24 +58,25 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const [{ rows }, present] = await Promise.all([
       pool.query<ApartmentRow>(
-        `SELECT a.id, a.floor, a.slot, a.owner_id, host.nickname,
+        `SELECT a.id, a.floor, a.slot, a.name, a.owner_id, host.nickname,
                 COALESCE(${apartmentAccessSql('$1')}, false) AS open
            FROM apartments a
            LEFT JOIN users host ON host.id = a.owner_id
           ORDER BY a.floor DESC, a.slot`,
         [req.user.id],
       ),
-      occupancy ? occupancy() : Promise.resolve(new Map<string, number>()),
+      occupancy ? occupancy() : Promise.resolve(nobody()),
     ]);
     return {
       apartments: rows.map((r) => ({
         id: r.id,
         floor: r.floor,
         slot: r.slot,
+        name: r.name,
         owner: r.owner_id ? { id: r.owner_id, nickname: r.nickname } : null,
         mine: r.owner_id === req.user!.id,
         open: r.open,
-        visitors: r.owner_id ? (present.get(r.owner_id) ?? 0) : 0,
+        visitors: r.owner_id ? (present.apartments.get(r.owner_id) ?? 0) : 0,
       })),
     };
   });
@@ -79,7 +90,10 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
       return reply.code(404).send({ error: 'Appartement introuvable' });
     }
     const [owner, placed] = await Promise.all([
-      pool.query<{ id: string; nickname: string }>('SELECT id, nickname FROM users WHERE id = $1', [ownerId]),
+      pool.query<{ id: string; nickname: string; name: string | null }>(
+        `SELECT u.id, u.nickname, a.name FROM users u LEFT JOIN apartments a ON a.owner_id = u.id WHERE u.id = $1`,
+        [ownerId],
+      ),
       pool.query<PlacedRow>(
         `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
                 cr.nickname AS creator, it.created_at, p.i, p.j
@@ -92,7 +106,8 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
       ),
     ]);
     return {
-      owner: owner.rows[0],
+      owner: { id: owner.rows[0]!.id, nickname: owner.rows[0]!.nickname },
+      name: owner.rows[0]!.name,
       items: placed.rows.map((r) => ({
         id: r.id,
         serial: r.serial,
@@ -106,4 +121,87 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
       })),
     };
   });
+
+  // The player's own apartment: where it is, its name and who may come in.
+  app.get('/api/apartment', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    return mineOf(pool, req.user.id);
+  });
+
+  const settingsSchema = z
+    .object({
+      name: z
+        .string('Nom invalide')
+        .transform((s) => s.replace(/\s+/g, ' ').trim())
+        .pipe(z.string().max(30, 'Nom trop long (30 caractères max)'))
+        .nullable()
+        .optional(),
+      access: z.enum(['closed', 'friends', 'building'], 'Accès invalide').optional(),
+    })
+    .strict();
+
+  // Only the owner, only their own apartment: the id comes from the session.
+  app.put('/api/apartment', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const parsed = settingsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
+    const { name, access } = parsed.data;
+
+    let newName: string | null | undefined = undefined;
+    if (name !== undefined) {
+      newName = name === null || name === '' ? null : name;
+      if (newName !== null) {
+        const verdict = filterText(newName);
+        if (!verdict.ok) return reply.code(400).send({ error: FILTER_MESSAGES[verdict.reason] });
+      }
+    }
+    if (newName !== undefined) {
+      await pool.query('UPDATE apartments SET name = $1 WHERE owner_id = $2', [newName, req.user.id]);
+    }
+    if (access !== undefined) {
+      await pool.query('UPDATE users SET apartment_access = $1 WHERE id = $2', [access, req.user.id]);
+    }
+    return mineOf(pool, req.user.id);
+  });
+
+  // Where to go: the hall, the apartments open to everyone (busiest first) and,
+  // once friends exist, where the friends are.
+  app.get('/api/navigator', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const [{ rows }, present] = await Promise.all([
+      pool.query<{ id: number; name: string | null; owner_id: string; nickname: string }>(
+        `SELECT a.id, a.name, a.owner_id, host.nickname
+           FROM apartments a JOIN users host ON host.id = a.owner_id
+          WHERE host.apartment_access = 'building'`,
+      ),
+      occupancy ? occupancy() : Promise.resolve(nobody()),
+    ]);
+    const open = rows
+      .map((r) => ({
+        apartmentId: r.id,
+        ownerId: r.owner_id,
+        nickname: r.nickname,
+        name: r.name,
+        mine: r.owner_id === req.user!.id,
+        visitors: present.apartments.get(r.owner_id) ?? 0,
+      }))
+      .sort((a, b) => b.visitors - a.visitors || (a.name ?? a.nickname).localeCompare(b.name ?? b.nickname, 'fr'))
+      .slice(0, 50);
+    return {
+      places: [{ kind: 'hall', name: 'Le hall', visitors: present.hall }],
+      open,
+      // Friends arrive with the friends list (step 7 of phase 2).
+      friends: [],
+    };
+  });
+}
+
+async function mineOf(pool: pg.Pool, userId: string) {
+  const { rows } = await pool.query<{ id: number; floor: number; slot: number; name: string | null; access: string }>(
+    `SELECT a.id, a.floor, a.slot, a.name, u.apartment_access AS access
+       FROM users u LEFT JOIN apartments a ON a.owner_id = u.id WHERE u.id = $1`,
+    [userId],
+  );
+  const r = rows[0]!;
+  return { id: r.id, floor: r.floor, slot: r.slot, name: r.name, access: r.access };
 }
