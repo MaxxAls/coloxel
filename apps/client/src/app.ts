@@ -2,6 +2,7 @@ import { Application, Container } from 'pixi.js';
 import type { User } from './api';
 import { createBuildingScene } from './building-scene';
 import { appearance } from './appearance';
+import { createFriends } from './friends';
 import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
 import { createShop } from './shop';
@@ -123,6 +124,7 @@ export async function startApp(user: User) {
     user,
     go: (target) => void go(target),
     notify,
+    friendsChanged: () => friends.refresh(),
   };
   const home: Target = { kind: 'apartment', ownerId: user.id };
 
@@ -131,10 +133,18 @@ export async function startApp(user: User) {
     onToggle: () => markActive(),
   });
   document.body.append(navigator.element);
+  const friends = createFriends({
+    go: (target) => void go(target),
+    onToggle: () => markActive(),
+    onPending: (count) => setBadge('friends', count),
+    notify: (text) => notify(text),
+  });
+  document.body.append(friends.element);
 
   // Windows float over the scene, one at a time.
   const closeWindows = (except?: string) => {
     if (except !== 'navigator') navigator.close();
+    if (except !== 'friends') friends.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
   };
@@ -196,7 +206,11 @@ export async function startApp(user: User) {
         wardrobe.toggle();
       },
     },
-    { key: 'friends', label: 'Amis', active: () => false, soon: true },
+    { key: 'friends', label: 'Amis', active: () => friends.isOpen(), run: () => {
+        closeWindows('friends');
+        friends.toggle();
+      },
+    },
   ];
   const buttons = new Map<string, HTMLButtonElement>();
   for (const item of items) {
@@ -206,6 +220,7 @@ export async function startApp(user: User) {
     label.textContent = item.label;
     b.append(pixelIcon(item.key), label);
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
+    if (item.key === 'friends') b.dataset.friendsToggle = '';
     if (item.key === 'catalogue') b.dataset.shopToggle = '';
     if (item.key === 'person') b.dataset.wardrobeToggle = '';
     if (item.soon) {
@@ -216,6 +231,19 @@ export async function startApp(user: User) {
     }
     buttons.set(item.key, b);
     nav.append(b);
+  }
+  /** A small red number on a bar button, for what waits for the player. */
+  function setBadge(key: string, count: number) {
+    const b = buttons.get(key);
+    if (!b) return;
+    b.querySelector('.bar-badge')?.remove();
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'bar-badge';
+      badge.textContent = String(count);
+      badge.setAttribute('aria-label', `${count} en attente`);
+      b.append(badge);
+    }
   }
   function markActive() {
     for (const item of items) {

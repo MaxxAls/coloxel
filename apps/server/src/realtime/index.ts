@@ -5,6 +5,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
 import type { Presence } from '../building/routes';
 import { ApartmentRoom, HallRoom, apartmentTopic, configureRooms } from './rooms';
+import { WHERE_KEY, locationOf, type Location, type WhereEntry } from './where';
 
 export interface RealtimeOptions {
   pool: pg.Pool;
@@ -23,6 +24,8 @@ export interface Realtime {
   occupancy(): Promise<Presence>;
   /** Tell the room of an apartment, wherever it runs, that its access or decor changed. */
   notifyApartment(ownerId: string, kind: 'access' | 'decor'): void;
+  /** Where each of these players is, among those connected right now. */
+  locate(userIds: string[]): Promise<Map<string, Location>>;
   close(): Promise<void>;
 }
 
@@ -54,6 +57,25 @@ export async function startRealtime({
     port: actualPort,
     notifyApartment(ownerId, kind) {
       void matchMaker.presence.publish(apartmentTopic(ownerId), kind);
+    },
+    async locate(userIds) {
+      const found = new Map<string, Location>();
+      if (!userIds.length) return found;
+      const [entries, rooms] = await Promise.all([matchMaker.presence.hgetall(WHERE_KEY), matchMaker.query({})]);
+      // A process that died leaves its players behind in the store: only rooms that still exist count.
+      const live = new Set(rooms.map((r) => r.roomId));
+      for (const id of userIds) {
+        const raw = entries[id];
+        if (!raw) continue;
+        try {
+          const entry = JSON.parse(raw) as WhereEntry;
+          const at = live.has(entry.roomId) ? locationOf(entry.room) : null;
+          if (at) found.set(id, at);
+        } catch {
+          // An unreadable entry is no entry.
+        }
+      }
+      return found;
     },
     async occupancy() {
       const rooms = await matchMaker.query({ name: 'apartment' });

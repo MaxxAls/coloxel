@@ -15,6 +15,8 @@ export interface RateLimits {
   creationsPerIp: Limit;
   furniturePerUser: Limit;
   shopPerUser: Limit;
+  socialPerUser: Limit;
+  reportsPerUser: Limit;
 }
 
 const MINUTE = 60_000;
@@ -27,6 +29,8 @@ export const DEFAULT_LIMITS: RateLimits = {
   creationsPerIp: { max: 60, window: MINUTE },
   furniturePerUser: { max: 120, window: MINUTE },
   shopPerUser: { max: 60, window: MINUTE },
+  socialPerUser: { max: 60, window: MINUTE },
+  reportsPerUser: { max: 10, window: MINUTE },
 };
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -38,9 +42,11 @@ export interface RateGuards {
   creations: Guard[];
   furniture: Guard[];
   shop: Guard[];
+  social: Guard[];
+  reports: Guard[];
 }
 
-export const NO_GUARDS: RateGuards = { login: [], register: [], creations: [], furniture: [], shop: [] };
+export const NO_GUARDS: RateGuards = { login: [], register: [], creations: [], furniture: [], shop: [], social: [], reports: [] };
 
 /**
  * Brute force on login and spam of the generator are the two things that cost
@@ -98,5 +104,7 @@ export async function buildRateGuards(
     ],
     furniture: [guard(rule(limits.furniturePerUser, (req) => `furniture:user:${req.user?.id ?? req.ip}`, slowDown))],
     shop: [guard(rule(limits.shopPerUser, (req) => `shop:user:${req.user?.id ?? req.ip}`, slowDown))],
+    social: [guard(rule(limits.socialPerUser, (req) => `social:user:${req.user?.id ?? req.ip}`, slowDown))],
+    reports: [guard(rule(limits.reportsPerUser, (req) => `reports:user:${req.user?.id ?? req.ip}`, 'Tu signales beaucoup de choses d’un coup. Réessaie dans une minute.'))],
   };
 }

@@ -7,11 +7,13 @@ import { registerBuildingRoutes, type NotifyApartment, type Occupancy } from './
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
 import { registerAvatarRoutes } from './avatar/routes';
+import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
 import { registerPetRoutes } from './pets/routes';
 import { registerShopRoutes } from './shop/routes';
 import { registerWalletRoutes } from './wallet/routes';
 import { registerInventoryRoutes } from './inventory/routes';
+import type { Locate } from './realtime/where';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
 
@@ -30,6 +32,8 @@ export interface ServerDeps {
   occupancy?: Occupancy;
   /** Lets the apartment's room know about a change of access or decor (from the realtime server). */
   notifyApartment?: NotifyApartment;
+  /** Where each connected player is (from the realtime server): friends see each other's place. */
+  locate?: Locate;
 }
 
 export function buildServer({
@@ -39,6 +43,7 @@ export function buildServer({
   redis,
   occupancy,
   notifyApartment,
+  locate,
 }: ServerDeps = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -64,7 +69,8 @@ export function buildServer({
       registerCreationRoutes(scope, pool, model, guards);
       registerInventoryRoutes(scope, pool, notifyApartment);
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);
-      registerBuildingRoutes(scope, pool, occupancy, notifyApartment);
+      registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
+      registerFriendRoutes(scope, pool, locate, notifyApartment, guards);
       registerWalletRoutes(scope, pool, guards);
       registerAvatarRoutes(scope, pool, guards);
       registerShopRoutes(scope, pool, guards);

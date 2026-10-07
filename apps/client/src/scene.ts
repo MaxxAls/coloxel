@@ -19,6 +19,8 @@ export interface SceneHost {
   user: User;
   go(target: Target): void;
   notify(text: string): void;
+  /** The friends list may have changed (a request was sent from a player card). */
+  friendsChanged(): void;
 }
 
 export interface Scene {

@@ -9,6 +9,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 
 const ACCESS: { value: ApartmentAccess; label: string; hint: string }[] = [
   { value: 'closed', label: 'Fermé', hint: 'Personne d’autre ne peut entrer chez toi.' },
+  { value: 'friends', label: 'Ouvert aux amis', hint: 'Seuls tes amis peuvent te rendre visite.' },
   { value: 'building', label: 'Ouvert à l’immeuble', hint: 'Tous les habitants peuvent te rendre visite.' },
 ];
 
@@ -47,7 +48,7 @@ export function createApartmentSettings(): HTMLElement {
   const show = (apartment: MyApartment) => {
     input.value = apartment.name ?? '';
     for (const option of ACCESS) {
-      const active = option.value === apartment.access || (option.value === 'closed' && apartment.access === 'friends');
+      const active = option.value === apartment.access;
       buttons.get(option.value)!.classList.toggle('active', active);
       buttons.get(option.value)!.setAttribute('aria-pressed', String(active));
       if (active) hint.textContent = option.hint;

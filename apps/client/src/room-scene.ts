@@ -6,6 +6,7 @@ import { createChat, type ChatMessage } from './chat-ui';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
+import { showPlayerCard } from './player-card';
 import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
@@ -606,10 +607,36 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     },
     { signal: abort.signal },
   );
+  /** Another player standing under the pointer, if any. */
+  const playerAt = (x: number, y: number) => {
+    let found: { id: string; nickname: string } | null = null;
+    let best = Infinity;
+    for (const [id, view] of views) {
+      if (id === user.id) continue;
+      // About one cell wide and as tall as an avatar standing, or lying on a bed.
+      if (Math.abs(x - view.x) > 15 || y < view.y - 62 || y > view.y + 8) continue;
+      if (view.y < best && found) continue;
+      best = view.y;
+      found = { id, nickname: view.label.text };
+    }
+    return found;
+  };
+
   app.canvas.addEventListener(
     'click',
     async (ev) => {
       const { x, y } = toRoom(ev);
+      const who = !selected ? playerAt(x, y) : null;
+      if (who) {
+        showPlayerCard({
+          id: who.id,
+          nickname: who.nickname,
+          at: { x: ev.clientX, y: ev.clientY },
+          notify: (text) => host.notify(text),
+          onFriendsChanged: () => host.friendsChanged(),
+        });
+        return;
+      }
       const cell = tileAt(x, y);
       if (!cell) return;
       if (!selected && seatAt(cell)) {

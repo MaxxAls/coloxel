@@ -75,8 +75,8 @@ export function createNavigator(options: { go(target: Target): void; onToggle(op
       return;
     }
     if (tab === 'friends') {
-      if (!data.friends.length) status.textContent = 'Tu n’as pas encore d’amis ici : la liste d’amis arrive bientôt.';
-      for (const f of data.friends) list.append(row(f.nickname, f.where, '', { kind: 'apartment', ownerId: f.ownerId }));
+      if (!data.friends.length) status.textContent = 'Aucun ami en ligne pour l’instant. Ajoute des amis depuis le bouton Amis.';
+      for (const f of data.friends) list.append(row(f.nickname, f.where, '', f.target));
     } else if (tab === 'open') {
       if (!data.open.length) status.textContent = 'Aucun appart ouvert pour l’instant. Ouvre le tien pour recevoir des visites !';
       for (const a of data.open) {

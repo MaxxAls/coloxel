@@ -3,7 +3,9 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { FLOORS, WALLS, catalogueEntry } from '@coloxel/render';
 import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
+import { listFriends } from '../friends/routes';
 import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
+import type { Locate } from '../realtime/where';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -66,6 +68,7 @@ export function registerBuildingRoutes(
   pool: pg.Pool,
   occupancy: Occupancy | undefined,
   notify?: NotifyApartment,
+  locate?: Locate,
 ) {
   // The building seen from the side: every apartment, who lives there, whether
   // the requester may walk in, and how many players are inside right now.
@@ -203,17 +206,18 @@ export function registerBuildingRoutes(
     return mineOf(pool, req.user.id);
   });
 
-  // Where to go: the hall, the apartments open to everyone (busiest first) and,
-  // once friends exist, where the friends are.
+  // Where to go: the hall, the apartments open to everyone (busiest first) and
+  // where the friends are, when they are somewhere the player may follow them.
   app.get('/api/navigator', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
-    const [{ rows }, present] = await Promise.all([
+    const [{ rows }, present, friends] = await Promise.all([
       pool.query<{ id: number; name: string | null; owner_id: string; nickname: string }>(
         `SELECT a.id, a.name, a.owner_id, host.nickname
            FROM apartments a JOIN users host ON host.id = a.owner_id
           WHERE host.apartment_access = 'building'`,
       ),
       occupancy ? occupancy() : Promise.resolve(nobody()),
+      listFriends(pool, req.user.id, locate),
     ]);
     const open = rows
       .map((r) => ({
@@ -229,8 +233,9 @@ export function registerBuildingRoutes(
     return {
       places: [{ kind: 'hall', name: 'Le hall', visitors: present.hall }],
       open,
-      // Friends arrive with the friends list (step 7 of phase 2).
-      friends: [],
+      friends: friends
+        .filter((f) => f.online && f.target)
+        .map((f) => ({ id: f.id, nickname: f.nickname, where: f.where!, target: f.target! })),
     };
   });
 }

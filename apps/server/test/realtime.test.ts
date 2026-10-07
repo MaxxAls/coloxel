@@ -39,7 +39,12 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await pool.query(
       'INSERT INTO apartments (id, floor, slot) SELECT n, 10 + n, 0 FROM generate_series(31, 120) AS n',
     );
-    app = buildServer({ pool, model, notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind) });
+    app = buildServer({
+      pool,
+      model,
+      notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind),
+      locate: (ids) => realtime.locate(ids),
+    });
     // Redis is optional here: without it presence stays in memory.
     realtime = await startRealtime({ pool, port: 0, redisUrl, allowedOrigins: [ORIGIN] });
   });
@@ -333,7 +338,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
         await expect(joinApartment(ben, ana.id)).rejects.toThrow(/fermé/);
       });
 
-      it('shows visitors out when the apartment is opened to friends only, which nobody is yet', async () => {
+      it('shows visitors out when the apartment is opened to friends only and they are not friends', async () => {
         const dan = await signUp('dan');
         const eve = await signUp('eve');
         await setAccess(dan.id, 'building');
@@ -511,6 +516,79 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await until(() => roomC.state?.players?.get(alice.id));
     expect(JSON.parse((roomC.state.players.get(alice.id) as { look: string }).look).hat).toBe(6);
   });
+  describe('friends', () => {
+    const friendsOf = async (a: Account) =>
+      (await app.inject({ method: 'GET', url: '/api/friends', cookies: { coloxel_sid: a.sid } })).json().friends as {
+        id: string;
+        online: boolean;
+        where: string | null;
+        target: unknown;
+      }[];
+    const befriend = async (a: Account, b: Account & { nickname: string }) => {
+      await app.inject({ method: 'POST', url: '/api/friends/requests', payload: { nickname: b.nickname }, cookies: { coloxel_sid: a.sid } });
+      await app.inject({ method: 'POST', url: `/api/friends/requests/${a.id}/accept`, cookies: { coloxel_sid: b.sid } });
+    };
+    interface Named extends Account {
+      nickname: string;
+    }
+    const signUpNamed = async (nickname: string): Promise<Named> => ({ ...(await signUp(nickname)), nickname });
+    const untilAsync = async (cond: () => Promise<unknown>, ms = 4000) => {
+      const start = Date.now();
+      while (!(await cond())) {
+        if (Date.now() - start > ms) throw new Error('timed out waiting for condition');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    };
+
+    it('tells friends where a player is as they move around, and forgets them when they leave', async () => {
+      const ada = await signUpNamed('fl_ada');
+      const bo = await signUpNamed('fl_bo');
+      await befriend(ada, bo);
+      expect((await friendsOf(bo))[0]).toMatchObject({ online: false, where: null, target: null });
+
+      const inHall = await joinHall(ada);
+      await untilAsync(async () => (await friendsOf(bo))[0]?.where === 'Dans le hall');
+      expect((await friendsOf(bo))[0]).toMatchObject({ online: true, target: { kind: 'hall' } });
+
+      // Ada goes home (closed): her friend still sees she is online, but cannot follow into a closed flat.
+      await inHall.leave();
+      const home = await joinApartment(ada, ada.id);
+      await until(() => playerOf(home, ada.id));
+      await untilAsync(async () => (await friendsOf(bo))[0]?.where === 'Dans un appart privé');
+      expect((await friendsOf(bo))[0]).toMatchObject({ online: true, target: null });
+
+      // Opened to friends, the same friend can follow her in one click.
+      await setAccess(ada.id, 'friends');
+      await untilAsync(async () => (await friendsOf(bo))[0]?.target !== null);
+      expect((await friendsOf(bo))[0]).toMatchObject({ where: 'Chez fl_ada', target: { kind: 'apartment', ownerId: ada.id } });
+      const follower = await joinApartment(bo, ada.id);
+      await until(() => playerOf(follower, bo.id) && playerOf(home, bo.id));
+
+      await home.leave();
+      await untilAsync(async () => (await friendsOf(bo))[0]?.online === false);
+    });
+
+    it('lets a friend into an apartment opened to friends, and shows them out when the friendship ends', async () => {
+      const cy = await signUpNamed('fl_cy');
+      const di = await signUpNamed('fl_di');
+      const eli = await signUpNamed('fl_eli');
+      await befriend(cy, di);
+      await setAccess(cy.id, 'friends');
+      const host = await joinApartment(cy, cy.id);
+      const friend = await joinApartment(di, cy.id);
+      await expect(joinApartment(eli, cy.id)).rejects.toThrow(/fermé/);
+      let code = 0;
+      friend.onLeave((c: number) => (code = c));
+      await until(() => host.state?.players?.size === 2);
+
+      const res = await app.inject({ method: 'DELETE', url: `/api/friends/${cy.id}`, cookies: { coloxel_sid: di.sid } });
+      expect(res.statusCode).toBe(204);
+      await until(() => code === 4003, 4000);
+      await until(() => host.state?.players?.size === 1);
+      await expect(joinApartment(di, cy.id)).rejects.toThrow(/fermé/);
+    });
+  });
+
   describe('chat', () => {
     interface Heard {
       chat: { id: number; from: string; nickname: string; text: string }[];

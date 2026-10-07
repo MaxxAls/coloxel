@@ -382,8 +382,12 @@ body {
 }
 .access {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+}
+.access button {
+  padding: 6px 4px;
+  font-size: 12px;
 }
 .access button.active {
   background: var(--accent);
@@ -1476,4 +1480,98 @@ body.in-game {
 }
 .chat-log .flag:hover {
   opacity: 1;
+}
+
+/* ---------- Friends and player cards ---------- */
+
+.friends .win-body {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+}
+.friends p {
+  margin: 0;
+}
+.friend-add {
+  display: flex;
+  gap: 6px;
+}
+.friend-add input {
+  min-width: 0;
+}
+.friend-lists {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+}
+.friend-lists h3 {
+  margin: 0 0 6px;
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  color: #8d82c4;
+}
+.friend-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.friend-row .online::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #6be07a;
+}
+.friend-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.friend-actions button {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.navbar button {
+  position: relative;
+}
+.navbar .bar-badge {
+  position: absolute;
+  top: 2px;
+  right: 8px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ff5d4d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.player-card {
+  position: fixed;
+  z-index: 14;
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  padding: 10px;
+  background: #1b1530;
+  border: 2px solid #5a4d99;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(10, 6, 30, 0.7);
+}
+.player-card strong {
+  color: var(--accent);
+  overflow-wrap: anywhere;
 }

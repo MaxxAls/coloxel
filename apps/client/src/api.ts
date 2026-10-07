@@ -68,7 +68,28 @@ export interface MyApartment {
 export interface NavigatorData {
   places: { kind: 'hall'; name: string; visitors: number }[];
   open: { apartmentId: number; ownerId: string; nickname: string; name: string | null; mine: boolean; visitors: number }[];
-  friends: { ownerId: string; nickname: string; where: string }[];
+  /** Friends one click away: where they are, and the room that takes the player there. */
+  friends: { id: string; nickname: string; where: string; target: FriendTarget }[];
+}
+
+export type FriendTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
+
+export interface Friend {
+  id: string;
+  nickname: string;
+  online: boolean;
+  /** Where the friend is, in words; null when offline. */
+  where: string | null;
+  /** The room that takes the player to this friend, when they may follow. */
+  target: FriendTarget | null;
+}
+
+export interface FriendsData {
+  friends: Friend[];
+  /** Players who asked to be our friend. */
+  incoming: { id: string; nickname: string }[];
+  /** Players we asked. */
+  outgoing: { id: string; nickname: string }[];
 }
 
 /** What a player calls an apartment: the name its owner chose, or "Chez <pseudo>". */
@@ -155,6 +176,10 @@ export const api = {
   updateApartment: (body: { name?: string | null; access?: ApartmentAccess; floor?: string; wall?: string }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
+  friends: () => call<FriendsData>('GET', '/api/friends'),
+  askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
+  acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),
+  removeFriend: (id: string) => call<unknown>('DELETE', `/api/friends/${id}`),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
   wallet: () => call<WalletData>('GET', '/api/wallet'),
   daily: () => call<{ pixels: number; gained: number }>('POST', '/api/wallet/daily'),
