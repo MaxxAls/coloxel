@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { itemMaskedSql } from '../moderation/masking';
 
 // Single place deciding who may see into an apartment. The owner always can;
 // others depend on the owner's apartment_access: everybody in the building, or
@@ -11,7 +12,8 @@ export const apartmentAccessSql = (viewer: string) =>
 export const APARTMENT_ACCESS_SQL = apartmentAccessSql('$2');
 
 // Can `viewerId` see the sprite of `itemId`? Either they own it, or it is
-// placed in an apartment they may enter. Returns the recipe when allowed.
+// placed in an apartment they may enter and has not been masked by reports or the staff.
+// Returns the recipe when allowed.
 export async function findViewableItemRecipe<R>(pool: pg.Pool, itemId: string, viewerId: string): Promise<R | null> {
   const { rows } = await pool.query<{ recipe: R }>(
     `SELECT i.recipe
@@ -19,7 +21,7 @@ export async function findViewableItemRecipe<R>(pool: pg.Pool, itemId: string, v
        LEFT JOIN placements p ON p.item_id = i.id
        LEFT JOIN users host ON host.id = p.user_id
       WHERE i.id = $1
-        AND (i.owner_id = $2 OR (p.item_id IS NOT NULL AND ${APARTMENT_ACCESS_SQL}))`,
+        AND (i.owner_id = $2 OR (p.item_id IS NOT NULL AND ${APARTMENT_ACCESS_SQL} AND NOT ${itemMaskedSql('i')}))`,
     [itemId, viewerId],
   );
   return rows[0]?.recipe ?? null;

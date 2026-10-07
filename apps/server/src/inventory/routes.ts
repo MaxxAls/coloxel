@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
+import { itemMaskedSql } from '../moderation/masking';
 
 export const GRID_SIZE = 8;
 
@@ -31,6 +32,7 @@ interface InventoryRow {
   created_at: Date;
   i: number | null;
   j: number | null;
+  masked: boolean;
 }
 
 export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, notify?: NotifyApartment) {
@@ -38,7 +40,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
       `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
-              cr.nickname AS creator, it.created_at, p.i, p.j
+              cr.nickname AS creator, it.created_at, p.i, p.j, ${itemMaskedSql('it')} AS masked
        FROM items it
        JOIN users cr ON cr.id = it.creator_id
        LEFT JOIN placements p ON p.item_id = it.id
@@ -70,6 +72,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         editionSize: r.edition_size,
         creator: r.creator,
         createdAt: r.created_at,
+        // Reported by several players, or hidden by the staff: only the owner still sees it, others do not.
+        underReview: r.masked,
         placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j },
       })),
     };

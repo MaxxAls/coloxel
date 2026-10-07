@@ -137,7 +137,7 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     cardDesc.textContent = `« ${item.description} »`;
     cardSerial.textContent = `N° ${serialLabel(item.serial)} · Exemplaire ${item.editionNumber}/${item.editionSize}`;
     const date = new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    cardCreator.textContent = `Créé par ${item.creator} le ${date}`;
+    cardCreator.textContent = `Créé par ${item.creator} le ${date}${item.underReview ? ' · En revue : les autres joueurs ne le voient plus pour l’instant.' : ''}`;
     cardPlace.textContent = item.id === selected ? 'Annuler' : item.placement ? 'Déplacer' : 'Poser';
     cardPickUp.hidden = !item.placement;
   };

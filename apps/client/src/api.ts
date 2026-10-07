@@ -16,6 +16,8 @@ export interface InventoryItem {
   editionSize: number;
   creator: string;
   createdAt: string;
+  /** Reported by several players or hidden by the staff: only its owner still sees it. */
+  underReview?: boolean;
   placement: { i: number; j: number } | null;
 }
 
@@ -135,6 +137,9 @@ export interface PurchaseResult {
   pet?: { id: string; species: string; color: number; name: string };
 }
 
+export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment';
+export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -180,6 +185,8 @@ export const api = {
   askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
   acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),
   removeFriend: (id: string) => call<unknown>('DELETE', `/api/friends/${id}`),
+  report: (body: { kind: ReportKind; targetId: string | number; reason: ReportReason; details?: string }) =>
+    call<{ ok: true; already: boolean }>('POST', '/api/reports', body),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
   wallet: () => call<WalletData>('GET', '/api/wallet'),
   daily: () => call<{ pixels: number; gained: number }>('POST', '/api/wallet/daily'),

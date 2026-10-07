@@ -1575,3 +1575,59 @@ body.in-game {
   color: var(--accent);
   overflow-wrap: anywhere;
 }
+
+/* ---------- Report dialog ---------- */
+
+.modal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 6, 30, 0.6);
+}
+.modal.window {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  --wx: 0px;
+}
+.modal textarea {
+  font: inherit;
+  color: var(--text);
+  background: #120f22;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.report-reasons {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.report-reasons label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.report-reasons input {
+  width: auto;
+}
+.flag {
+  font-size: 12px;
+}
+.modal p {
+  margin: 0;
+}

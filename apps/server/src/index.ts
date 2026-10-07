@@ -10,6 +10,7 @@ import { registerAvatarRoutes } from './avatar/routes';
 import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
 import { registerPetRoutes } from './pets/routes';
+import { registerReportRoutes } from './reports/routes';
 import { registerShopRoutes } from './shop/routes';
 import { registerWalletRoutes } from './wallet/routes';
 import { registerInventoryRoutes } from './inventory/routes';
@@ -71,6 +72,7 @@ export function buildServer({
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
       registerFriendRoutes(scope, pool, locate, notifyApartment, guards);
+      registerReportRoutes(scope, pool, guards);
       registerWalletRoutes(scope, pool, guards);
       registerAvatarRoutes(scope, pool, guards);
       registerShopRoutes(scope, pool, guards);

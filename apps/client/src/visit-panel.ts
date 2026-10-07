@@ -7,9 +7,14 @@ export interface VisitPanel {
   setPresent(count: number): void;
 }
 
+/** What a visitor can report in the apartment they are in. */
+export type VisitReport = { kind: 'item'; item: InventoryItem } | { kind: 'apartment_name' } | { kind: 'apartment' };
+
 export interface VisitPanelOptions {
   title: string;
   subtitle: string;
+  /** Present when the apartment can be reported (not in the hall). `named`: its owner gave it a name. */
+  report?: { named: boolean; run(what: VisitReport): void };
   /** Buttons going elsewhere: [label, action]. */
   links: [string, () => void][];
 }
@@ -58,16 +63,38 @@ export function createVisitPanel(options: VisitPanelOptions): VisitPanel {
   const creator = el('p', 'muted small');
   meta.append(name, desc, serial, creator);
   body.append(img, meta);
-  card.append(cardHead, body);
+  const reportItem = el('button', 'link flag', 'Signaler cette création');
+  reportItem.type = 'button';
+  reportItem.hidden = true;
+  card.append(cardHead, body, reportItem);
   close.addEventListener('click', () => (card.hidden = true));
+  let inspected: InventoryItem | null = null;
+  reportItem.addEventListener('click', () => {
+    if (inspected) options.report?.run({ kind: 'item', item: inspected });
+  });
 
   const hint = el('p', 'muted small', 'Clique sur une case pour te déplacer, sur une chaise ou un lit pour t’y installer. Clic droit sur un objet : sa fiche.');
   root.append(head, present, links, card, hint);
+  if (options.report) {
+    const report = options.report;
+    const flags = el('div', 'visit-links');
+    const flag = (label: string, what: VisitReport) => {
+      const b = el('button', 'link flag', label);
+      b.type = 'button';
+      b.addEventListener('click', () => report.run(what));
+      flags.append(b);
+    };
+    if (report.named) flag('Signaler le nom de l’appart', { kind: 'apartment_name' });
+    flag('Signaler cet appart', { kind: 'apartment' });
+    root.append(flags);
+  }
 
   return {
     element: root,
     inspect(item) {
       card.hidden = !item;
+      inspected = item && 'serial' in item ? item : null;
+      reportItem.hidden = !inspected || !options.report;
       if (!item) return;
       if (!('serial' in item)) {
         // Base furniture: free, not numbered, not a creation.

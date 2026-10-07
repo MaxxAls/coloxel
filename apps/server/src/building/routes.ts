@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { FLOORS, WALLS, catalogueEntry } from '@coloxel/render';
 import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
 import { listFriends } from '../friends/routes';
+import { itemMaskedSql } from '../moderation/masking';
 import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
 import type { Locate } from '../realtime/where';
 
@@ -121,9 +122,9 @@ export function registerBuildingRoutes(
            FROM placements p
            JOIN items it ON it.id = p.item_id
            JOIN users cr ON cr.id = it.creator_id
-          WHERE p.user_id = $1
+          WHERE p.user_id = $1 AND (p.user_id = $2 OR NOT ${itemMaskedSql('it')})
           ORDER BY p.i, p.j`,
-        [ownerId],
+        [ownerId, req.user.id],
       ),
     ]);
     const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number }>(

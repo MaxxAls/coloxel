@@ -7,6 +7,7 @@ import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } fro
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { showPlayerCard } from './player-card';
+import { openReportDialog } from './report-dialog';
 import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
@@ -99,6 +100,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   // What the room contains, as the server tells it.
   let visitedTitle = '';
   let visitedOwner = '';
+  let visitedNamed = false;
   let items: InventoryItem[] = [];
   let furniture: FurnitureItem[] = [];
   let look = { floor: 'parquet', wall: 'violet' };
@@ -106,6 +108,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
     visitedOwner = visit.data.owner.nickname;
+    visitedNamed = visit.data.name !== null;
     visitedTitle = apartmentTitle(visit.data.name, visit.data.owner.nickname);
     items = visit.data.items;
     furniture = visit.data.furniture;
@@ -222,6 +225,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         : {
             title: visitedTitle,
             subtitle: `Appartement de ${visitedOwner}, tu es en visite.`,
+            report: {
+              named: visitedNamed,
+              run: (what) => {
+                const notify = (text: string) => host.notify(text);
+                if (what.kind === 'item') openReportDialog({ kind: 'item', id: what.item.id, label: `la création « ${what.item.name} »` }, notify);
+                else if (what.kind === 'apartment_name') openReportDialog({ kind: 'apartment_name', id: ownerId!, label: `le nom de l’appart de ${visitedOwner}` }, notify);
+                else openReportDialog({ kind: 'apartment', id: ownerId!, label: `l’appart de ${visitedOwner}` }, notify);
+              },
+            },
             links: [
               ['Retour chez moi', () => host.go({ kind: 'apartment', ownerId: user.id })],
               ['L’immeuble', () => host.go({ kind: 'building' })],
@@ -511,6 +523,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const chat = createChat({
     me: user.id,
     say: (text) => room.say(text),
+    onReport: (message) => openReportDialog({ kind: 'message', id: message.id, label: `ce message de ${message.nickname}` }, (text) => host.notify(text)),
   });
   document.body.append(chat.bar);
   panelElement.querySelector('.present')?.after(chat.log);
@@ -634,6 +647,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           at: { x: ev.clientX, y: ev.clientY },
           notify: (text) => host.notify(text),
           onFriendsChanged: () => host.friendsChanged(),
+          onReport: () => openReportDialog({ kind: 'player', id: who.id, label: `le joueur ${who.nickname}` }, (text) => host.notify(text)),
         });
         return;
       }
