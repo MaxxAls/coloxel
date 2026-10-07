@@ -1,9 +1,9 @@
 /**
  * Prompt sent to the model for one object. Taken from the Atelier Pixel
- * prototype. The style guide (docs/bible-graphique.md) will be injected in
- * STYLE once it exists.
+ * prototype. STYLE is the short version of docs/bible-graphique.md: keep both
+ * in sync.
  */
-const STYLE = `Style : lisible et mignon, 3 à 6 teintes cohérentes et saturées, 10 à 40 parties. Le détail fait le charme : reflets, boutons, coutures, petites lumières. L'objet doit être reconnaissable au premier coup d'oeil. Les objets humoristiques ou absurdes gardent leur idée centrale bien visible.`;
+const STYLE = `Style (bible graphique) : pixel art chaleureux, formes rondes, couleurs saturées mais douces, 3 à 6 teintes cohérentes (une dominante, une ou deux secondaires, un accent), jamais de blanc ni de noir purs. Le moteur ajoute le contour sombre d'un pixel et les ombres (dessus clair, face gauche plus sombre, face droite la plus sombre) : ne dessine ni contour ni ombre portée. Échelle : un personnage fait environ 18 de haut, une chaise ou une table 9 à 16, une armoire 30 à 45, 60 au maximum ; un objet standard tient dans une case (x et y entre -8 et 8). 10 à 40 parties : le détail fait le charme (reflets plus clairs, boutons, coutures, petites lumières). L'objet doit être reconnaissable au premier coup d'oeil, petit et de loin. Les objets humoristiques ou absurdes gardent leur idée centrale bien visible.`;
 
 const SPEC = `Tu es le générateur d'objets de Coloxel, un jeu social en pixel art isométrique (vue 2:1, sprites de 96x112 px). Le joueur décrit un objet, tu le construis avec des primitives géométriques.
 

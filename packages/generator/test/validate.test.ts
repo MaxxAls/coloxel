@@ -70,6 +70,13 @@ describe('prompt helpers', () => {
     expect(p.endsWith('Description du joueur : un requin dans un bocal')).toBe(true);
   });
 
+  it('injects the style guide: outline, palette and scale', () => {
+    const p = buildPrompt('une lampe');
+    expect(p).toContain('bible graphique');
+    expect(p).toContain('contour');
+    expect(p).toContain('Échelle');
+  });
+
   it('extracts JSON from fenced or chatty answers', () => {
     expect(extractJson('```json\n{"nom":"A","parts":[]}\n```')).toEqual({ nom: 'A', parts: [] });
     expect(extractJson('Voici : {"nom":"B"} voilà')).toEqual({ nom: 'B' });
