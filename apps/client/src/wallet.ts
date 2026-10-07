@@ -97,12 +97,19 @@ export function createHud(handlers: { notify(text: string): void }): HTMLElement
   coloxLabel.textContent = 'Coloxs';
   coloxBalance.append(pixelIcon('colox', 16), coloxAmount, coloxLabel);
 
-  root.append(balance, coloxBalance, daily, credits);
+  const vip = document.createElement('div');
+  vip.className = 'hud-vip';
+  vip.append(pixelIcon('crown', 14), document.createTextNode('VIP'));
+  vip.hidden = true;
+
+  root.append(balance, coloxBalance, vip, daily, credits);
 
   let shown = -1;
   let tween = 0;
   const render = (w: WalletData) => {
     coloxAmount.textContent = String(w.coloxs);
+    vip.hidden = !w.vipUntil;
+    if (w.vipUntil) vip.title = `VIP Atelier jusqu’au ${new Date(w.vipUntil).toLocaleDateString('fr-FR')}`;
     daily.hidden = !w.dailyAvailable;
     daily.disabled = false;
     const from = shown < 0 ? w.pixels : shown;

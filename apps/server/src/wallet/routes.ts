@@ -37,13 +37,13 @@ const redeemSchema = z.object({ code: z.string('Code invalide').trim().min(3, 'C
 export function registerWalletRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS) {
   app.get('/api/wallet', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
-    const { rows } = await pool.query<{ pixels: number; coloxs: number; daily_available: boolean }>(
-      'SELECT pixels, coloxs, (last_daily IS NULL OR last_daily < current_date) AS daily_available FROM users WHERE id = $1',
+    const { rows } = await pool.query<{ pixels: number; coloxs: number; daily_available: boolean; vip_until: Date | null }>(
+      'SELECT pixels, coloxs, CASE WHEN vip_until > now() THEN vip_until END AS vip_until, (last_daily IS NULL OR last_daily < current_date) AS daily_available FROM users WHERE id = $1',
       [req.user.id],
     );
     const row = rows[0];
     if (!row) return reply.code(401).send({ error: 'Non connecté' });
-    return { pixels: row.pixels, coloxs: row.coloxs, dailyAvailable: row.daily_available, dailyPixels: DAILY_PIXELS };
+    return { pixels: row.pixels, coloxs: row.coloxs, vipUntil: row.vip_until, dailyAvailable: row.daily_available, dailyPixels: DAILY_PIXELS };
   });
 
   // Once per calendar day: the update only matches when today's reward has not been taken.

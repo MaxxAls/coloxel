@@ -855,6 +855,21 @@ body.in-game {
   font-size: 12px;
   color: var(--muted);
 }
+.hud-vip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2a2140;
+  background: linear-gradient(#ffe08a, #ffc857);
+  border: 2px solid #0f0b20;
+  border-radius: 999px;
+}
+.hud-vip[hidden] {
+  display: none;
+}
 .hud-coloxs {
   color: #ffc857;
 }

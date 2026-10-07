@@ -11,7 +11,9 @@
     "db:rollback": "tsx src/db/migrate.ts down",
     "staff:grant": "tsx src/db/staff.ts grant",
     "staff:revoke": "tsx src/db/staff.ts revoke",
-    "colox:grant": "tsx src/db/colox.ts grant"
+    "colox:grant": "tsx src/db/colox.ts grant",
+    "vip:grant": "tsx src/db/vip.ts grant",
+    "vip:revoke": "tsx src/db/vip.ts revoke"
   },
   "dependencies": {
     "@coloxel/generator": "*",

@@ -118,6 +118,8 @@ export interface CatalogueData {
 export interface WalletData {
   pixels: number;
   coloxs: number;
+  /** End of the VIP Atelier, when the player is a VIP. */
+  vipUntil?: string | null;
   dailyAvailable: boolean;
   dailyPixels: number;
 }

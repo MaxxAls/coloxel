@@ -2,6 +2,8 @@ import type pg from 'pg';
 import { withTransaction } from '../db/pool';
 
 export const DAILY_CHARGES = 5;
+/** What the VIP Atelier adds every day. */
+export const VIP_BONUS_CHARGES = 5;
 
 type Queryable = pg.Pool | pg.PoolClient;
 
@@ -15,6 +17,17 @@ async function ensureRefill(client: pg.PoolClient, userId: string) {
        WHERE user_id = $1 AND reason = 'refill' AND day = (now() AT TIME ZONE 'Europe/Paris')::date
      )`,
     [userId, DAILY_CHARGES],
+  );
+  // VIPs get a second line, once a day, so it also counts the day they become VIP.
+  await client.query(
+    `INSERT INTO creation_charges (user_id, delta, reason, day)
+     SELECT $1, $2, 'vip_bonus', (now() AT TIME ZONE 'Europe/Paris')::date
+      WHERE EXISTS (SELECT 1 FROM users WHERE id = $1 AND vip_until > now())
+        AND NOT EXISTS (
+          SELECT 1 FROM creation_charges
+          WHERE user_id = $1 AND reason = 'vip_bonus' AND day = (now() AT TIME ZONE 'Europe/Paris')::date
+        )`,
+    [userId, VIP_BONUS_CHARGES],
   );
 }
 
