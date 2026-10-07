@@ -327,6 +327,49 @@ describe.skipIf(!available)('the market (PostgreSQL)', () => {
     });
   });
 
+  describe('royalties', () => {
+    it('adds up what a creator earned from resales of their creations, most resold first', async () => {
+      const creator = await signUp('roy1');
+      const first = await signUp('roy2', 1000);
+      const second = await signUp('roy3', 1000);
+      const itemA = await create(creator);
+      const itemB = await create(creator);
+      // The creator sells both for the first time (no royalty), then A is resold twice and B once.
+      const sellTo = async (seller: Player, buyer: Player, itemId: string, price: number) => {
+        const listing = (await list(seller, itemId, price)).json().id as string;
+        expect((await buy(buyer, listing)).statusCode).toBe(200);
+      };
+      await sellTo(creator, first, itemA, 100);
+      await sellTo(creator, first, itemB, 100);
+      await sellTo(first, second, itemA, 200);
+      await sellTo(second, first, itemA, 400);
+      await sellTo(first, second, itemB, 100);
+      const res = (await app.inject({ method: 'GET', url: '/api/market/royalties', cookies: as(creator) })).json();
+      expect(res).toMatchObject({ resales: 3, earned: 10 + 20 + 5 });
+      expect(res.top.map((t: { itemId: string; resales: number; earned: number }) => [t.itemId, t.resales, t.earned])).toEqual([
+        [itemA, 2, 30],
+        [itemB, 1, 5],
+      ]);
+      // Somebody who created nothing earns nothing.
+      expect((await app.inject({ method: 'GET', url: '/api/market/royalties', cookies: as(first) })).json()).toMatchObject({ resales: 0, earned: 0, top: [] });
+    });
+
+    it('keeps paying a creator who has been banned', async () => {
+      const creator = await signUp('roy4');
+      const seller = await signUp('roy5', 100);
+      const buyer = await signUp('roy6', 100);
+      const staff = await signUp('roy7');
+      const item = await create(creator);
+      const l1 = (await list(creator, item, 50)).json().id as string;
+      await buy(seller, l1);
+      await pool.query("INSERT INTO sanctions (user_id, kind, reason, issued_by) VALUES ($1, 'ban', 'test', $2)", [creator.id, staff.id]);
+      const l2 = (await list(seller, item, 100)).json().id as string;
+      const before = await coloxs(creator);
+      expect((await buy(buyer, l2)).json().royalty).toBe(5);
+      expect(await coloxs(creator)).toBe(before + 5);
+    });
+  });
+
   describe('time, moderation and visibility', () => {
     it('an expired offer cannot be bought, disappears from the market and frees the item', async () => {
       const seller = await signUp('late1');

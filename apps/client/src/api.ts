@@ -512,6 +512,8 @@ export const api = {
     if (query.offset) params.set('offset', String(query.offset));
     return call<{ total: number; listings: MarketListing[] }>('GET', `/api/market/listings?${params}`);
   },
+  royalties: () =>
+    call<{ resales: number; earned: number; top: { itemId: string; name: string; serial: number; resales: number; earned: number; lastPrice: number }[] }>('GET', '/api/market/royalties'),
   sell: (itemId: string, price: number) => call<{ id: string; price: number; expiresAt: string }>('POST', '/api/market/listings', { itemId, price }),
   withdraw: (listingId: string) => call<void>('DELETE', `/api/market/listings/${listingId}`),
   buyListing: (listingId: string) => call<{ itemId: string; price: number; coloxs: number }>('POST', `/api/market/listings/${listingId}/buy`),

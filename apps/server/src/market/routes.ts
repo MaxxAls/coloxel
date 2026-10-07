@@ -258,6 +258,32 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
     return result;
   });
 
+  // What the player's creations earned them when others resold them.
+  app.get('/api/market/royalties', async (req, reply) => {
+    const user = req.user;
+    if (!user) return reply.code(401).send({ error: 'Non connecté' });
+    const resale = 'creator_id = $1 AND seller_id <> $1 AND buyer_id <> $1';
+    const total = await pool.query<{ resales: string; earned: string }>(
+      `SELECT count(*) AS resales, coalesce(sum(royalty), 0) AS earned FROM market_sales WHERE ${resale}`,
+      [user.id],
+    );
+    const top = await pool.query<{ item_id: string; name: string; serial: number; resales: string; earned: string; last_price: number }>(
+      `SELECT s.item_id, it.name, it.serial, count(*) AS resales, sum(s.royalty) AS earned,
+              (array_agg(s.price ORDER BY s.id DESC))[1] AS last_price
+         FROM market_sales s JOIN items it ON it.id = s.item_id
+        WHERE s.creator_id = $1 AND s.seller_id <> $1 AND s.buyer_id <> $1
+        GROUP BY s.item_id, it.name, it.serial
+        ORDER BY count(*) DESC, sum(s.royalty) DESC, it.serial
+        LIMIT 20`,
+      [user.id],
+    );
+    return {
+      resales: Number(total.rows[0]!.resales),
+      earned: Number(total.rows[0]!.earned),
+      top: top.rows.map((r) => ({ itemId: r.item_id, name: r.name, serial: r.serial, resales: Number(r.resales), earned: Number(r.earned), lastPrice: r.last_price })),
+    };
+  });
+
   // Who owned a creation, from its birth: visible to whoever can see the creation itself.
   app.get<{ Params: { id: string } }>('/api/items/:id/history', async (req, reply) => {
     const user = req.user;

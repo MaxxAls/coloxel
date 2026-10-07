@@ -38,8 +38,9 @@ export function createMarket(options: { onToggle(open: boolean): void; onChanged
   const tabs = el('div', 'tabs');
   const tabBuy = el('button', undefined, 'Acheter');
   const tabMine = el('button', undefined, 'Mes ventes');
-  for (const b of [tabBuy, tabMine]) b.type = 'button';
-  tabs.append(tabBuy, tabMine);
+  const tabRoyalties = el('button', undefined, 'Royalties');
+  for (const b of [tabBuy, tabMine, tabRoyalties]) b.type = 'button';
+  tabs.append(tabBuy, tabMine, tabRoyalties);
 
   const filters = el('form', 'market-filters');
   const search = el('input');
@@ -165,14 +166,43 @@ export function createMarket(options: { onToggle(open: boolean): void; onChanged
         : 'Aucune offre pour le moment.';
   }
 
-  const setTab = (isMine: boolean) => {
-    mine = isMine;
-    tabBuy.classList.toggle('active', !isMine);
-    tabMine.classList.toggle('active', isMine);
-    void load(true);
+  // What the player's creations earned when others resold them.
+  async function loadRoyalties() {
+    const mySeq = ++seq;
+    status.textContent = 'Chargement…';
+    const res = await api.royalties();
+    if (mySeq !== seq) return;
+    list.replaceChildren();
+    more.hidden = true;
+    if (!res.ok) {
+      status.textContent = res.error;
+      return;
+    }
+    status.textContent = res.data.resales
+      ? `${res.data.resales} revente${res.data.resales > 1 ? 's' : ''} de tes créations : ${res.data.earned} Coloxs de royalties.`
+      : 'Quand quelqu’un revend une de tes créations, tu touches des royalties. Rien pour l’instant.';
+    for (const t of res.data.top) {
+      const li = el('li', 'market-card');
+      const info = el('div', 'info');
+      info.append(el('strong', undefined, t.name), el('span', 'muted small', `n° ${serialLabel(t.serial)} · ${t.resales} revente${t.resales > 1 ? 's' : ''} · dernier prix ${t.lastPrice} Coloxs`));
+      li.append(info, el('strong', 'market-price', `+${t.earned} Coloxs`));
+      li.style.gridTemplateColumns = '1fr auto';
+      list.append(li);
+    }
+  }
+
+  const setTab = (tab: 'buy' | 'mine' | 'royalties') => {
+    mine = tab === 'mine';
+    tabBuy.classList.toggle('active', tab === 'buy');
+    tabMine.classList.toggle('active', tab === 'mine');
+    tabRoyalties.classList.toggle('active', tab === 'royalties');
+    filters.hidden = tab === 'royalties';
+    if (tab === 'royalties') void loadRoyalties();
+    else void load(true);
   };
-  tabBuy.addEventListener('click', () => setTab(false));
-  tabMine.addEventListener('click', () => setTab(true));
+  tabBuy.addEventListener('click', () => setTab('buy'));
+  tabMine.addEventListener('click', () => setTab('mine'));
+  tabRoyalties.addEventListener('click', () => setTab('royalties'));
   filters.addEventListener('submit', (ev) => {
     ev.preventDefault();
     void load(true);
@@ -187,7 +217,7 @@ export function createMarket(options: { onToggle(open: boolean): void; onChanged
   }
   const open = () => {
     root.hidden = false;
-    setTab(false);
+    setTab('buy');
     options.onToggle(true);
   };
   addEventListener('keydown', (ev) => {
