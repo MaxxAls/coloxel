@@ -11,15 +11,24 @@ export interface Cell {
 export const inGrid = (i: number, j: number) =>
   Number.isInteger(i) && Number.isInteger(j) && i >= 0 && j >= 0 && i < N && j < N;
 
+/**
+ * Eight ways to step. On screen the four axis steps go along the diagonals of the room and the
+ * four diagonal steps go straight up, down, left and right: that is what gives an avatar eight
+ * directions to face.
+ */
 const STEPS: readonly [number, number][] = [
   [1, 0],
   [-1, 0],
   [0, 1],
   [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
 ];
 
 /**
- * Shortest 4-directional path from `from` to `to`, excluding `from`, including `to`.
+ * Shortest 8-directional path (a diagonal step never cuts the corner of a blocked cell) from `from` to `to`, excluding `from`, including `to`.
  * Blocked cells are impassable. Returns [] when the target is unreachable, blocked or equal to `from`.
  */
 export function findPath(from: Cell, to: Cell, blocked: (i: number, j: number) => boolean): Cell[] {
@@ -33,6 +42,7 @@ export function findPath(from: Cell, to: Cell, blocked: (i: number, j: number) =
     for (const [di, dj] of STEPS) {
       const next = { i: cur.i + di, j: cur.j + dj };
       if (!inGrid(next.i, next.j) || prev.has(key(next)) || blocked(next.i, next.j)) continue;
+      if (di !== 0 && dj !== 0 && (blocked(cur.i + di, cur.j) || blocked(cur.i, cur.j + dj))) continue;
       prev.set(key(next), cur);
       queue.push(next);
     }

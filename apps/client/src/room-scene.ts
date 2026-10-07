@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
-import { lookFor, type Facing, type Frame, type Look, type Pose } from './avatar';
+import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
@@ -15,8 +15,8 @@ import { createVisitPanel } from './visit-panel';
 const STEP_MS = 480;
 /** Screen pixels per millisecond: one cell (about 36 px) per server step, a touch faster so that the avatar never waits for the next step. */
 const WALK_SPEED = (Math.hypot(TW / 2, TH / 2) / STEP_MS) * 1.08;
-/** Avatars are drawn at the same two screen pixels per unit as the furniture: about 1.8 cells tall, like a person next to a chair. */
-const BODY_SCALE = 2;
+/** Avatars are drawn at the same two screen pixels per unit as the furniture: about 1.4 cells tall. */
+const BODY_SCALE = 1.5;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
@@ -70,12 +70,22 @@ interface PlayerView {
   phase: number;
 }
 
-/** Which way the avatar faces when it steps from one cell to the next. */
+/**
+ * Which way the avatar faces for a step of (di, dj). On screen an axis step goes along a diagonal of
+ * the room and a diagonal step goes straight up, down, left or right: eight directions from five
+ * drawings, the others being mirrors.
+ */
 function facingFor(di: number, dj: number): { facing: Facing; flip: 1 | -1 } {
-  if (di > 0) return { facing: 'front', flip: 1 }; // down-right
-  if (dj > 0) return { facing: 'front', flip: -1 }; // down-left
-  if (di < 0) return { facing: 'back', flip: -1 }; // up-left
-  return { facing: 'back', flip: 1 }; // up-right
+  const a = Math.sign(di);
+  const b = Math.sign(dj);
+  if (a > 0 && b === 0) return { facing: 'front34', flip: 1 }; // down-right
+  if (a === 0 && b > 0) return { facing: 'front34', flip: -1 }; // down-left
+  if (a < 0 && b === 0) return { facing: 'back34', flip: -1 }; // up-left
+  if (a === 0 && b < 0) return { facing: 'back34', flip: 1 }; // up-right
+  if (a > 0 && b > 0) return { facing: 'front', flip: 1 }; // straight down
+  if (a < 0 && b < 0) return { facing: 'back', flip: 1 }; // straight up
+  if (a > 0) return { facing: 'side', flip: 1 }; // right
+  return { facing: 'side', flip: -1 }; // left
 }
 
 export async function createRoomScene(host: SceneHost, target: RoomTarget): Promise<Scene | { error: string }> {
@@ -347,7 +357,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       x,
       y,
       cell: { i: p.i, j: p.j },
-      facing: 'front',
+      facing: 'front34',
       flip: 1,
       moving: false,
       movedAt: 0,
@@ -457,8 +467,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         if (!blink) view.blinkAt = now + 2200 + Math.random() * 4500;
       }
       // Sitting and lying down face the same way as the furniture: toward the viewer's right.
-      const facing: Facing = pose === 'stand' ? view.facing : 'front';
-      view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && facing === 'front', pose);
+      const facing: Facing = pose === 'stand' ? view.facing : 'front34';
+      view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && showsFace(facing), pose);
       view.body.scale.set((pose === 'stand' ? view.flip : 1) * BODY_SCALE, BODY_SCALE);
       // The avatar glides at a constant pace: no bounce while walking.
       const bob = 0;
@@ -472,12 +482,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.body.position.set(pose === 'sit' ? 3 * BODY_SCALE : 0, (pose === 'sit' ? 9 : 10) * BODY_SCALE - Math.round(bob) - (pose === 'stand' ? breath * BODY_SCALE : 0));
       }
       view.shadow.visible = pose === 'stand';
-      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -96 : pose === 'sit' ? -89 : -71 - Math.round(bob));
+      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -67 : -54 - Math.round(bob));
       view.zzz.forEach((zed, k) => {
         zed.visible = pose === 'lie' && !reduceMotion;
         if (!zed.visible) return;
         const t = fract(now / 2200 + k / 3);
-        zed.position.set(-6 + t * 18 + k * 2, -80 - t * 26);
+        zed.position.set(-6 + t * 18 + k * 2, -62 - t * 26);
         zed.alpha = Math.sin(t * Math.PI);
         zed.scale.set(0.6 + t * 0.6);
       });

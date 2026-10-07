@@ -9,6 +9,12 @@ const rgb = (px: Uint8ClampedArray, x: number, y: number) => {
 };
 
 describe('avatar', () => {
+  it('has five distinct drawings to turn in eight directions', () => {
+    const look = lookFor('turn');
+    const views = (['front', 'front34', 'side', 'back34', 'back'] as const).map((f) => Array.from(avatarPixels(look, f, 0)).join());
+    expect(new Set(views).size).toBe(5);
+  });
+
   it('draws every facing and frame at the same size, without clipping', () => {
     const look = lookFor('someone');
     for (const facing of ['front', 'back'] as const) {

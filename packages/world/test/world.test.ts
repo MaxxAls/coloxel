@@ -6,13 +6,21 @@ const free = () => false;
 describe('findPath', () => {
   it('walks case by case, excluding the start and including the target', () => {
     const path = findPath({ i: 0, j: 0 }, { i: 2, j: 1 }, free);
-    expect(path).toHaveLength(3);
-    expect(path[2]).toEqual({ i: 2, j: 1 });
+    expect(path).toHaveLength(2);
+    expect(path[1]).toEqual({ i: 2, j: 1 });
     let prev = { i: 0, j: 0 };
     for (const c of path) {
-      expect(Math.abs(c.i - prev.i) + Math.abs(c.j - prev.j)).toBe(1);
+      expect(Math.max(Math.abs(c.i - prev.i), Math.abs(c.j - prev.j))).toBe(1);
       prev = c;
     }
+  });
+
+  it('steps diagonally, but never cuts the corner of a blocked cell', () => {
+    expect(findPath({ i: 0, j: 0 }, { i: 3, j: 3 }, free)).toHaveLength(3);
+    const corner = (i: number, j: number) => i === 1 && j === 0;
+    const path = findPath({ i: 0, j: 0 }, { i: 1, j: 1 }, corner);
+    expect(path).toHaveLength(2);
+    expect(path[0]).toEqual({ i: 0, j: 1 });
   });
 
   it('goes around blocked cells', () => {

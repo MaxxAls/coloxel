@@ -9,7 +9,14 @@ export { lookFor, type Look };
 
 export const OUTLINE = 0x1b1530;
 
-export type Facing = 'front' | 'back';
+/**
+ * The five drawings of an avatar; the room mirrors them to get eight directions.
+ * front: straight toward the viewer. front34 and back34: turned toward the right, seen from the front or the back.
+ * side: in profile, facing right. back: straight away from the viewer.
+ */
+export type Facing = 'front' | 'front34' | 'side' | 'back34' | 'back';
+/** Does this view show the face (and so the front of the clothes)? */
+export const showsFace = (f: Facing) => f === 'front' || f === 'front34' || f === 'side';
 /** 0 standing, 1 and 2 the two steps of a walk. */
 export type Frame = 0 | 1 | 2;
 
@@ -54,7 +61,13 @@ export class Painter {
     this.px = new Array(w * h).fill(null);
   }
 
+  /** While set, what is drawn is moved sideways by this function (a turned head), and dropped where `keepX` says no. */
+  mapX: ((x: number) => number) | null = null;
+  keepX: ((x: number) => boolean) | null = null;
+
   set(x: number, y: number, c: RGB): void {
+    if (this.keepX && !this.keepX(x)) return;
+    if (this.mapX) x = this.mapX(x);
     const xi = Math.round(x + this.ox), yi = Math.round(y + this.oy);
     if (xi < 0 || yi < 0 || xi >= this.w || yi >= this.h) return;
     this.px[yi * this.w + xi] = c;
@@ -161,14 +174,14 @@ function paletteOf(look: Look, tint: Tint): Palette {
  * (toward the way the avatar faces, down-right before the mirror), the other one trails and lifts,
  * and the arms swing opposite to the legs.
  */
-function swing(frame: Frame) {
+function swing(frame: Frame, wide = 1) {
   const l = frame === 1; // left leg trails and lifts
   const r = frame === 2; // right leg trails and lifts
   return {
     legL: l ? -4 : r ? 1.5 : 0, // vertical offset of each foot (negative = lifted)
     legR: r ? -4 : l ? 1.5 : 0,
-    legLx: l ? -2.4 : r ? 2.4 : 0, // horizontal offset of each leg
-    legRx: r ? -2.4 : l ? 2.4 : 0,
+    legLx: (l ? -2.4 : r ? 2.4 : 0) * wide, // horizontal offset of each leg
+    legRx: (r ? -2.4 : l ? 2.4 : 0) * wide,
     armL: l ? 3.4 : r ? -3.4 : 0,
     armR: r ? 3.4 : l ? -3.4 : 0,
   };
@@ -181,6 +194,18 @@ const HRX = 7.2;
 const HRY = 7.6;
 
 // ----- Head -----------------------------------------------------------------------
+
+/** How a head turns: features are squeezed toward the side the face looks to. */
+function turnHead(p: Painter, facing: Facing): void {
+  if (facing === 'front34') {
+    p.mapX = (x) => HX + (x - HX) * 0.78 + 2.6;
+    p.keepX = null;
+  } else if (facing === 'side') {
+    p.mapX = (x) => HX + (x - HX) * 0.55 + 3.2;
+    // Only the eye, brow, cheek and glasses lens nearest to us are seen.
+    p.keepX = (x) => x >= HX - 0.5;
+  }
+}
 
 function drawFace(p: Painter, look: Look, pal: Palette, blink: boolean): void {
   const dark = rgb(OUTLINE);
@@ -231,7 +256,7 @@ const insideHead = (x: number, y: number, grow = 0.4) =>
 
 function drawHair(p: Painter, look: Look, facing: Facing, pal: Palette): void {
   const hair = pal.hair;
-  const front = facing === 'front';
+  const front = showsFace(facing);
   const style = look.hair;
   if (style === 9) {
     // Bald: just a shine on the head.
@@ -262,7 +287,7 @@ function drawHair(p: Painter, look: Look, facing: Facing, pal: Palette): void {
     if (style === 5) return 7.4 + Math.max(0, 19 - x) * 0.5;
     return 8.4 + (Math.abs(x + 0.5 - HX) > 4.6 ? 3.4 : 0) + (Math.floor(x) % 3 === 0 ? 1 : 0) + (style === 2 ? -1.5 : 0);
   };
-  p.ball(HX, HY, HRX + 0.4, HRY + 0.4, hair, { clip: (x, y) => insideHead(x, y) && (front ? y < bangs(x) : y < 16.5) });
+  p.ball(HX, HY, HRX + 0.4, HRY + 0.4, hair, { clip: (x, y) => insideHead(x, y) && (front ? y < bangs(x) || (facing === 'side' && x < HX - 2.4 && y < 15.6) : y < 16.5) });
   if (style === 1 || style === 4) {
     // Long hair falls behind and beside the face; a bob stops at the chin.
     const drop = style === 1 ? 26 : 19.5;
@@ -310,7 +335,7 @@ function drawHair(p: Painter, look: Look, facing: Facing, pal: Palette): void {
 
 function drawHat(p: Painter, look: Look, facing: Facing, pal: Palette): void {
   const c = pal.hat;
-  const front = facing === 'front';
+  const front = showsFace(facing);
   switch (look.hat) {
     case 1: {
       // A cap with a visor.
@@ -447,13 +472,31 @@ function drawGlasses(p: Painter, look: Look): void {
 
 function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: boolean): void {
   // A ball of skin with its ears, then the face (front only), hair, hat and glasses.
-  p.ball(7.6, 12, 1.3, 1.9, tone(pal.skin, -0.06));
-  p.ball(22.4, 12, 1.3, 1.9, tone(pal.skin, -0.2));
+  if (facing === 'side') {
+    p.ball(12.4, 12.4, 1.5, 2.2, tone(pal.skin, -0.14));
+  } else {
+    p.ball(7.6, 12, 1.3, 1.9, tone(pal.skin, -0.06));
+    p.ball(22.4, 12, 1.3, 1.9, tone(pal.skin, -0.2));
+  }
   p.ball(HX, HY, HRX, HRY, pal.skin);
-  if (facing === 'front') drawFace(p, look, pal, blink);
+  if (showsFace(facing)) {
+    turnHead(p, facing);
+    drawFace(p, look, pal, blink);
+    if (facing === 'side') {
+      // The nose sticks out of the profile.
+      p.mapX = null;
+      p.keepX = null;
+      p.set(22.8, 13.2, tone(pal.skin, 0.05));
+      p.set(23.6, 14, pal.skin);
+      p.set(22.8, 14.8, tone(pal.skin, -0.12));
+      turnHead(p, facing);
+    }
+    drawGlasses(p, look);
+    p.mapX = null;
+    p.keepX = null;
+  }
   drawHair(p, look, facing, pal);
   drawHat(p, look, facing, pal);
-  if (facing === 'front') drawGlasses(p, look);
 }
 
 // ----- Body -----------------------------------------------------------------------
@@ -540,7 +583,7 @@ function drawArms(p: Painter, look: Look, pal: Palette, frame: Frame): void {
 
 function drawTorso(p: Painter, look: Look, pal: Palette, facing: Facing): void {
   const t = pal.top;
-  const front = facing === 'front';
+  const front = showsFace(facing);
   const style = look.top;
   const belt = tone(pal.bottom, -0.3);
 
@@ -669,7 +712,7 @@ function drawBehind(p: Painter, look: Look, pal: Palette, frame: Frame): void {
 
 /** What is worn over the body: a scarf, a bow tie, a backpack. */
 function drawOver(p: Painter, look: Look, pal: Palette, facing: Facing): void {
-  const front = facing === 'front';
+  const front = showsFace(facing);
   if (look.extra === 1) {
     const scarf = pal.extra;
     p.block(10.4, 18.4, 19.6, 22.6, scarf, 1.4);
@@ -706,7 +749,7 @@ function drawOver(p: Painter, look: Look, pal: Palette, facing: Facing): void {
 }
 
 function drawBody(p: Painter, look: Look, pal: Palette, facing: Facing, frame: Frame, seated = false): void {
-  const o = swing(frame);
+  const o = swing(frame, facing === 'side' ? 3.2 : 1);
   drawBehind(p, look, pal, frame);
 
   for (const [x0, off] of seated ? ([[9.4, 0], [15.2, 0]] as const) : ([[9.6 + o.legLx, o.legL], [15.2 + o.legRx, o.legR]] as const)) {
@@ -762,6 +805,18 @@ function drawLying(p: Painter, look: Look, pal: Palette): void {
   drawHead(p, look, pal, 'front', true);
 }
 
+/** Turns the body below the neck: the same drawing, squeezed toward its middle, reads as a body seen at an angle. */
+function squeezeBody(p: Painter, from: number, k: number): void {
+  const mid = HX + p.ox;
+  for (let y = Math.max(0, Math.round(from + p.oy)); y < p.h; y++) {
+    const row = p.px.slice(y * p.w, (y + 1) * p.w);
+    for (let x = 0; x < p.w; x++) {
+      const sx = Math.round(mid + (x - mid) / k);
+      p.px[y * p.w + x] = sx >= 0 && sx < p.w ? (row[sx] ?? null) : null;
+    }
+  }
+}
+
 function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: boolean, pose: Pose): Painter {
   const { w, h } = avatarSize(pose);
   const p = new Painter(w, h);
@@ -779,6 +834,8 @@ function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: bool
   } else {
     p.oy = 8;
     drawBody(p, look, pal, facing, frame);
+    if (facing === 'side') squeezeBody(p, 19.5, 0.52);
+    else if (facing === 'front34' || facing === 'back34') squeezeBody(p, 19.5, 0.86);
     drawHead(p, look, pal, facing, blink);
   }
   return p;
