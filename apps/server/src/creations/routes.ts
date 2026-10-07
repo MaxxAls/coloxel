@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { buildPrompt, extractJson, validateRecipe } from '@coloxel/generator';
 import { renderSprite, type Recipe } from '@coloxel/render';
+import { findViewableItemRecipe } from '../apartments/access';
 import { containsBannedWord } from '../auth/rules';
 import { nextItemSerial, withTransaction } from '../db/pool';
 import { spriteToPng } from '../sprite-png';
@@ -115,16 +116,14 @@ export function registerCreationRoutes(app: FastifyInstance, pool: pg.Pool, mode
     const { id } = req.params;
     if (!UUID.test(id)) return reply.code(404).send({ error: 'Objet introuvable' });
 
-    // The cache is keyed by item, so check ownership before serving a cached sprite.
-    const { rows } = await pool.query<{ recipe: Recipe }>(
-      'SELECT recipe FROM items WHERE id = $1 AND owner_id = $2',
-      [id, req.user.id],
-    );
-    if (!rows[0]) return reply.code(404).send({ error: 'Objet introuvable' });
+    // The cache is keyed by item, so check access (owner, or placed in an
+    // apartment the requester may enter) before serving a cached sprite.
+    const recipe = await findViewableItemRecipe<Recipe>(pool, id, req.user.id);
+    if (!recipe) return reply.code(404).send({ error: 'Objet introuvable' });
 
     let png = pngCache.get(id);
     if (!png) {
-      png = spriteToPng(renderSprite(rows[0].recipe.parts));
+      png = spriteToPng(renderSprite(recipe.parts));
       if (pngCache.size >= PNG_CACHE_MAX) pngCache.delete(pngCache.keys().next().value!);
       pngCache.set(id, png);
     }

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEEDS } from '@coloxel/render';
 import { DAILY_CHARGES } from '../src/creations/charges';
 import type { RecipeModel } from '../src/creations/model';
-import { migrate } from '../src/db/migrate';
+import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
 
@@ -28,8 +28,7 @@ describe.skipIf(!available)('creations (PostgreSQL)', () => {
   let app: ReturnType<typeof buildServer>;
 
   beforeAll(async () => {
-    await migrate('down', url).catch(() => {});
-    await migrate('down', url).catch(() => {});
+    await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
     app = buildServer({ pool, model });

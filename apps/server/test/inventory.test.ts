@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEEDS } from '@coloxel/render';
 import type { RecipeModel } from '../src/creations/model';
-import { migrate } from '../src/db/migrate';
+import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
 
@@ -21,8 +21,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
   let app: ReturnType<typeof buildServer>;
 
   beforeAll(async () => {
-    await migrate('down', url).catch(() => {});
-    await migrate('down', url).catch(() => {});
+    await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
     app = buildServer({ pool, model });
@@ -143,5 +142,46 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect(
       (await app.inject({ method: 'DELETE', url: '/api/placements/pas-un-uuid', cookies: as(sid) })).statusCode,
     ).toBe(404);
+  });
+
+  describe('item sprites for visitors', () => {
+    const sprite = (sid: string, id: string) =>
+      app.inject({ method: 'GET', url: `/api/items/${id}.png`, cookies: as(sid) });
+    const setAccess = (nickname: string, access: string) =>
+      pool.query('UPDATE users SET apartment_access = $1 WHERE nickname = $2', [access, nickname]);
+
+    it('serves a placed item to visitors only when the apartment is open to them', async () => {
+      const host = await signUp('hostess');
+      const visitor = await signUp('visitor');
+      const id = await createItem(host);
+      await place(host, { itemId: id, i: 1, j: 1 });
+
+      expect((await sprite(host, id)).statusCode).toBe(200);
+      // Closed by default.
+      expect((await sprite(visitor, id)).statusCode).toBe(404);
+      // 'friends' fails closed until the friends list exists.
+      await setAccess('hostess', 'friends');
+      expect((await sprite(visitor, id)).statusCode).toBe(404);
+      await setAccess('hostess', 'building');
+      const res = await sprite(visitor, id);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('image/png');
+      // Access is checked on every request, even once the PNG is cached.
+      await setAccess('hostess', 'closed');
+      expect((await sprite(visitor, id)).statusCode).toBe(404);
+      expect((await sprite(host, id)).statusCode).toBe(200);
+    });
+
+    it('never serves an item that is not placed, even from an open apartment', async () => {
+      const host = await signUp('hostess2');
+      const visitor = await signUp('visitor2');
+      await setAccess('hostess2', 'building');
+      const id = await createItem(host);
+      expect((await sprite(visitor, id)).statusCode).toBe(404);
+      await place(host, { itemId: id, i: 0, j: 0 });
+      expect((await sprite(visitor, id)).statusCode).toBe(200);
+      await app.inject({ method: 'DELETE', url: `/api/placements/${id}`, cookies: as(host) });
+      expect((await sprite(visitor, id)).statusCode).toBe(404);
+    });
   });
 });

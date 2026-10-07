@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ageOn, containsBannedWord, parseBirthDate } from '../src/auth/rules';
-import { migrate } from '../src/db/migrate';
+import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
 
@@ -73,8 +73,7 @@ describe.skipIf(!available)('auth flow (PostgreSQL)', () => {
   const creds = { email: 'Flow@Test.dev', password: 'motdepasse', nickname: 'FlowUser', birthDate: '1990-01-01' };
 
   beforeAll(async () => {
-    await migrate('down', url).catch(() => {});
-    await migrate('down', url).catch(() => {});
+    await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
     app = buildServer({ pool });

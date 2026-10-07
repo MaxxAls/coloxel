@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { migrate } from '../src/db/migrate';
+import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool, nextItemSerial, withTransaction } from '../src/db/pool';
 
 // Integration tests: need PostgreSQL (`docker compose up -d`). Skipped when unreachable.
@@ -35,7 +35,7 @@ describe.skipIf(!available)('database schema', () => {
     withTransaction(pool, async (c) => (await newItem(c, await nextItemSerial(c), userId)).rows[0]!.id);
 
   beforeAll(async () => {
-    await migrate('down', url).catch(() => {});
+    await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
   });
