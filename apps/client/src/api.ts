@@ -433,8 +433,8 @@ export const api = {
     call<{ user: User }>('POST', '/api/auth/register', body),
   logout: () => call<{ ok: true }>('POST', '/api/auth/logout'),
   charges: () => call<{ charges: number }>('GET', '/api/charges'),
-  create: (description: string) =>
-    call<{ item: InventoryItem; charges: number }>('POST', '/api/creations', { description }),
+  create: (description: string, edition = 1) =>
+    call<{ item: InventoryItem; items: InventoryItem[]; charges: number }>('POST', '/api/creations', { description, edition }),
   inventory: () => call<{ items: InventoryItem[]; furniture: FurnitureItem[] }>('GET', '/api/inventory'),
   catalogue: () => call<CatalogueData>('GET', '/api/catalogue'),
   takeFurniture: (key: string) => call<{ furniture: FurnitureItem }>('POST', '/api/furniture', { key }),

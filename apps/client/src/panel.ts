@@ -45,12 +45,26 @@ export function createPanel(_user: User, handlers: PanelHandlers): Panel {
   input.required = true;
   input.placeholder = 'une lampe qui ressemble à une lune';
   label.append(input);
+  // One copy, or a limited series: rarer, so it costs more charges.
+  const editionLabel = el('label');
+  editionLabel.append(el('span', undefined, 'Exemplaires'));
+  const edition = el('select');
+  for (const [value, text] of [
+    ['1', 'Unique (1 charge)'],
+    ['5', 'Série de 5 (2 charges)'],
+    ['10', 'Série de 10 (3 charges)'],
+  ] as const) {
+    const o = el('option', undefined, text);
+    o.value = value;
+    edition.append(o);
+  }
+  editionLabel.append(edition);
   const chargesLabel = el('p', 'muted small');
   const create = el('button', 'primary', 'Créer');
   create.type = 'submit';
   const formError = el('p', 'error');
   formError.setAttribute('role', 'alert');
-  form.append(label, create, chargesLabel, formError);
+  form.append(label, editionLabel, create, chargesLabel, formError);
 
   const message = el('p', 'message');
   message.setAttribute('role', 'status');
@@ -197,13 +211,18 @@ export function createPanel(_user: User, handlers: PanelHandlers): Panel {
     create.disabled = true;
     create.textContent = 'Création en cours…';
     formError.textContent = '';
-    const result = await api.create(input.value);
+    const result = await api.create(input.value, Number(edition.value));
     busy = false;
     create.textContent = 'Créer';
     if (result.ok) {
       input.value = '';
       setCharges(result.data.charges);
-      panel.setMessage(`« ${result.data.item.name} » est né, exemplaire n° ${serialLabel(result.data.item.serial)} !`);
+      const n = result.data.items?.length ?? 1;
+      panel.setMessage(
+        n > 1
+          ? `« ${result.data.item.name} » est né en série de ${n} : exemplaires n° ${serialLabel(result.data.item.serial)} à ${serialLabel(result.data.items[n - 1]!.serial)} !`
+          : `« ${result.data.item.name} » est né, exemplaire n° ${serialLabel(result.data.item.serial)} !`,
+      );
       handlers.onChange();
     } else {
       formError.textContent = result.error;

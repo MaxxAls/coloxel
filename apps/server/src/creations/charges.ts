@@ -38,8 +38,13 @@ export function getCharges(pool: pg.Pool, userId: string): Promise<number> {
   });
 }
 
+/** What an edition costs in charges: a series is rarer, so it costs more. */
+export const EDITION_COST: Record<number, number> = { 1: 1, 5: 2, 10: 3 };
+export const EDITION_SIZES = Object.keys(EDITION_COST).map(Number);
+
 export interface Reservation {
   chargeId: number;
+  cost: number;
   day: string;
   remaining: number;
 }
@@ -49,25 +54,26 @@ export interface Reservation {
  * requests of the same player, so they can never spend more than they have,
  * and the model call itself happens outside any transaction.
  */
-export function reserveCharge(pool: pg.Pool, userId: string): Promise<Reservation | null> {
+export function reserveCharge(pool: pg.Pool, userId: string, cost = 1): Promise<Reservation | null> {
   return withTransaction(pool, async (c) => {
     await lockUser(c, userId);
     await ensureRefill(c, userId);
     const balance = await balanceToday(c, userId);
-    if (balance <= 0) return null;
+    if (balance < cost) return null;
     const { rows } = await c.query<{ id: string; day: string }>(
       `INSERT INTO creation_charges (user_id, delta, reason, day)
-       VALUES ($1, -1, 'spend', (now() AT TIME ZONE 'Europe/Paris')::date) RETURNING id, day::text`,
-      [userId],
+       VALUES ($1, $2, 'spend', (now() AT TIME ZONE 'Europe/Paris')::date) RETURNING id, day::text`,
+      [userId, -cost],
     );
-    return { chargeId: Number(rows[0]!.id), day: rows[0]!.day, remaining: balance - 1 };
+    return { chargeId: Number(rows[0]!.id), cost, day: rows[0]!.day, remaining: balance - cost };
   });
 }
 
 /** Give a reserved charge back (model refusal, invalid recipe, model error). */
 export async function refundCharge(pool: pg.Pool, userId: string, reservation: Reservation): Promise<void> {
-  await pool.query(`INSERT INTO creation_charges (user_id, delta, reason, day) VALUES ($1, 1, 'refund', $2)`, [
+  await pool.query(`INSERT INTO creation_charges (user_id, delta, reason, day) VALUES ($1, $3, 'refund', $2)`, [
     userId,
     reservation.day,
+    reservation.cost,
   ]);
 }
