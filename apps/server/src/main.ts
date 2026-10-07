@@ -1,3 +1,4 @@
+import './env';
 import { createPool } from './db/pool';
 import { buildServer } from './index';
 

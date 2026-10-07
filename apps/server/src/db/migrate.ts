@@ -1,3 +1,4 @@
+import '../env';
 import { fileURLToPath } from 'node:url';
 import { runner } from 'node-pg-migrate';
 
