@@ -20,6 +20,7 @@ Les 9 étapes sont construites (étapes 6 à 9 : chat, amis, signalements, panel
 
 - Staff : le rôle se donne à la main, `npm run staff:grant -- <pseudo>` (et `staff:revoke`). Le bouton « Staff » n'apparaît dans la barre que pour ces comptes.
 - Un objet signalé par 3 joueurs différents est masqué (`REPORT_HIDE_THRESHOLD`, `apps/server/src/moderation/masking.ts`). Il garde sa case, qui reste occupée pour les visiteurs, mais sans sprite.
+- Extensions ajoutées après l'étude d'un émulateur (voir `docs/mecaniques-inspirees.md`) : défis à paliers, lumières allumables, mode « sur sonnette », « faire sortir » un visiteur, contexte de chat dans les signalements, modèles de sanctions.
 - Restent à faire avec de vrais testeurs : l'interface n'a été vérifiée que par `typecheck` et les tests serveur, pas dans un navigateur ; le test du générateur avec une vraie clé ; la revue de la modération « en conditions réelles » demandée par la porte de sortie.
 
 ## Périmètre à construire

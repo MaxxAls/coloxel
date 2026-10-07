@@ -43,6 +43,8 @@ export interface ServerDeps {
   locate?: Locate;
   /** Lets a sanction reach a player who is connected (from the realtime server). */
   notifyUser?: NotifyUser;
+  /** Challenges pay Pixels as the player plays. Off in tests that check exact balances. */
+  challenges?: boolean;
 }
 
 export function buildServer({
@@ -54,8 +56,9 @@ export function buildServer({
   notifyApartment,
   locate,
   notifyUser,
+  challenges = true,
 }: ServerDeps = {}) {
-  const quest = pool ? makeQuestRecorder(pool, (event) => notifyUser?.(event)) : undefined;
+  const quest = pool && challenges ? makeQuestRecorder(pool, (event) => notifyUser?.(event)) : undefined;
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
     // Behind a reverse proxy, the client IP comes from X-Forwarded-For: only trust it when told to.

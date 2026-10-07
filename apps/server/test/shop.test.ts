@@ -23,7 +23,8 @@ describe.skipIf(!available)('wallet, wardrobe, shop and companions (PostgreSQL)'
     await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
-    app = buildServer({ pool });
+    // Exact balances are checked here: challenges (which also pay Pixels) have their own tests.
+    app = buildServer({ pool, challenges: false });
   });
   afterAll(async () => {
     await app?.close();

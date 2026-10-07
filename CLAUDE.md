@@ -6,6 +6,7 @@ Jeu social en pixel art où chaque objet est inventé par un joueur : il le déc
 - **Phase en cours : phase 2, multijoueur.** Spec : `docs/phase-2-multijoueur.md`. Commence par sa section « Avant de commencer » (vérification de la phase 1). Ne construis rien qui appartient à une phase suivante (marché, monnaies, VIP, paiement, messages privés, comptes mineurs) sans qu'on te le demande.
 - Phase précédente, terminée : `docs/phase-1-alpha-solo.md`
 - Ajout demandé en cours de phase 2 : éditeur de personnage, boutique en Pixels et compagnons, sans paiement réel (`docs/personnage-boutique.md`). Crédits payants, Coloxs, VIP et marché restent à faire.
+- Mécaniques ajoutées en phase 2 (défis, lumières, sonnette) et idées retenues pour la suite (mécanismes programmables, échange, compagnons) : `docs/mecaniques-inspirees.md`. Ne rien construire de la liste « À faire » sans qu'on le demande.
 - Prototype d'origine (référence visuelle et comportementale) : `prototype/atelier-pixel.html`
 
 ## Stack
