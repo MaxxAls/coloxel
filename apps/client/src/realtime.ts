@@ -1,4 +1,6 @@
 import { Client, type Room } from '@colyseus/sdk';
+import type { StaffAlert } from './alerts';
+import type { FriendTarget } from './api';
 import type { ChatMessage } from './chat-ui';
 
 // The realtime server shares the session cookie with the API: the browser sends
@@ -13,6 +15,8 @@ export const CLOSED_BY_OWNER = 4003;
 export const SUSPENDED = 4004;
 /** The server sent us out because the owner showed us out. */
 export const EXPELLED = 4005;
+/** The server sent us out because a member of the staff showed us out of the room. */
+export const KICKED = 4006;
 
 export interface PlayerState {
   id: string;
@@ -36,6 +40,16 @@ export interface BuildingRoom {
   use(i: number, j: number): void;
   /** A flash the server wants everybody to see on a cell (a rule just did something there). */
   onFx(callback: (fx: { i: number; j: number; color: number }) => void): void;
+  /** A burst of confetti, thrown by a host. */
+  onConfetti(callback: () => void): void;
+  /** Are the party lights on? Part of the room's state, so that whoever comes in later sees them. */
+  lights(): boolean;
+  /** An announcement of the staff. */
+  onAlert(callback: (alert: StaffAlert) => void): void;
+  /** A member of the staff asks us to come. */
+  onSummon(callback: (from: string, target: FriendTarget) => void): void;
+  /** The staff member who typed ":goto" is taken there. */
+  onGoto(callback: (target: FriendTarget) => void): void;
   /** A message a rule of the apartment shows us. */
   onRuleMessage(callback: (text: string) => void): void;
   /** "I want to walk to (i, j)". The server computes the path. */
@@ -90,7 +104,27 @@ function wrap(room: Room): BuildingRoom {
       room.send('use', { i, j });
     },
     onFx(callback) {
-      room.onMessage('fx', (m: { i: number; j: number; color?: number }) => callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 }));
+      room.onMessage('fx', (m: { kind?: string; i: number; j: number; color?: number }) => {
+        if (m.kind === 'pulse') callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 });
+      });
+    },
+    onConfetti(callback) {
+      room.onMessage('fx', (m: { kind?: string }) => {
+        if (m.kind === 'confetti') callback();
+      });
+    },
+    lights() {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (room.state as any)?.disco === true;
+    },
+    onAlert(callback) {
+      room.onMessage('alert', (m: StaffAlert) => callback(m));
+    },
+    onSummon(callback) {
+      room.onMessage('summon', (m: { from: string; target: FriendTarget }) => callback(m.from, m.target));
+    },
+    onGoto(callback) {
+      room.onMessage('goto', (m: { target: FriendTarget }) => callback(m.target));
     },
     onRuleMessage(callback) {
       room.onMessage('rule-message', (m: { text: string }) => callback(m.text));

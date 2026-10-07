@@ -257,10 +257,10 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       reply,
       send: (type, data) => client.send(type, data),
     });
-    // Typed without anything after it, a command says how it is used.
+    // A command that needs something, typed without anything, says how it is used.
     if (handled && !parsed.rest) {
       const usage = usageOf(parsed.name);
-      if (usage) reply(`Usage : ${usage}`);
+      if (usage?.includes('<')) reply(`Usage : ${usage}`);
     }
     return handled;
   }

@@ -4,6 +4,7 @@ import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './a
 import { createApartmentSettings } from './apartment-settings';
 import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
+import { showAlert, showSummon } from './alerts';
 import { showNotice } from './notice-dialog';
 import { wallet } from './wallet';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
@@ -12,8 +13,8 @@ import { createPanel } from './panel';
 import { showPlayerCard } from './player-card';
 import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
-import { CLOSED_BY_OWNER, EXPELLED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
-import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
+import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
+import { N, OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 import { createVisitPanel } from './visit-panel';
@@ -125,6 +126,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     return { error: joined.error };
   }
   const room: BuildingRoom = joined.room;
+  // Handy for end-to-end scripts (development only).
+  if (import.meta.env.DEV) (window as unknown as { __room: BuildingRoom }).__room = room;
 
   const abort = new AbortController();
   const world = new Container();
@@ -768,6 +771,90 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     chat.system(text);
   });
 
+  // ----- Party: lights and confetti, thrown by the hosts ---------------------------------
+  const partyLayer = new Graphics();
+  partyLayer.zIndex = 8900;
+  partyLayer.blendMode = 'add';
+  world.addChild(partyLayer);
+  // The lights stay on the floor: they do not spill over the walls or outside the room.
+  const floorMask = new Graphics();
+  {
+    const top = tileCenter(0, 0);
+    const east = tileCenter(N - 1, 0);
+    const south = tileCenter(N - 1, N - 1);
+    const west = tileCenter(0, N - 1);
+    floorMask.poly([top.x, top.y - TH / 2, east.x + TW / 2, east.y, south.x, south.y + TH / 2, west.x - TW / 2, west.y]).fill(0xffffff);
+  }
+  world.addChild(floorMask);
+  partyLayer.mask = floorMask;
+  const confettiLayer = new Graphics();
+  confettiLayer.zIndex = 9200;
+  world.addChild(confettiLayer);
+  interface Piece {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    size: number;
+    color: number;
+    life: number;
+    spin: number;
+  }
+  const confetti: Piece[] = [];
+  const CONFETTI_COLORS = [0xff5a7a, 0xffc857, 0x6be2a3, 0x5ab8ff, 0xb78cff, 0xff9a5a, 0xffffff];
+  room.onConfetti(() => {
+    if (reduceMotion) return;
+    for (let k = 0; k < 110 && confetti.length < 260; k++) {
+      confetti.push({
+        x: Math.random() * ROOM_W,
+        y: -10 - Math.random() * 60,
+        vx: (Math.random() - 0.5) * 60,
+        vy: 70 + Math.random() * 150,
+        size: 3 + Math.floor(Math.random() * 3),
+        color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]!,
+        life: 2.6 + Math.random() * 1.8,
+        spin: Math.random() * 6,
+      });
+    }
+  });
+
+  /** A colour that goes round the wheel: hue in degrees. */
+  const wheel = (hue: number) => {
+    const h = ((hue % 360) + 360) % 360 / 60;
+    const x = 1 - Math.abs((h % 2) - 1);
+    const [r, g, b] = h < 1 ? [1, x, 0] : h < 2 ? [x, 1, 0] : h < 3 ? [0, 1, x] : h < 4 ? [0, x, 1] : h < 5 ? [x, 0, 1] : [1, 0, x];
+    return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+  };
+
+  function drawParty(now: number, deltaMs: number) {
+    partyLayer.clear();
+    if (room.lights()) {
+      // A wash of colour over the room, and spots sweeping the floor (still, when the system asks for less motion).
+      const clock = reduceMotion ? 0 : now;
+      partyLayer.rect(0, 0, ROOM_W, ROOM_H).fill({ color: wheel(clock / 25), alpha: 0.07 });
+      for (let k = 0; k < 6; k++) {
+        const t = clock / 1500 + k * 1.1;
+        const x = ROOM_W / 2 + Math.cos(t * 0.9 + k) * 190;
+        const y = 240 + Math.sin(t * 1.3 + k * 2) * 70;
+        partyLayer.ellipse(x, y, 95, 46).fill({ color: wheel(clock / 18 + k * 60), alpha: 0.2 });
+        partyLayer.ellipse(x, y, 45, 22).fill({ color: 0xffffff, alpha: 0.12 });
+      }
+    }
+    confettiLayer.clear();
+    const dt = deltaMs / 1000;
+    for (let k = confetti.length - 1; k >= 0; k--) {
+      const p = confetti[k]!;
+      p.life -= dt;
+      if (p.life <= 0 || p.y > ROOM_H + 10) {
+        confetti.splice(k, 1);
+        continue;
+      }
+      p.x += (p.vx + Math.sin(now / 200 + p.spin) * 30) * dt;
+      p.y += p.vy * dt;
+      confettiLayer.rect(Math.round(p.x), Math.round(p.y), p.size, Math.max(2, p.size - 1 - Math.round(Math.abs(Math.sin(now / 150 + p.spin)) * 2))).fill({ color: p.color, alpha: Math.min(1, p.life) });
+    }
+  }
+
   function drawFlashes(now: number) {
     fxLayer.clear();
     for (let k = flashes.length - 1; k >= 0; k--) {
@@ -799,6 +886,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     syncPlayers(ticker.deltaMS, now);
     layoutBubbles(now);
     drawFlashes(now);
+    drawParty(now, ticker.deltaMS);
 
     if (!reduceMotion) {
       for (const prop of props.values()) {
@@ -861,6 +949,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onMessage('decor', () => void reloadVisit());
 
   let closing = false;
+  // The staff speaks: announcements, a call to join them, or a trip to where a player is.
+  room.onAlert((alert) => showAlert(alert, (target) => host.go(target)));
+  room.onSummon((from, target) => showSummon(from, target, (t) => host.go(t)));
+  room.onGoto((target) => host.go(target));
+
   // Somebody rings at our door, or answers a ring of ours.
   room.onRing((ring) => showRing(ring.visitorId, ring.nickname, (text) => host.notify(text)));
   room.onBellAnswer((answer) => host.notify(answer.text));
@@ -889,7 +982,9 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         ? 'Le propriétaire vient de fermer son appart.'
         : code === EXPELLED
           ? 'Le propriétaire t’a invité à sortir.'
-          : 'Tu as été déconnecté de la salle.',
+          : code === KICKED
+            ? 'Un membre de l’équipe t’a fait sortir de la salle.'
+            : 'Tu as été déconnecté de la salle.',
     );
     host.go({ kind: 'building' });
   });

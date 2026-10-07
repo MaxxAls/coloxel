@@ -16,7 +16,7 @@ import {
 import { REASONS } from './report-dialog';
 import { windowBar } from './window';
 
-type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news' | 'events' | 'team';
+type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news' | 'events' | 'team' | 'log';
 const TABS: [Tab, string][] = [
   ['dashboard', 'Tableau de bord'],
   ['reports', 'Signalements'],
@@ -25,6 +25,7 @@ const TABS: [Tab, string][] = [
   ['news', 'Annonces'],
   ['events', 'Événements'],
   ['team', 'Équipe'],
+  ['log', 'Journal staff'],
 ];
 /** What a role must hold to see a tab: the server checks it again on every request. */
 const TAB_PERMISSION: Record<Tab, string> = {
@@ -35,6 +36,7 @@ const TAB_PERMISSION: Record<Tab, string> = {
   news: 'news.write',
   events: 'events.manage',
   team: 'roles.view',
+  log: 'staff.log',
 };
 
 /** What each permission means, for the table of the roles. */
@@ -56,6 +58,17 @@ const PERMISSION_LABELS: [string, string][] = [
   ['maintenance.bypass', 'Jouer pendant la maintenance'],
   ['roles.view', 'Voir l’équipe'],
   ['roles.manage', 'Nommer des membres de l’équipe'],
+  ['alerts.room', 'Alerter une salle (:ra)'],
+  ['alerts.user', 'Alerter un joueur (:alert)'],
+  ['alerts.event', 'Annoncer un événement (:ea)'],
+  ['alerts.hotel', 'Alerter tout le jeu (:ha, :hal)'],
+  ['room.kick', 'Faire sortir un joueur (:kick)'],
+  ['room.mute', 'Réduire une salle au silence'],
+  ['room.fun', 'Lumières, confettis, danse, gel'],
+  ['players.summon', 'Convoquer un joueur (:summon)'],
+  ['words.manage', 'Ajouter ou retirer un mot filtré'],
+  ['staff.log', 'Lire le journal du staff'],
+  ['gift.pixels', 'Offrir des Pixels (:gift)'],
 ];
 
 const KIND_LABELS: Record<ReportKind, string> = {
@@ -829,6 +842,40 @@ export function createStaffPanel(options: { me: StaffMe; onToggle(open: boolean)
     content.replaceChildren(view);
   }
 
+  // ----- Journal of the staff ----------------------------------------------------
+  let logFilter = '';
+  async function renderLog() {
+    const form = el('form', 'staff-bar');
+    const who = el('input');
+    who.placeholder = 'Pseudo du membre (facultatif)';
+    who.value = logFilter;
+    who.setAttribute('aria-label', 'Membre de l’équipe');
+    const go = el('button', 'primary', 'Filtrer');
+    go.type = 'submit';
+    form.append(who, go);
+    const list = el('div', 'staff-list');
+    content.replaceChildren(form, list);
+    const load = async (before?: number) => {
+      const res = await api.staffLog({ staff: logFilter || undefined, before });
+      if (!before) list.replaceChildren();
+      list.querySelector('.more')?.remove();
+      if (!res.ok) return void list.append(el('p', 'error', res.error));
+      if (!res.data.entries.length && !before) list.append(el('p', 'muted', 'Aucune commande pour l’instant.'));
+      for (const e of res.data.entries) {
+        const row = el('div', 'chat-row');
+        row.append(el('span', 'muted small', `${when(e.at)} · ${e.room ? roomName(e.room) : ''}`), el('strong', undefined, e.staff), el('span', undefined, `:${e.command} ${e.args}`));
+        list.append(row);
+      }
+      if (res.data.next !== null) list.append(button('Plus anciens', () => load(res.data.next!), 'more'));
+    };
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      logFilter = who.value.trim();
+      void load();
+    });
+    await load();
+  }
+
   // ----- Shell -------------------------------------------------------------
   function openPlayer(id: string) {
     playerId = id;
@@ -852,6 +899,7 @@ export function createStaffPanel(options: { me: StaffMe; onToggle(open: boolean)
     else if (tab === 'news') await renderNews();
     else if (tab === 'events') await renderEvents();
     else if (tab === 'team') await renderTeam();
+    else if (tab === 'log') await renderLog();
     else await renderPlayers();
   }
 

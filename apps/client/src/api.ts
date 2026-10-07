@@ -408,6 +408,12 @@ export const api = {
   notices: () => call<{ notices: { id: number; kind: 'warning' | 'mute'; text: string }[] }>('GET', '/api/notices'),
   noticesSeen: (ids: number[]) => call<unknown>('POST', '/api/notices/seen', { ids }),
   staffMe: () => call<StaffMe>('GET', '/api/staff/me'),
+  staffLog: (query: { staff?: string; before?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (query.staff) params.set('staff', query.staff);
+    if (query.before) params.set('before', String(query.before));
+    return call<{ entries: { id: number; staff: string; command: string; args: string; room: string | null; at: string }[]; next: number | null }>('GET', `/api/staff/log?${params}`);
+  },
   staffRoles: () => call<{ roles: StaffRoleDef[]; mine: string; assignable: string[] }>('GET', '/api/staff/roles'),
   staffTeam: () => call<{ members: TeamMember[]; history: RoleChange[] }>('GET', '/api/staff/team'),
   staffSetRole: (playerId: string, role: string) => call<{ role: string; title: string }>('PUT', `/api/staff/players/${playerId}/role`, { role }),
