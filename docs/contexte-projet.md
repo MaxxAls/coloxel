@@ -59,8 +59,8 @@ Chaque phase ne s'ouvre que lorsque la précédente a franchi sa porte.
 | --- | --- | --- |
 | 0. Prototype Atelier Pixel | Création par description, chambre solo, sauvegarde locale (`prototype/`) | Les créations donnent envie d'être montrées |
 | 1. Alpha solo | Comptes, appart, création côté serveur, inventaire, placement, fiche objet, bible graphique | 20 à 30 testeurs reviennent jouer d'eux mêmes |
-| 2. Multijoueur (en cours) | Temps réel, immeuble, navigation, visites, catalogue de base gratuit, chat filtré, amis, signalements, panel staff | Aucune faille de duplication connue, modération testée |
-| 3. Beta fermée | Marché entre joueurs, Pixels et Coloxs, VIP Atelier, royalties, communauté Discord | Des testeurs paient le VIP, le marché tient sans inflation |
+| 2. Multijoueur (construite, à valider avec des testeurs) | Temps réel, immeuble, navigation, visites, catalogue de base gratuit, chat filtré, amis, signalements, panel staff | Aucune faille de duplication connue, modération testée |
+| 3. Beta fermée (en cours, spec : `docs/phase-3-beta-fermee.md`) | Marché entre joueurs, Pixels et Coloxs, VIP Atelier, royalties, communauté Discord | Des testeurs paient le VIP, le marché tient sans inflation |
 | 4. Lancement public | Site, saisons, immeubles de groupe, parcours mineurs, conformité DSA et RGPD relue | |
 | Ensuite | Immeubles premium, franchise | |
 
@@ -68,8 +68,10 @@ Chaque phase ne s'ouvre que lorsque la précédente a franchi sa porte.
 
 - Phase 1 codée et relue : 52 tests passent contre PostgreSQL. Numérotation et charges sûres en concurrence, objets immuables par trigger, placements arbitrés par contrainte unique, sessions hachées, argon2.
 - Sprites visibles par les visiteurs d'un appart accessible : fait.
-- Reste avant le multijoueur : limite de débit sur connexion, inscription et création, et un vrai test du générateur avec la clé API (les tests utilisent un modèle simulé).
-- La porte de la phase 1 (testeurs qui reviennent) n'a pas encore été franchie : le fondateur a choisi d'avancer sur la phase 2 en parallèle. Mettre l'alpha entre les mains de testeurs reste prioritaire.
+- Limite de débit sur connexion, inscription et création : faite. Reste un vrai test du générateur avec la clé API (les tests utilisent un modèle simulé).
+- La porte de la phase 1 (testeurs qui reviennent) n'a pas encore été franchie : le fondateur a choisi d'avancer sur les phases suivantes en parallèle. Mettre le jeu entre les mains de testeurs reste prioritaire.
+- Phase 2 : les 9 étapes sont construites, avec des ajouts (personnage, boutique en Pixels, compagnons, mécaniques inspirées). Reste à valider avec de vrais testeurs : modération en conditions réelles, interface dans un navigateur.
+- Le fondateur a décidé de passer en phase 3 (7 octobre 2026) : spec dans `docs/phase-3-beta-fermee.md`, avec des valeurs provisoires pour la commission et les royalties (5 %).
 
 ## Décisions encore ouvertes
 

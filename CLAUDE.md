@@ -3,8 +3,9 @@
 Jeu social en pixel art où chaque objet est inventé par un joueur : il le décrit en texte, un modèle IA produit une recette de formes, le moteur de rendu du jeu la dessine, et l'objet naît en exemplaire unique et numéroté.
 
 - Conception complète du jeu : `docs/conception.md`
-- **Phase en cours : phase 2, multijoueur.** Spec : `docs/phase-2-multijoueur.md`. Commence par sa section « Avant de commencer » (vérification de la phase 1). Ne construis rien qui appartient à une phase suivante (marché, monnaies, VIP, paiement, messages privés, comptes mineurs) sans qu'on te le demande.
-- Phase précédente, terminée : `docs/phase-1-alpha-solo.md`
+- **Phase en cours : phase 3, beta fermée.** Spec : `docs/phase-3-beta-fermee.md`. Commence par sa section « Avant de commencer » (restes de la phase 2). Ne construis rien qui appartient à une phase suivante (saisons, immeubles de groupe, comptes mineurs, messages privés) sans qu'on te le demande.
+- Phase précédente : phase 2, multijoueur, construite mais pas encore validée par de vrais testeurs : `docs/phase-2-multijoueur.md`
+- Phase 1, terminée : `docs/phase-1-alpha-solo.md`
 - Ajout demandé en cours de phase 2 : éditeur de personnage, boutique en Pixels et compagnons, sans paiement réel (`docs/personnage-boutique.md`). Crédits payants, Coloxs, VIP et marché restent à faire.
 - Mécaniques ajoutées en phase 2 (défis, lumières, sonnette, commandes de chat, site public `/site`, annonces, maintenance) et idées retenues pour la suite (mécanismes programmables, échange, compagnons) : `docs/mecaniques-inspirees.md`. Ne rien construire de la liste « À faire » sans qu'on le demande.
 - Prototype d'origine (référence visuelle et comportementale) : `prototype/atelier-pixel.html`
