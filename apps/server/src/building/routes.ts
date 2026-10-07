@@ -24,7 +24,7 @@ export type Occupancy = () => Promise<Presence>;
  * who no longer may are sent out) or what the apartment looks like ('decor': visitors
  * reload it). Supplied by the realtime server; absent where there is none (some tests).
  */
-export type NotifyApartment = (ownerId: string, kind: 'access' | 'decor') => void;
+export type NotifyApartment = (ownerId: string, kind: 'access' | 'decor' | 'rules') => void;
 const nobody = (): Presence => ({ apartments: new Map(), hall: 0 });
 
 /** Move a new player into the first free apartment. Run inside the sign-up transaction. */

@@ -16,6 +16,7 @@ import { registerNoticeRoutes } from './moderation/notices';
 import type { NotifyUser } from './moderation/sanctions';
 import { registerPetRoutes } from './pets/routes';
 import { registerReportRoutes } from './reports/routes';
+import { registerRuleRoutes } from './rules/routes';
 import { registerShopRoutes } from './shop/routes';
 import { registerWalletRoutes } from './wallet/routes';
 import { registerInventoryRoutes } from './inventory/routes';
@@ -96,6 +97,7 @@ export function buildServer({
       registerReportRoutes(scope, pool, guards);
       registerVisitorRoutes(scope, pool, { notifyUser, notifyApartment, locate }, guards);
       registerNoticeRoutes(scope, pool);
+      registerRuleRoutes(scope, pool, notifyApartment, guards);
       registerStaffRoutes(scope, pool, notifyUser, notifyApartment);
       registerTeamRoutes(scope, pool);
       registerWalletRoutes(scope, pool, guards);

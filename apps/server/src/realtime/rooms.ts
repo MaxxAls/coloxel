@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { catalogueEntry } from '@coloxel/render';
+import { CATALOGUE, catalogueEntry, isSwitchable } from '@coloxel/render';
 import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadAppearance } from '../avatar/routes';
@@ -10,6 +10,9 @@ import type { SessionUser } from '../auth/routes';
 import type { QuestRecorder } from '../quests/engine';
 import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
 import { SUSPENDED, USER_TOPIC, liveSanction, sanctionText, type UserEvent } from '../moderation/sanctions';
+import { EffectBudget, conditionsHold, triggerMatches, type GameEvent } from '../rules/engine';
+import { loadRules } from '../rules/routes';
+import type { Effect, Rule } from '../rules/schema';
 import { authenticateConnection } from './auth';
 import { DANCE_MS, HELP_TEXT, parseCommand } from './commands';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
@@ -194,6 +197,12 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       this.chatChain = this.chatChain.then(() => this.handleChat(client, parsed.data.text)).catch(() => {});
     });
 
+    this.onMessage('use', (client, message) => {
+      const parsed = moveSchema.safeParse(message);
+      if (!parsed.success || !inGrid(parsed.data.i, parsed.data.j)) return;
+      void this.handleUse(client, parsed.data).catch(() => {});
+    });
+
     this.onMessage('move', async (client, message) => {
       const parsed = moveSchema.safeParse(message);
       if (!parsed.success || !inGrid(parsed.data.i, parsed.data.j)) return;
@@ -251,6 +260,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const messageId = await logChat(pool, { userId: id, room, text: verdict.text, blocked: false });
       this.broadcast('chat', { id: messageId, from: id, nickname: player.nickname, text: verdict.text });
       needDeps().quest(id, 'chat');
+      this.onGameEvent({ type: 'say', who: id, text: verdict.text });
     } catch {
       // Not journaled, not shown: every message shown is a message the staff can find.
       refuse('error', 'Ton message n’a pas pu être envoyé, réessaie.');
@@ -315,6 +325,77 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     }
   }
 
+  // ----- What mechanisms need from a room -----------------------------------------
+  /** Something happened in the room: a step, a word, a click, an arrival. Apartments run their mechanisms from it. */
+  protected onGameEvent(_event: GameEvent): void {}
+  /** Called at every step of the room's clock. */
+  protected onClock(_now: number): void {}
+  /** Is there something on this cell that a click sets off (a button)? */
+  protected async pressableAt(_cell: Cell): Promise<boolean> {
+    return false;
+  }
+
+  protected playerCount(): number {
+    return this.state.players.size;
+  }
+
+  protected sendTo(id: string, type: string, data: unknown): void {
+    this.clientsByUser.get(id)?.send(type, data);
+  }
+
+  protected startDance(id: string): void {
+    const player = this.state.players.get(id);
+    if (!player || player.pose !== POSE.stand) return;
+    this.following.delete(id);
+    this.paths.delete(id);
+    this.setEmote(id, 1);
+  }
+
+  /** The free cell nearest to this one: not in the way, not under somebody. */
+  protected freeCellNear(target: Cell, blocked: Set<number>, except?: string): Cell | null {
+    const taken = new Set<number>(blocked);
+    this.state.players.forEach((p, id) => {
+      if (id !== except) taken.add(p.i * N + p.j);
+    });
+    let best: Cell | null = null;
+    let bestDistance = Infinity;
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const d = Math.abs(i - target.i) + Math.abs(j - target.j);
+        if (!taken.has(i * N + j) && d < bestDistance) {
+          best = { i, j };
+          bestDistance = d;
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Put a player on a cell at once (a portal): their walk, seat and dance end there. */
+  protected moveInstantly(id: string, cell: Cell): void {
+    const player = this.state.players.get(id);
+    if (!player) return;
+    this.paths.delete(id);
+    this.pending.delete(id);
+    this.following.delete(id);
+    this.setEmote(id, 0);
+    player.pose = POSE.stand;
+    player.i = cell.i;
+    player.j = cell.j;
+  }
+
+  private lastUse = new Map<string, number>();
+
+  /** A click on a button: the server checks there is one, and that the player is not hammering it. */
+  private async handleUse(client: AuthedClient, cell: Cell) {
+    const { id } = userOf(client);
+    const now = Date.now();
+    if (now - (this.lastUse.get(id) ?? 0) < 500) return;
+    this.lastUse.set(id, now);
+    if (!this.state.players.has(id) || !(await this.pressableAt(cell))) return;
+    this.onGameEvent({ type: 'use', who: id, cell });
+  }
+
   /** The free cell closest to the door: not under an object, not under another player. */
   private spawnCell(blocked: Set<number>): Cell {
     const taken = new Set<number>(blocked);
@@ -362,6 +443,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     await this.presence.hset(WHERE_KEY, user.id, JSON.stringify(entry)).catch(() => {});
     const at = this.location();
     if (at.kind === 'apartment' && at.ownerId.toLowerCase() !== user.id.toLowerCase()) needDeps().quest(user.id, 'visit', at.ownerId.toLowerCase());
+    this.onGameEvent({ type: 'enter', who: user.id });
   }
 
   override onDispose() {
@@ -420,6 +502,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       }
       player.i = next.i;
       player.j = next.j;
+      this.onGameEvent({ type: 'step', who: id, cell: { i: next.i, j: next.j } });
       if (!path.length) {
         this.paths.delete(id);
         // Arrived: sit down or lie down, unless someone got there first.
@@ -431,6 +514,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         }
       }
     }
+    this.onClock(now);
   }
 }
 
@@ -458,6 +542,7 @@ export class ApartmentRoom extends BuildingRoom {
     super.onCreate();
     // The owner changes the door or the decor through the API: this room, wherever it runs, hears of it.
     this.presence.subscribe(apartmentTopic(this.ownerId), this.onChange);
+    void this.reloadRules();
   }
 
   override onDispose() {
@@ -474,7 +559,116 @@ export class ApartmentRoom extends BuildingRoom {
       void this.revalidatePoses().then(() => this.broadcast('decor'));
     }
     else if (kind === 'access') void this.sendOutUnwelcome();
+    else if (kind === 'rules') void this.reloadRules();
   };
+
+  // ----- Mechanisms ----------------------------------------------------------------
+  // The owner's rules, in memory. A rule is data (apps/server/src/rules/schema.ts): the room reads it, checks it
+  // again, and does only what the list of effects allows, a handful of times a second at most. What an effect does
+  // never sets off another rule, so a rule cannot feed itself.
+  private rules: Rule[] = [];
+  private budget = new EffectBudget();
+  private lastEvery = new Map<number, number>();
+  private firing: Promise<void> = Promise.resolve();
+
+  private async reloadRules() {
+    try {
+      this.rules = await loadRules(needDeps().pool, this.ownerId);
+      this.lastEvery.clear();
+    } catch {
+      // Keep the rules we had.
+    }
+  }
+
+  protected override onGameEvent(event: GameEvent) {
+    if (!this.rules.length) return;
+    // One event at a time, in the order they happened.
+    this.firing = this.firing.then(() => this.fire(event)).catch(() => {});
+  }
+
+  protected override onClock(now: number) {
+    if (!this.rules.length || this.playerCount() === 0) return;
+    this.rules.forEach((rule, index) => {
+      if (!rule.enabled || rule.trigger.type !== 'every') return;
+      const last = this.lastEvery.get(index);
+      // The first period starts when somebody is there to see it.
+      if (last === undefined) this.lastEvery.set(index, now);
+      else if (now - last >= rule.trigger.seconds * 1000) {
+        this.lastEvery.set(index, now);
+        this.onGameEvent({ type: 'every', rule: index });
+      }
+    });
+  }
+
+  protected override async pressableAt(cell: Cell): Promise<boolean> {
+    const { rows } = await needDeps().pool.query<{ key: string }>(
+      `SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND p.i = $2 AND p.j = $3`,
+      [this.ownerId, cell.i, cell.j],
+    );
+    return !!rows[0] && !!catalogueEntry(rows[0].key)?.pressable;
+  }
+
+  private async pieceLit(piece: string): Promise<boolean | undefined> {
+    const { rows } = await needDeps().pool.query<{ lit: boolean }>('SELECT lit FROM placements WHERE furniture_id = $1 AND user_id = $2', [piece, this.ownerId]);
+    return rows[0]?.lit;
+  }
+
+  private async fire(event: GameEvent) {
+    const candidates = event.type === 'every' ? [this.rules[event.rule]] : this.rules;
+    for (const rule of candidates) {
+      if (!rule?.enabled || (event.type !== 'every' && !triggerMatches(rule.trigger, event))) continue;
+      const who = 'who' in event ? this.state.players.get(event.who) : undefined;
+      const holds = await conditionsHold(rule.conditions, {
+        playerCount: this.playerCount(),
+        whoCell: who ? { i: who.i, j: who.j } : null,
+        isLit: (piece) => this.pieceLit(piece),
+      });
+      if (!holds) continue;
+      // A busy room does not do more: the rest waits for the next time.
+      if (!this.budget.take(rule.effects.length)) return;
+      if (event.type === 'step' || event.type === 'use') this.broadcast('fx', { kind: 'pulse', i: event.cell.i, j: event.cell.j, color: 0xffc857 });
+      for (const effect of rule.effects) await this.apply(effect, who?.id);
+    }
+  }
+
+  private async apply(effect: Effect, who: string | undefined) {
+    const { pool } = needDeps();
+    switch (effect.type) {
+      case 'light': {
+        const switchable = CATALOGUE.filter((c) => isSwitchable(c)).map((c) => c.key);
+        const { rows } = await pool.query<{ i: number; j: number }>(
+          `UPDATE placements p
+              SET lit = CASE $3 WHEN 'on' THEN true WHEN 'off' THEN false ELSE NOT p.lit END
+             FROM furniture f
+            WHERE p.furniture_id = f.id AND f.id = $1 AND p.user_id = $2 AND f.catalogue_key = ANY($4)
+        RETURNING p.i, p.j`,
+          [effect.piece, this.ownerId, effect.mode, switchable],
+        );
+        if (rows[0]) {
+          this.broadcast('fx', { kind: 'pulse', i: rows[0].i, j: rows[0].j, color: 0xfff3a0 });
+          this.broadcast('decor');
+        }
+        return;
+      }
+      case 'teleport': {
+        const player = who ? this.state.players.get(who) : undefined;
+        if (!who || !player) return;
+        const { blocked } = await this.layout();
+        const target = this.freeCellNear(effect.cell, blocked, who);
+        if (!target) return;
+        this.broadcast('fx', { kind: 'pulse', i: player.i, j: player.j, color: 0x7cc8ff });
+        this.moveInstantly(who, target);
+        this.broadcast('fx', { kind: 'pulse', i: target.i, j: target.j, color: 0x7cc8ff });
+        return;
+      }
+      case 'message':
+        if (who) this.sendTo(who, 'rule-message', { text: effect.text });
+        return;
+      case 'dance':
+        if (who) this.startDance(who);
+        return;
+    }
+  }
 
   /** Visitors who may no longer enter (door closed, or opened to friends only) are shown out at once. */
   private async sendOutUnwelcome() {
@@ -504,9 +698,11 @@ export class ApartmentRoom extends BuildingRoom {
     const blocked = new Set<number>();
     const seats = new Map<number, Interaction>();
     for (const r of rows) {
-      blocked.add(r.i * N + r.j);
+      const entry = r.key ? catalogueEntry(r.key) : undefined;
+      // A rug, a pressure plate, a portal lies on the floor: one walks over it.
+      if (!entry?.walkable) blocked.add(r.i * N + r.j);
       // Only base furniture can be used: a creation is whatever its maker invented.
-      const use = r.key ? catalogueEntry(r.key)?.interaction : undefined;
+      const use = entry?.interaction;
       if (use) seats.set(r.i * N + r.j, use);
     }
     return { blocked, seats };

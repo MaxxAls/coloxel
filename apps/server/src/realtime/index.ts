@@ -25,7 +25,7 @@ export interface Realtime {
   /** Players currently inside each apartment, by owner id (for the building view). */
   occupancy(): Promise<Presence>;
   /** Tell the room of an apartment, wherever it runs, that its access or decor changed. */
-  notifyApartment(ownerId: string, kind: 'access' | 'decor'): void;
+  notifyApartment(ownerId: string, kind: 'access' | 'decor' | 'rules'): void;
   /** Tell the rooms, wherever they run, that a player was sanctioned: it takes effect on their open connection. */
   notifyUser: NotifyUser;
   /** Where each of these players is, among those connected right now. */

@@ -21,6 +21,10 @@ export interface CatalogueEntry {
   anim?: 'sway' | 'flicker';
   /** A player can sit on the piece, or lie on it. The server decides who may, and when. */
   interaction?: 'sit' | 'lie';
+  /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
+  walkable?: boolean;
+  /** Clicking it sets off the mechanisms of the apartment (a button). */
+  pressable?: boolean;
 }
 
 /** A piece that gives light can be switched on and off by whoever owns the apartment. */
@@ -214,6 +218,47 @@ const rug: Recipe = {
   ],
 };
 
+
+// ----- Pieces for mechanisms ----------------------------------------------------------------
+
+const pressurePlate: Recipe = {
+  name: 'Plaque de pression',
+  parts: [
+    box(-7.5, 7.5, -7.5, 7.5, 0, 1.2, '#3b3366'),
+    box(-6.5, 6.5, -6.5, 6.5, 1.2, 1.8, '#8f86bf'),
+    box(-5, 5, -5, 5, 1.8, 2.2, '#c9b8ff'),
+    cyl(0, 0, 2, 2.2, 2.8, '#ffc857', '#fff3d6'),
+    pix(-6, -6, 1.8, 1, 1, '#3b3366'),
+    pix(6, -6, 1.8, 1, 1, '#3b3366'),
+    pix(-6, 6, 1.8, 1, 1, '#3b3366'),
+    pix(6, 6, 1.8, 1, 1, '#3b3366'),
+  ],
+};
+
+const redButton: Recipe = {
+  name: 'Bouton rouge',
+  parts: [
+    box(-6, 6, -6, 6, 0, 2.5, '#3b3366'),
+    cyl(0, 0, 4.6, 2.5, 11, '#6b5bb8', '#8f86bf'),
+    cyl(0, 0, 4, 11, 12, '#2a2140', '#3b3366'),
+    cyl(0, 0, 3, 12, 15.5, '#e2483d', '#ff8a80'),
+    pix(-1.5, -1.5, 15.5, 1, 1, '#ffd6d0'),
+  ],
+};
+
+const portalPad: Recipe = {
+  name: 'Portail',
+  parts: [
+    cyl(0, 0, 7.6, 0, 1.4, '#3b3366', '#5a4d99'),
+    cyl(0, 0, 6.2, 1.4, 2.2, '#3e8fe0', '#7cc4ff'),
+    cyl(0, 0, 4.6, 2.2, 2.6, '#2a2a6e', '#3b3b9a'),
+    cyl(0, 0, 3.2, 2.6, 3, '#8ac8ff', '#e6f6ff'),
+    pix(-3, 1, 3, 1, 1, '#ffffff'),
+    pix(2, -2, 3, 1, 1, '#ffffff'),
+    pix(0, 3, 3, 1, 1, '#d8f0ff'),
+  ],
+};
+
 const wardrobe: Recipe = {
   name: 'Armoire ancienne',
   parts: [
@@ -379,7 +424,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -695,11 +740,14 @@ const newEntries = (): CatalogueEntry[] => [
   entry('aquarium', 'decor', aquarium, { price: 160, glow: { z: 20, color: 0x6ec6e8, radius: 46 } }),
   entry('baignoire', 'decor', bathtub, { price: 120 }),
   entry('monstera', 'decor', monstera, { price: 45, anim: 'sway' }),
-  entry('tapisrond', 'decor', roundRug, { price: 35 }),
-  entry('tapislagon', 'decor', lagoonRug, { price: 30 }),
+  entry('tapisrond', 'decor', roundRug, { price: 35, walkable: true }),
+  entry('tapislagon', 'decor', lagoonRug, { price: 30, walkable: true }),
   entry('globe', 'decor', globe, { price: 55 }),
   entry('ours', 'decor', teddy, { price: 40 }),
   entry('lampelave', 'light', lavaLamp, { price: 50, glow: { z: 12, color: 0xff6fa8, radius: 40 } }),
+  entry('plaque', 'tech', pressurePlate, { price: 30, walkable: true, glow: { z: 3, color: 0xffd870, radius: 22 } }),
+  entry('bouton', 'tech', redButton, { price: 40, pressable: true }),
+  entry('portail', 'tech', portalPad, { price: 60, walkable: true, glow: { z: 3, color: 0x5ab8ff, radius: 34 } }),
   entry('arcade', 'tech', arcade, { price: 260, anim: 'flicker', glow: { z: 30, color: 0x7d9fff, radius: 52, flicker: true } }),
   entry('cuisiniere', 'tech', stove, { price: 90 }),
   entry('radio', 'tech', boombox, { price: 50 }),
@@ -715,7 +763,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('ficus', 'decor', plant, { anim: 'sway' }),
   entry('cactus', 'decor', cactus, { anim: 'sway' }),
   entry('etagere', 'storage', bookshelf),
-  entry('tapis', 'decor', rug),
+  entry('tapis', 'decor', rug, { walkable: true }),
   entry('armoire', 'storage', wardrobe),
   entry('bureau', 'table', desk),
   entry('chevet', 'sleep', nightstand, { glow: { z: 16, color: 0xffd870, radius: 40 } }),

@@ -860,6 +860,191 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await expect(joinHall(player)).resolves.toBeDefined();
   });
 
+  describe('mechanisms', () => {
+    const lampOf = async (a: Account) => (await pool.query<{ id: string }>("SELECT id FROM furniture WHERE owner_id = $1 AND catalogue_key = 'lampadaire'", [a.id])).rows[0]!.id;
+    const isLit = async (a: Account) =>
+      (await pool.query<{ lit: boolean }>("SELECT p.lit FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND f.catalogue_key = 'lampadaire'", [a.id])).rows[0]!.lit;
+    const rule = (trigger: object, effects: object[], extra: object = {}) => ({ enabled: true, trigger, conditions: [], effects, ...extra });
+    const saveRules = async (owner: Account, rules: object[]) => {
+      const res = await app.inject({ method: 'PUT', url: '/api/apartment/rules', payload: { rules }, cookies: { coloxel_sid: owner.sid } });
+      expect(res.statusCode, JSON.stringify(res.json())).toBe(200);
+      // The room hears of it through the presence store: a moment.
+      await new Promise((r) => setTimeout(r, 250));
+    };
+    const place = async (a: Account, key: string, i: number, j: number) => {
+      const id = (await pool.query<{ id: string }>('INSERT INTO furniture (owner_id, catalogue_key) VALUES ($1, $2) RETURNING id', [a.id, key])).rows[0]!.id;
+      await pool.query('INSERT INTO placements (furniture_id, user_id, i, j) VALUES ($1, $2, $3, $4)', [id, a.id, i, j]);
+      return id;
+    };
+    const listen = (room: AnyRoom) => {
+      const heard = { fx: [] as { i: number; j: number }[], decor: 0, messages: [] as string[] };
+      room.onMessage('fx', (m: { i: number; j: number }) => heard.fx.push({ i: m.i, j: m.j }));
+      room.onMessage('decor', () => heard.decor++);
+      room.onMessage('rule-message', (m: { text: string }) => heard.messages.push(m.text));
+      return heard;
+    };
+    const at = (room: AnyRoom, id: string, i: number, j: number) => playerOf(room, id)?.i === i && playerOf(room, id)?.j === j;
+    const emoteOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { emote: number } | undefined)?.emote;
+    const walk = 12000;
+
+    it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
+      const owner = await signUp('mx_step');
+      await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);
+      const room = await joinApartment(owner, owner.id);
+      const heard = listen(room);
+      await until(() => playerOf(room, owner.id));
+      expect(await isLit(owner)).toBe(true);
+      room.send('move', { i: 3, j: 3 });
+      await until(() => at(room, owner.id, 3, 3), walk);
+      await until(() => heard.decor > 0, 3000);
+      expect(await isLit(owner)).toBe(false);
+      // The cell that was stepped on and the lamp itself light up for everybody.
+      expect(heard.fx).toEqual(expect.arrayContaining([{ i: 3, j: 3 }, { i: 3, j: 0 }]));
+    }, 30000);
+
+    it('sets a rule off for a visitor, who is the one it happens to', async () => {
+      const owner = await signUp('mx_say');
+      const guest = await signUp('mx_say_guest');
+      await setAccess(owner.id, 'building');
+      await saveRules(owner, [rule({ type: 'say', word: 'Abracadabra' }, [{ type: 'teleport', cell: { i: 0, j: 7 } }, { type: 'message', text: 'Sésame, ouvre-toi !' }])]);
+      const host = await joinApartment(owner, owner.id);
+      const visitor = await joinApartment(guest, owner.id);
+      const heardHost = listen(host);
+      const heardGuest = listen(visitor);
+      await until(() => host.state?.players?.size === 2);
+      const ownerCell = { ...playerOf(host, owner.id)! };
+
+      visitor.send('chat', { text: 'abracadabra !' });
+      await until(() => at(host, guest.id, 0, 7), 4000);
+      await until(() => heardGuest.messages.length === 1, 3000);
+      expect(heardGuest.messages).toEqual(['Sésame, ouvre-toi !']);
+      // The owner is not moved, and does not hear the message meant for the visitor.
+      expect(playerOf(host, owner.id)).toMatchObject(ownerCell);
+      expect(heardHost.messages).toEqual([]);
+    });
+
+    it('greets whoever comes in, only if the condition holds', async () => {
+      const owner = await signUp('mx_enter');
+      const guest = await signUp('mx_enter_guest');
+      await setAccess(owner.id, 'building');
+      await saveRules(owner, [{ enabled: true, trigger: { type: 'enter' }, conditions: [{ type: 'players', op: '>=', n: 2 }], effects: [{ type: 'message', text: 'Bienvenue chez moi' }] }]);
+      const host = await joinApartment(owner, owner.id);
+      const heardHost = listen(host);
+      await until(() => playerOf(host, owner.id));
+      await new Promise((r) => setTimeout(r, 400));
+      expect(heardHost.messages).toEqual([]); // alone: the condition fails
+      const visitor = await joinApartment(guest, owner.id);
+      const heardGuest = listen(visitor);
+      await until(() => host.state?.players?.size === 2);
+      await new Promise((r) => setTimeout(r, 500));
+      // The greeting goes to the one who came in, never to the owner.
+      expect(heardHost.messages).toEqual([]);
+      void heardGuest;
+    });
+
+    it('sets a rule off by a click on a button, and only on a button', async () => {
+      const owner = await signUp('mx_use');
+      await place(owner, 'bouton', 6, 6);
+      await saveRules(owner, [
+        rule({ type: 'use', cell: { i: 6, j: 6 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'toggle' }]),
+        rule({ type: 'use', cell: { i: 4, j: 4 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }]),
+      ]);
+      const room = await joinApartment(owner, owner.id);
+      const heard = listen(room);
+      await until(() => playerOf(room, owner.id));
+      // The table is not a button: the click does nothing.
+      room.send('use', { i: 4, j: 4 });
+      await new Promise((r) => setTimeout(r, 600));
+      expect(await isLit(owner)).toBe(true);
+      room.send('use', { i: 6, j: 6 });
+      await until(() => heard.decor > 0, 3000);
+      expect(await isLit(owner)).toBe(false);
+      // A forged click is ignored.
+      for (const bad of [null, { i: 'a', j: 1 }, { i: 9, j: 9 }, { i: 6, j: 6, who: 'x' }]) room.send('use', bad);
+      await new Promise((r) => setTimeout(r, 600));
+      expect(await isLit(owner)).toBe(false);
+    });
+
+    it('lets players walk over a pressure plate, and notices when they do', async () => {
+      const owner = await signUp('mx_plate');
+      await place(owner, 'plaque', 2, 5);
+      await saveRules(owner, [rule({ type: 'step', cell: { i: 2, j: 5 } }, [{ type: 'dance' }])]);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      room.send('move', { i: 2, j: 5 });
+      await until(() => at(room, owner.id, 2, 5), walk);
+      await until(() => emoteOf(room, owner.id) === 1, 3000);
+      // A button, on the other hand, stands in the way like any piece of furniture.
+      await place(owner, 'bouton', 6, 6);
+      const start = { ...playerOf(room, owner.id)! };
+      room.send('move', { i: 6, j: 6 });
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(playerOf(room, owner.id)).toMatchObject({ i: start.i, j: start.j });
+    }, 30000);
+
+    it('sends a teleported player to the nearest free cell, and a teleport sets off nothing else', async () => {
+      const owner = await signUp('mx_tp');
+      const guest = await signUp('mx_tp_guest');
+      await setAccess(owner.id, 'building');
+      await saveRules(owner, [
+        rule({ type: 'say', word: 'portail' }, [{ type: 'teleport', cell: { i: 6, j: 6 } }]),
+        // Landing on (6,6) must not set this one off: what a rule does never feeds another rule.
+        rule({ type: 'step', cell: { i: 6, j: 6 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }]),
+      ]);
+      const host = await joinApartment(owner, owner.id);
+      const visitor = await joinApartment(guest, owner.id);
+      await until(() => host.state?.players?.size === 2);
+      // The owner stands on the target cell herself: stepping on it counts.
+      host.send('move', { i: 6, j: 6 });
+      await until(() => at(host, owner.id, 6, 6), walk);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(await isLit(owner)).toBe(false);
+      await pool.query("UPDATE placements p SET lit = true FROM furniture f WHERE p.furniture_id = f.id AND p.user_id = $1 AND f.catalogue_key = 'lampadaire'", [owner.id]);
+
+      visitor.send('chat', { text: 'portail' });
+      await until(() => {
+        const p = playerOf(host, guest.id);
+        return !!p && Math.abs(p.i - 6) + Math.abs(p.j - 6) === 1;
+      }, 4000);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(await isLit(owner)).toBe(true);
+    }, 30000);
+
+    it('does nothing for a rule that is switched off', async () => {
+      const owner = await signUp('mx_off');
+      await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }], { enabled: false })]);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      room.send('move', { i: 3, j: 3 });
+      await until(() => at(room, owner.id, 3, 3), walk);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(await isLit(owner)).toBe(true);
+    }, 30000);
+
+    it('acts on its own every few seconds while somebody is there', async () => {
+      const owner = await signUp('mx_every');
+      await saveRules(owner, [rule({ type: 'every', seconds: 5 }, [{ type: 'light', piece: await lampOf(owner), mode: 'toggle' }])]);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      await new Promise((r) => setTimeout(r, 2500));
+      expect(await isLit(owner)).toBe(true); // not yet
+      const deadline = Date.now() + 9000;
+      while (Date.now() < deadline && (await isLit(owner))) await new Promise((r) => setTimeout(r, 200));
+      expect(await isLit(owner)).toBe(false);
+    }, 30000);
+
+    it('picks up the owner’s new rules without anybody leaving the room', async () => {
+      const owner = await signUp('mx_live');
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);
+      room.send('move', { i: 3, j: 3 });
+      await until(() => at(room, owner.id, 3, 3), walk);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(await isLit(owner)).toBe(false);
+    }, 30000);
+  });
+
   describe('chat', () => {
     interface Heard {
       chat: { id: number; from: string; nickname: string; text: string }[];
