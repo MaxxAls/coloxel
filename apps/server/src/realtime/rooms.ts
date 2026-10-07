@@ -11,6 +11,7 @@ import type { QuestRecorder } from '../quests/engine';
 import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
 import { SUSPENDED, USER_TOPIC, liveSanction, sanctionText, type UserEvent } from '../moderation/sanctions';
 import { authenticateConnection } from './auth';
+import { DANCE_MS, HELP_TEXT, parseCommand } from './commands';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
 
 /** One cell per step: a calm, continuous walk, about half a second per cell. */
@@ -38,6 +39,8 @@ export const Player = schema(
     look: t.string(),
     /** Active companion as "species:colour:name", or empty. */
     pet: t.string(),
+    /** What the player is doing for show: 0 nothing, 1 dancing. */
+    emote: t.uint8(),
   },
   'Player',
 );
@@ -91,6 +94,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private lastRefresh = new Map<string, number>();
   private chatLimiter = new ChatLimiter();
   private chatChain: Promise<void> = Promise.resolve();
+  /** Who follows whom (both are in this room). */
+  private following = new Map<string, string>();
+  private emoteUntil = new Map<string, number>();
+  /** The cells in the way, as of the last time somebody asked to move: followers walk around them. */
+  private blockedCache = new Set<number>();
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
 
@@ -192,7 +200,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const { id } = userOf(client);
       const player = this.state.players.get(id);
       if (!player) return;
+      // Walking off ends a dance and stops following.
+      this.following.delete(id);
+      this.setEmote(id, 0);
       const { blocked, seats } = await this.layout();
+      this.blockedCache = blocked;
       const target = parsed.data;
       // A seat or a bed that is free can be walked onto: that is how one sits down. Everything else placed is in the way.
       const kind = seats.get(target.i * N + target.j);
@@ -219,6 +231,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (!player) return;
     const refuse = (reason: string, text: string) => client.send('chat-refused', { reason, message: text });
     if (!this.chatLimiter.allow(id)) return refuse('rate', REFUSAL_MESSAGES.rate);
+    const command = parseCommand(rawText);
+    if (command) return this.handleCommand(client, command);
     const verdict = judgeChatText(rawText);
     if (!verdict.ok && verdict.reason !== 'filtered') return refuse(verdict.reason, verdict.message);
     const room = roomLabel(this.location());
@@ -240,6 +254,64 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     } catch {
       // Not journaled, not shown: every message shown is a message the staff can find.
       refuse('error', 'Ton message n’a pas pu être envoyé, réessaie.');
+    }
+  }
+
+  private setEmote(id: string, emote: number) {
+    const player = this.state.players.get(id);
+    if (!player) return;
+    player.emote = emote;
+    if (emote === 0) this.emoteUntil.delete(id);
+    else this.emoteUntil.set(id, Date.now() + DANCE_MS);
+  }
+
+  /** Slash commands: they act on the player who typed them, and are answered to that player alone. */
+  private async handleCommand(client: AuthedClient, command: ReturnType<typeof parseCommand> & object) {
+    const { id } = userOf(client);
+    const player = this.state.players.get(id);
+    if (!player) return;
+    const say = (text: string) => client.send('system', { text });
+    switch (command.name) {
+      case 'help':
+        return say(HELP_TEXT);
+      case 'unknown':
+        return say(`Commande inconnue : /${command.typed}. ${HELP_TEXT}`);
+      case 'stop': {
+        const was = this.following.delete(id) || player.emote !== 0;
+        this.setEmote(id, 0);
+        this.paths.delete(id);
+        return say(was ? 'C’est fait.' : 'Rien à arrêter.');
+      }
+      case 'dance': {
+        if (player.pose !== POSE.stand) return say('Lève-toi d’abord pour danser.');
+        if (player.emote !== 0) {
+          this.setEmote(id, 0);
+          return say('Tu arrêtes de danser.');
+        }
+        this.following.delete(id);
+        this.paths.delete(id);
+        this.setEmote(id, 1);
+        return;
+      }
+      case 'follow': {
+        if (!command.who) return say('Qui veux-tu suivre ? Écris /suivre <pseudo>.');
+        let target: Player | undefined;
+        this.state.players.forEach((p) => {
+          if (p.nickname.toLowerCase() === command.who.toLowerCase()) target = p;
+        });
+        if (!target || target.id === id) return say('Cette personne n’est pas dans la salle.');
+        // Following is for friends: nobody is trailed by a stranger.
+        const friends = await needDeps().pool.query(
+          `SELECT 1 FROM friendships WHERE status = 'accepted'
+             AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`,
+          [id, target.id],
+        );
+        if (!friends.rowCount) return say('Tu ne peux suivre que tes amis.');
+        this.blockedCache = (await this.layout()).blocked;
+        this.setEmote(id, 0);
+        this.following.set(id, target.id);
+        return say(`Tu suis ${target.nickname}. Écris /stop pour arrêter.`);
+      }
     }
   }
 
@@ -281,6 +353,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     player.i = spawn.i;
     player.j = spawn.j;
     player.pose = POSE.stand;
+    player.emote = 0;
     this.paths.delete(user.id);
     this.pending.delete(user.id);
     this.state.players.set(user.id, player);
@@ -302,6 +375,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     this.clientsByUser.delete(id);
     this.lastRefresh.delete(id);
     this.chatLimiter.forget(id);
+    this.following.delete(id);
+    this.emoteUntil.delete(id);
     this.paths.delete(id);
     this.pending.delete(id);
     this.state.players.delete(id);
@@ -315,6 +390,27 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   }
 
   private step() {
+    // A dance ends by itself after a while.
+    const now = Date.now();
+    for (const [id, until] of this.emoteUntil) {
+      if (now > until) this.setEmote(id, 0);
+    }
+    // Followers keep a step behind: next to the one they follow, never on top of them.
+    for (const [id, targetId] of this.following) {
+      const me = this.state.players.get(id);
+      const target = this.state.players.get(targetId);
+      if (!me || !target) {
+        this.following.delete(id);
+        continue;
+      }
+      if (this.paths.has(id) || me.pose !== POSE.stand) continue;
+      if (Math.max(Math.abs(me.i - target.i), Math.abs(me.j - target.j)) <= 1) continue;
+      const path = findPath({ i: me.i, j: me.j }, { i: target.i, j: target.j }, (i, j) =>
+        this.blockedCache.has(i * N + j) && !(i === target.i && j === target.j),
+      );
+      path.pop();
+      if (path.length) this.paths.set(id, path);
+    }
     for (const [id, path] of this.paths) {
       const player = this.state.players.get(id);
       const next = path.shift();

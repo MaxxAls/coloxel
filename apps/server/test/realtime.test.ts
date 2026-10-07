@@ -735,6 +735,115 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
   });
 
+  describe('commands, dancing and following', () => {
+    const emoteOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { emote: number } | undefined)?.emote;
+    const listenSystem = (room: AnyRoom) => {
+      const heard = { system: [] as string[], chat: [] as string[] };
+      room.onMessage('system', (m: { text: string }) => heard.system.push(m.text));
+      room.onMessage('chat', (m: { text: string }) => heard.chat.push(m.text));
+      return heard;
+    };
+    const named = async (nickname: string) => ({ ...(await signUp(nickname)), nickname });
+    const befriend = async (a: Account, b: Account & { nickname: string }) => {
+      await app.inject({ method: 'POST', url: '/api/friends/requests', payload: { nickname: b.nickname }, cookies: { coloxel_sid: a.sid } });
+      await app.inject({ method: 'POST', url: `/api/friends/requests/${a.id}/accept`, cookies: { coloxel_sid: b.sid } });
+    };
+
+    it('answers a command to its author only: it is not chat, not shown, not journaled', async () => {
+      const ann = await named('cm_ann');
+      const bob = await named('cm_bob');
+      const a = await joinHall(ann);
+      const b = await joinHall(bob);
+      const heardA = listenSystem(a);
+      const heardB = listenSystem(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: '/aide' });
+      a.send('chat', { text: '/nimportequoi' });
+      await until(() => heardA.system.length === 2);
+      expect(heardA.system[0]).toMatch(/\/danse/);
+      expect(heardA.system[1]).toMatch(/inconnue/);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(heardB.system).toEqual([]);
+      expect(heardB.chat).toEqual([]);
+      expect((await pool.query('SELECT count(*) FROM chat_log WHERE user_id = $1', [ann.id])).rows[0].count).toBe('0');
+    });
+
+    it('lets a player dance, shows everybody, and stops when they walk away or ask', async () => {
+      const cat = await named('cm_cat');
+      const dan = await named('cm_dan');
+      const a = await joinHall(cat);
+      const b = await joinHall(dan);
+      await until(() => a.state?.players?.size === 2 && b.state?.players?.size === 2);
+      a.send('chat', { text: '/danse' });
+      await until(() => emoteOf(b, cat.id) === 1);
+      a.send('move', { i: SPAWN.i, j: 3 });
+      await until(() => emoteOf(b, cat.id) === 0, 3000);
+      a.send('chat', { text: '/danser' });
+      await until(() => emoteOf(b, cat.id) === 1);
+      a.send('chat', { text: '/danse' });
+      await until(() => emoteOf(b, cat.id) === 0);
+    });
+
+    it('lets a player follow a friend of the room, a step behind, and refuses strangers', async () => {
+      const eve = await named('cm_eve');
+      const fay = await named('cm_fay');
+      const gus = await named('cm_gus');
+      await befriend(eve, fay);
+      const a = await joinHall(eve);
+      const b = await joinHall(fay);
+      const c = await joinHall(gus);
+      const heardA = listenSystem(a);
+      const heardC = listenSystem(c);
+      await until(() => a.state?.players?.size === 3);
+
+      c.send('chat', { text: '/suivre cm_eve' });
+      await until(() => heardC.system.length === 1);
+      expect(heardC.system[0]).toMatch(/amis/);
+      a.send('chat', { text: '/suivre personne' });
+      a.send('chat', { text: '/suivre' });
+      a.send('chat', { text: '/suivre cm_fay' });
+      await until(() => heardA.system.length === 3);
+      expect(heardA.system[2]).toMatch(/Tu suis cm_fay/);
+
+      // Fay walks to the far side of the hall: Eve ends up beside her, not on her.
+      b.send('move', { i: 1, j: 6 });
+      await until(() => playerOf(b, fay.id)?.i === 1 && playerOf(b, fay.id)?.j === 6, 12000);
+      await until(() => {
+        const me = playerOf(a, eve.id)!;
+        const her = playerOf(a, fay.id)!;
+        return Math.max(Math.abs(me.i - her.i), Math.abs(me.j - her.j)) === 1;
+      }, 12000);
+      const me = playerOf(a, eve.id)!;
+      expect({ i: me.i, j: me.j }).not.toEqual({ i: 1, j: 6 });
+
+      // Walking by oneself ends it.
+      a.send('move', { i: 7, j: 0 });
+      await until(() => playerOf(a, eve.id)?.i === 7 && playerOf(a, eve.id)?.j === 0, 12000);
+      b.send('move', { i: 0, j: 7 });
+      await until(() => playerOf(a, fay.id)?.i === 0 && playerOf(a, fay.id)?.j === 7, 12000);
+      await new Promise((r) => setTimeout(r, STEP_MS * 3));
+      expect(playerOf(a, eve.id)).toMatchObject({ i: 7, j: 0 });
+    }, 40000);
+
+    it('stops following when asked, or when the other leaves the room', async () => {
+      const hal = await named('cm_hal');
+      const ida = await named('cm_ida');
+      await befriend(hal, ida);
+      const a = await joinHall(hal);
+      const b = await joinHall(ida);
+      const heardA = listenSystem(a);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: '/suivre cm_ida' });
+      a.send('chat', { text: '/stop' });
+      await until(() => heardA.system.length === 2);
+      expect(heardA.system[1]).toBe('C’est fait.');
+      a.send('chat', { text: '/stop' });
+      await until(() => heardA.system.length === 3);
+      expect(heardA.system[2]).toMatch(/Rien/);
+      void b;
+    });
+  });
+
   describe('chat', () => {
     interface Heard {
       chat: { id: number; from: string; nickname: string; text: string }[];

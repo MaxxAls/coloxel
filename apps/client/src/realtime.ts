@@ -25,6 +25,8 @@ export interface PlayerState {
   look: string;
   /** Active companion as "species:colour:name", or empty. */
   pet: string;
+  /** 0 nothing, 1 dancing. */
+  emote: number;
 }
 
 export interface BuildingRoom {
@@ -48,6 +50,8 @@ export interface BuildingRoom {
   onRing(callback: (ring: { visitorId: string; nickname: string }) => void): void;
   /** The owner answered a ring we made. */
   onBellAnswer(callback: (answer: { accepted: boolean; text: string }) => void): void;
+  /** The server answers a /command, to us alone. */
+  onSystem(callback: (text: string) => void): void;
   /** A challenge tier was reached: the server tells us what it paid. */
   onQuest(callback: (text: string) => void): void;
   /** The staff or the server speaks to us (a warning, a mute). */
@@ -70,7 +74,7 @@ function wrap(room: Room): BuildingRoom {
     players() {
       const out: PlayerState[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '' }));
+      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '', emote: p.emote ?? 0 }));
       return out;
     },
     moveTo(i, j) {
@@ -99,6 +103,9 @@ function wrap(room: Room): BuildingRoom {
     },
     onBellAnswer(callback) {
       room.onMessage('bell-answer', (m: { accepted: boolean; text: string }) => callback(m));
+    },
+    onSystem(callback) {
+      room.onMessage('system', (m: { text: string }) => callback(m.text));
     },
     onQuest(callback) {
       room.onMessage('quest', (m: { text: string }) => callback(m.text));

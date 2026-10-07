@@ -492,9 +492,13 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       // Sitting and lying down face the same way as the furniture: toward the viewer's right.
       const facing: Facing = pose === 'stand' ? view.facing : 'front34';
       view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && showsFace(facing), pose);
-      view.body.scale.set((pose === 'stand' ? view.flip : 1) * BODY_SCALE, BODY_SCALE);
+      const dancing = p.emote === 1 && pose === 'stand' && !view.moving;
+      // A dancer sways and turns from side to side.
+      const turn = dancing ? (Math.floor(now / 340) % 2 === 0 ? 1 : -1) : view.flip;
+      view.body.scale.set((pose === 'stand' ? turn : 1) * BODY_SCALE, BODY_SCALE);
+      view.body.rotation = dancing && !reduceMotion ? Math.sin(now / 170) * 0.14 : 0;
       // The avatar glides at a constant pace: no bounce while walking.
-      const bob = 0;
+      const bob = dancing && !reduceMotion ? Math.abs(Math.sin(now / 170)) * 5 : 0;
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
@@ -589,6 +593,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     chat.add(message);
     showBubble(message);
   });
+  room.onSystem((text) => chat.system(text));
   room.onChatRefused((refusal) => {
     chat.refused(refusal.message);
     host.notify(refusal.message);

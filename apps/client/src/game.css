@@ -1852,3 +1852,8 @@ body.in-game {
   font: inherit;
   font-size: 12px;
 }
+
+.chat-log .system {
+  color: var(--muted);
+  font-style: italic;
+}

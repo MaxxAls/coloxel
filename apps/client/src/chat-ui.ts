@@ -19,6 +19,8 @@ export interface ChatUi {
   add(message: ChatMessage): void;
   /** The server did not show our message: say why, next to the log. */
   refused(text: string): void;
+  /** The server answers a command: a line only we see. */
+  system(text: string): void;
   destroy(): void;
 }
 
@@ -43,7 +45,7 @@ export function createChat(options: ChatOptions): ChatUi {
   bar.autocomplete = 'off';
   const input = el('input');
   input.maxLength = CHAT_MAX_LENGTH;
-  input.placeholder = 'Dis quelque chose… (Entrée pour écrire)';
+  input.placeholder = 'Dis quelque chose… (Entrée pour écrire, /aide pour les commandes)';
   input.setAttribute('aria-label', 'Ton message');
   const send = el('button', 'primary', 'Envoyer');
   send.type = 'submit';
@@ -97,6 +99,13 @@ export function createChat(options: ChatOptions): ChatUi {
     },
     refused(text) {
       note.textContent = text;
+    },
+    system(text) {
+      empty.remove();
+      const li = el('li', 'system', text);
+      list.append(li);
+      while (list.children.length > LOG_KEEP) list.firstElementChild?.remove();
+      list.scrollTop = list.scrollHeight;
     },
     destroy() {
       removeEventListener('keydown', onKey);
