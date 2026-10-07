@@ -213,13 +213,13 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
     it('shows a visitor the sign-up call and a player their own summary, never anybody else’s', async () => {
       const visitor = (await page('/site')).body;
       expect(visitor).toContain('/site/inscription');
-      expect(visitor).toContain('data-login');
+      expect(visitor).toContain('/site/connexion');
       expect(visitor).not.toContain('data-logout');
       const player = await signUp('site_member');
       const mine = (await app.inject({ method: 'GET', url: '/site', cookies: as(player) })).body;
       expect(mine).toContain('site_member');
       expect(mine).toContain('data-logout');
-      expect(mine).not.toContain('data-login');
+      expect(mine).not.toContain('/site/connexion');
       expect(mine).not.toMatch(/@test\.dev/);
     });
 
