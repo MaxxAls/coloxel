@@ -1,0 +1,22 @@
+{
+  "name": "@coloxel/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@coloxel/generator": "*",
+    "@coloxel/render": "*",
+    "fastify": "^5.2.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.0"
+  }
+}
