@@ -19,6 +19,8 @@ export interface CatalogueEntry {
   glow?: { z: number; color: number; radius: number; flicker?: boolean };
   /** A little life in the piece, played by the client. */
   anim?: 'sway' | 'flicker';
+  /** A player can sit on the piece, or lie on it. The server decides who may, and when. */
+  interaction?: 'sit' | 'lie';
 }
 
 // ----- Tiny builders keeping the recipes readable ---------------------------------
@@ -374,7 +376,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Pick<CatalogueEntry, 'glow' | 'anim'> = {},
+  extras: Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction'> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -385,11 +387,11 @@ const entry = (
 });
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
-  entry('lit', 'sleep', bed),
-  entry('chaise', 'seat', chair),
+  entry('lit', 'sleep', bed, { interaction: 'lie' }),
+  entry('chaise', 'seat', chair, { interaction: 'sit' }),
   entry('table', 'table', table),
-  entry('canape', 'seat', sofa),
-  entry('fauteuil', 'seat', armchair),
+  entry('canape', 'seat', sofa, { interaction: 'sit' }),
+  entry('fauteuil', 'seat', armchair, { interaction: 'sit' }),
   entry('lampadaire', 'light', lamp, { glow: { z: 27, color: 0xffd870, radius: 74 } }),
   entry('ficus', 'decor', plant, { anim: 'sway' }),
   entry('cactus', 'decor', cactus, { anim: 'sway' }),
@@ -402,7 +404,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('frigo', 'tech', fridge),
   entry('commode', 'storage', dresser),
   entry('miroir', 'decor', mirror),
-  entry('pouf', 'seat', pouf),
+  entry('pouf', 'seat', pouf, { interaction: 'sit' }),
   entry('horloge', 'decor', clock),
   entry('coffre', 'storage', chest),
 ];

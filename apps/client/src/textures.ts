@@ -1,5 +1,5 @@
 import { Texture } from 'pixi.js';
-import { avatarFrame, type Facing, type Frame, type Look } from './avatar';
+import { avatarFrame, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { furnitureSpriteUrl, itemSpriteUrl } from './api';
 
 const nearest = (tex: Texture) => {
@@ -31,11 +31,11 @@ export const itemTexture = (id: string) => loadTexture(`item:${id}`, itemSpriteU
 export const furnitureTexture = (key: string) => loadTexture(`furniture:${key}`, furnitureSpriteUrl(key));
 
 const avatarCache = new Map<string, Texture>();
-export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = false): Texture {
-  const key = `${look.skin}.${look.hair}.${look.hairStyle}.${look.shirt}.${look.shirtStyle}.${look.pants}.${look.accessory}.${facing}.${frame}.${blink ? 1 : 0}`;
+export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = false, pose: Pose = 'stand'): Texture {
+  const key = `${pose}.${look.skin}.${look.hair}.${look.hairStyle}.${look.shirt}.${look.shirtStyle}.${look.pants}.${look.accessory}.${facing}.${frame}.${blink ? 1 : 0}`;
   let tex = avatarCache.get(key);
   if (!tex) {
-    tex = nearest(Texture.from(avatarFrame(look, facing, frame, blink)));
+    tex = nearest(Texture.from(avatarFrame(look, facing, frame, blink, pose)));
     avatarCache.set(key, tex);
   }
   return tex;

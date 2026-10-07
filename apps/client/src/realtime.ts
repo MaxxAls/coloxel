@@ -14,6 +14,8 @@ export interface PlayerState {
   nickname: string;
   i: number;
   j: number;
+  /** 0 standing, 1 sitting, 2 lying down. */
+  pose: number;
 }
 
 export interface BuildingRoom {
@@ -35,7 +37,7 @@ function wrap(room: Room): BuildingRoom {
     players() {
       const out: PlayerState[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j }));
+      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0 }));
       return out;
     },
     moveTo(i, j) {

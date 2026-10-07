@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
-import { AVATAR_H, lookFor, type Facing, type Frame, type Look } from './avatar';
+import { lookFor, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
@@ -13,7 +13,7 @@ import { createVisitPanel } from './visit-panel';
 
 const STEP_MS = 150;
 /** Screen pixels per millisecond: one cell (about 36 px) per server step, a little faster to catch up. */
-const WALK_SPEED = 0.26;
+const WALK_SPEED = 0.16;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
@@ -28,6 +28,11 @@ interface PlayerView {
   facing: Facing;
   flip: 1 | -1;
   moving: boolean;
+  pose: Pose;
+  label: Text;
+  shadow: Graphics;
+  /** The little z's floating up from a sleeper. */
+  zzz: Text[];
   /** When the avatar next blinks, and a personal phase so that nobody breathes in sync. */
   blinkAt: number;
   phase: number;
@@ -126,6 +131,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     });
     inspect = (item) => panel.inspect(item.id);
     setMessage = panel.setMessage;
+    panel.setMessage('Clique sur une chaise ou un lit pour t’y installer. Clic droit sur un objet : sa fiche.');
     refreshOwn = async () => {
       const [res, mineRes] = await Promise.all([api.inventory(), api.myApartment()]);
       if (!res.ok) {
@@ -262,6 +268,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const fract = (v: number) => v - Math.floor(v);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  const POSES: Pose[] = ['stand', 'sit', 'lie'];
+  /** The four phases of a walk: a step, a passing, the other step, a passing. */
+  const WALK: Frame[] = [1, 0, 2, 0];
+
   function addView(p: PlayerState): PlayerView {
     const look = lookFor(p.id);
     const box = new Container();
@@ -284,8 +294,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       resolution: 2,
     });
     label.anchor.set(0.5, 1);
-    label.position.set(0, 10 - AVATAR_H - 4);
-    box.addChild(shadow, body, label);
+    label.position.set(0, -36);
+    const zzz = ['z', 'Z', 'z'].map((ch) => {
+      const t = new Text({ text: ch, style: { fontFamily: FONT, fontSize: 8, fill: 0xe9d6ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+      t.anchor.set(0.5);
+      t.visible = false;
+      return t;
+    });
+    box.addChild(shadow, body, label, ...zzz);
     world.addChild(box);
     const { x, y } = tileCenter(p.i, p.j);
     const view: PlayerView = {
@@ -298,6 +314,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       facing: 'front',
       flip: 1,
       moving: false,
+      pose: 'stand',
+      label,
+      shadow,
+      zzz,
       blinkAt: performance.now() + 1500 + Math.random() * 4000,
       phase: Math.random() * 6,
     };
@@ -318,6 +338,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.flip = f.flip;
         view.cell = { i: p.i, j: p.j };
       }
+      view.pose = POSES[p.pose] ?? 'stand';
       const goal = tileCenter(p.i, p.j);
       const dx = goal.x - view.x;
       const dy = goal.y - view.y;
@@ -331,20 +352,41 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.y += (dy / dist) * reach;
       }
       view.moving = Math.hypot(goal.x - view.x, goal.y - view.y) > 0.5;
+      const seated = view.pose !== 'stand' && !view.moving;
+      const pose: Pose = seated ? view.pose : 'stand';
 
-      const stride = Math.floor(now / 120) % 2 === 0 ? 1 : 2;
-      const frame: Frame = view.moving && !reduceMotion ? (stride as Frame) : 0;
-      // Now and then the eyes close for a moment; standing still, the avatar breathes.
-      let blink = false;
-      if (now >= view.blinkAt) {
+      const phase = Math.floor(now / (STEP_MS / 2)) % 4;
+      const frame: Frame = view.moving && !reduceMotion ? WALK[phase]! : 0;
+      // Now and then the eyes close for a moment (a sleeper's stay closed); standing still, the avatar breathes.
+      let blink = pose === 'lie';
+      if (!blink && now >= view.blinkAt) {
         blink = now < view.blinkAt + 130;
         if (!blink) view.blinkAt = now + 2200 + Math.random() * 4500;
       }
-      view.body.texture = avatarTexture(view.look, view.facing, frame, blink && !view.moving && view.facing === 'front');
-      view.body.scale.x = view.flip;
-      const bob = view.moving && !reduceMotion ? Math.abs(Math.sin(now / STEP_MS)) * 3 : 0;
+      // Sitting and lying down face the same way as the furniture: toward the viewer's right.
+      const facing: Facing = pose === 'stand' ? view.facing : 'front';
+      view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && facing === 'front', pose);
+      view.body.scale.x = pose === 'stand' ? view.flip : 1;
+      const bob = view.moving && !reduceMotion ? Math.abs(Math.sin((now / STEP_MS) * Math.PI)) * 3 : 0;
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
-      view.body.y = 10 - Math.round(bob) - breath;
+      if (pose === 'lie') {
+        view.body.anchor.set(0.5, 0.5);
+        view.body.position.set(8, -17);
+      } else {
+        view.body.anchor.set(0.5, 1);
+        // Seated, the avatar sits a little forward of the middle of the seat.
+        view.body.position.set(pose === 'sit' ? 3 : 0, (pose === 'sit' ? 12 : 10) - Math.round(bob) - (pose === 'stand' ? breath : 0));
+      }
+      view.shadow.visible = pose === 'stand';
+      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -46 : pose === 'sit' ? -45 : -36 - Math.round(bob));
+      view.zzz.forEach((zed, k) => {
+        zed.visible = pose === 'lie' && !reduceMotion;
+        if (!zed.visible) return;
+        const t = fract(now / 2200 + k / 3);
+        zed.position.set(-6 + t * 18 + k * 2, -34 - t * 26);
+        zed.alpha = Math.sin(t * Math.PI);
+        zed.scale.set(0.6 + t * 0.6);
+      });
       view.box.position.set(Math.round(view.x), Math.round(view.y));
       view.box.zIndex = (view.y - OY) / (TH / 2) + 0.5;
     }
@@ -360,6 +402,13 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let hover: { i: number; j: number } | null = null;
   let goal: { i: number; j: number } | null = null;
 
+  /** A piece of base furniture on this cell that can be sat on or lain on, and that nobody is using. */
+  const seatAt = (cell: { i: number; j: number }): boolean => {
+    const piece = furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j);
+    if (!piece || !catalogueEntry(piece.key)?.interaction) return false;
+    return !room.players().some((q) => q.i === cell.i && q.j === cell.j && q.pose !== 0 && q.id !== user.id);
+  };
+
   app.canvas.addEventListener(
     'pointermove',
     (ev) => {
@@ -369,12 +418,33 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     { signal: abort.signal },
   );
   app.canvas.addEventListener('pointerleave', () => (hover = null), { signal: abort.signal });
+  // Right click: the card of whatever stands there, seat or not.
+  app.canvas.addEventListener(
+    'contextmenu',
+    (ev) => {
+      ev.preventDefault();
+      const { x, y } = toRoom(ev);
+      const cell = tileAt(x, y);
+      if (!cell) return;
+      const here =
+        items.find((it) => it.placement?.i === cell.i && it.placement?.j === cell.j) ??
+        furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j);
+      if (here) inspect(here);
+    },
+    { signal: abort.signal },
+  );
   app.canvas.addEventListener(
     'click',
     async (ev) => {
       const { x, y } = toRoom(ev);
       const cell = tileAt(x, y);
       if (!cell) return;
+      if (!selected && seatAt(cell)) {
+        // A free chair, sofa, pouf or bed: the server walks us there and sits or lies us down.
+        goal = cell;
+        room.moveTo(cell.i, cell.j);
+        return;
+      }
       if (!selected) {
         // Clicking an item opens its card instead of walking onto it.
         const here =
@@ -444,7 +514,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     if (hover) {
       const c = tileCenter(hover.i, hover.j);
       diamond(marks, c.x, c.y, TW / 2, TH / 2);
-      marks.fill({ color: blocked(hover.i, hover.j) ? 0xff8a80 : selected ? 0x8affa0 : 0xffc857, alpha: 0.4 });
+      marks.fill({ color: seatAt(hover) && !selected ? 0x8ac8ff : blocked(hover.i, hover.j) ? 0xff8a80 : selected ? 0x8affa0 : 0xffc857, alpha: 0.45 });
     }
     const me = views.get(user.id);
     if (goal && me && (me.cell.i !== goal.i || me.cell.j !== goal.j)) {

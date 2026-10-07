@@ -2,12 +2,17 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
+import { catalogueEntry } from '@coloxel/render';
 import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment } from '../apartments/access';
 import type { SessionUser } from '../auth/routes';
 import { authenticateConnection } from './auth';
 
-export const STEP_MS = 150;
+/** One cell per step: slow enough to see the walk. */
+export const STEP_MS = 260;
+/** How a player is posed: on their feet, sitting, or lying down. */
+export const POSE = { stand: 0, sit: 1, lie: 2 } as const;
+type Interaction = 'sit' | 'lie';
 /** Close code sent to a visitor when the owner closes the apartment on them. */
 export const CLOSED_BY_OWNER = 4003;
 /** Presence topic carrying the changes of one apartment. */
@@ -21,6 +26,7 @@ export const Player = schema(
     nickname: t.string(),
     i: t.uint8(),
     j: t.uint8(),
+    pose: t.uint8(),
   },
   'Player',
 );
@@ -68,13 +74,35 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 
   private paths = new Map<string, Cell[]>();
   private clientsByUser = new Map<string, AuthedClient>();
+  /** A player walking to a seat or a bed takes the pose when they arrive. */
+  private pending = new Map<string, { cell: Cell; pose: number }>();
 
   /** Room-specific entry check (the hall is open to every signed-in player). */
   protected async authorize(_user: SessionUser): Promise<void> {}
 
-  /** Cells nobody can walk onto. */
-  protected async blockedCells(): Promise<Set<number>> {
-    return new Set();
+  /** Cells nobody can walk onto, and among them the seats and beds. The hall holds none. */
+  protected async layout(): Promise<{ blocked: Set<number>; seats: Map<number, Interaction> }> {
+    return { blocked: new Set(), seats: new Map() };
+  }
+
+  /** Is someone already sitting or lying on this cell? */
+  private taken(i: number, j: number, except?: string): boolean {
+    let found = false;
+    this.state.players.forEach((p, id) => {
+      if (id !== except && p.i === i && p.j === j && p.pose !== POSE.stand) found = true;
+    });
+    return found;
+  }
+
+  /** After the decor changed: whoever sits or lies where there is no longer a seat gets back on their feet. */
+  protected async revalidatePoses(): Promise<void> {
+    const { seats } = await this.layout();
+    this.state.players.forEach((p, id) => {
+      if (p.pose !== POSE.stand && !seats.has(p.i * N + p.j)) {
+        p.pose = POSE.stand;
+        this.pending.delete(id);
+      }
+    });
   }
 
   override async onAuth(_client: Client, _options: unknown, context: AuthContext) {
@@ -94,10 +122,24 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const { id } = userOf(client);
       const player = this.state.players.get(id);
       if (!player) return;
-      const blocked = await this.blockedCells();
-      const path = findPath({ i: player.i, j: player.j }, parsed.data, (i, j) => blocked.has(i * N + j));
-      if (path.length) this.paths.set(id, path);
-      else this.paths.delete(id);
+      const { blocked, seats } = await this.layout();
+      const target = parsed.data;
+      // A seat or a bed that is free can be walked onto: that is how one sits down. Everything else placed is in the way.
+      const kind = seats.get(target.i * N + target.j);
+      const usable = kind !== undefined && !this.taken(target.i, target.j, id);
+      const path = findPath({ i: player.i, j: player.j }, target, (i, j) =>
+        blocked.has(i * N + j) && !(usable && i === target.i && j === target.j),
+      );
+      if (path.length) {
+        // Any new walk gets the player back on their feet first.
+        player.pose = POSE.stand;
+        this.paths.set(id, path);
+        if (usable) this.pending.set(id, { cell: target, pose: kind === 'lie' ? POSE.lie : POSE.sit });
+        else this.pending.delete(id);
+      } else {
+        this.paths.delete(id);
+        this.pending.delete(id);
+      }
     });
   }
 
@@ -121,7 +163,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 
   override async onJoin(client: AuthedClient) {
     const user = userOf(client);
-    const blocked = await this.blockedCells();
+    const { blocked } = await this.layout();
     // One seat per player: a second connection replaces the first.
     const previous = this.clientsByUser.get(user.id);
     if (previous && previous !== client) previous.leave(4000, 'Connecté ailleurs');
@@ -135,7 +177,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const spawn = this.spawnCell(blocked);
     player.i = spawn.i;
     player.j = spawn.j;
+    player.pose = POSE.stand;
     this.paths.delete(user.id);
+    this.pending.delete(user.id);
     this.state.players.set(user.id, player);
   }
 
@@ -145,6 +189,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (this.clientsByUser.get(id) !== client) return;
     this.clientsByUser.delete(id);
     this.paths.delete(id);
+    this.pending.delete(id);
     this.state.players.delete(id);
   }
 
@@ -158,7 +203,13 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       }
       player.i = next.i;
       player.j = next.j;
-      if (!path.length) this.paths.delete(id);
+      if (!path.length) {
+        this.paths.delete(id);
+        // Arrived: sit down or lie down, unless someone got there first.
+        const want = this.pending.get(id);
+        this.pending.delete(id);
+        if (want && want.cell.i === next.i && want.cell.j === next.j && !this.taken(next.i, next.j, id)) player.pose = want.pose;
+      }
     }
   }
 }
@@ -190,7 +241,9 @@ export class ApartmentRoom extends BuildingRoom {
   }
 
   private onChange = (kind: unknown) => {
-    if (kind === 'decor') this.broadcast('decor');
+    if (kind === 'decor') {
+      void this.revalidatePoses().then(() => this.broadcast('decor'));
+    }
     else if (kind === 'access') void this.sendOutUnwelcome();
   };
 
@@ -211,11 +264,21 @@ export class ApartmentRoom extends BuildingRoom {
     }
   }
 
-  protected override async blockedCells() {
-    const { rows } = await needDeps().pool.query<{ i: number; j: number }>(
-      'SELECT i, j FROM placements WHERE user_id = $1',
+  protected override async layout() {
+    const { rows } = await needDeps().pool.query<{ i: number; j: number; key: string | null }>(
+      `SELECT p.i, p.j, f.catalogue_key AS key
+         FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
+        WHERE p.user_id = $1`,
       [this.ownerId],
     );
-    return new Set(rows.map((r) => r.i * N + r.j));
+    const blocked = new Set<number>();
+    const seats = new Map<number, Interaction>();
+    for (const r of rows) {
+      blocked.add(r.i * N + r.j);
+      // Only base furniture can be used: a creation is whatever its maker invented.
+      const use = r.key ? catalogueEntry(r.key)?.interaction : undefined;
+      if (use) seats.set(r.i * N + r.j, use);
+    }
+    return { blocked, seats };
   }
 }

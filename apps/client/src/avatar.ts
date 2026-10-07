@@ -60,7 +60,18 @@ export function lookFor(seed: string): Look {
 }
 
 export const AVATAR_W = 30;
-export const AVATAR_H = 50;
+/** Tall enough for the head of a seated player to sit above the seat, and for the legs to reach the floor. */
+export const AVATAR_H = 58;
+/** A player lying down, drawn along the iso axis: wider and flatter. */
+export const LIE_W = 66;
+export const LIE_H = 50;
+
+/** How the avatar is posed: standing (or walking), sitting, or lying down. */
+export type Pose = 'stand' | 'sit' | 'lie';
+
+export function avatarSize(pose: Pose): { w: number; h: number } {
+  return pose === 'lie' ? { w: LIE_W, h: LIE_H } : { w: AVATAR_W, h: AVATAR_H };
+}
 
 type RGB = [number, number, number];
 const rgb = (c: number): RGB => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
@@ -77,17 +88,41 @@ const bayer = (x: number, y: number) => (BAYER[((y & 3) << 2) | (x & 3)]! + 0.5)
 
 /** A tiny shaded-shape painter on a transparent canvas. */
 class Painter {
-  readonly px: (RGB | null)[] = new Array(AVATAR_W * AVATAR_H).fill(null);
+  readonly px: (RGB | null)[];
+  /** Everything drawn is moved by this much: the same drawing code serves every pose. */
+  ox = 0;
+  oy = 0;
+
+  constructor(
+    readonly w: number,
+    readonly h: number,
+  ) {
+    this.px = new Array(w * h).fill(null);
+  }
 
   set(x: number, y: number, c: RGB): void {
-    const xi = Math.round(x), yi = Math.round(y);
-    if (xi < 0 || yi < 0 || xi >= AVATAR_W || yi >= AVATAR_H) return;
-    this.px[yi * AVATAR_W + xi] = c;
+    const xi = Math.round(x + this.ox), yi = Math.round(y + this.oy);
+    if (xi < 0 || yi < 0 || xi >= this.w || yi >= this.h) return;
+    this.px[yi * this.w + xi] = c;
   }
 
   get(x: number, y: number): RGB | null {
-    if (x < 0 || y < 0 || x >= AVATAR_W || y >= AVATAR_H) return null;
-    return this.px[y * AVATAR_W + x] ?? null;
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return null;
+    return this.px[y * this.w + x] ?? null;
+  }
+
+  /** A rounded limb between two points, lit from the upper left. */
+  capsule(x0: number, y0: number, x1: number, y1: number, r: number, color: RGB): void {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 0.5));
+    const along = (shift: number, radius: number, c: RGB) => {
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        this.ball(x0 + (x1 - x0) * t + shift * -0.35, y0 + (y1 - y0) * t + shift * -0.7, radius, radius, c, { flat: true });
+      }
+    };
+    along(-r * 0.25, r, tone(color, -0.2));
+    along(0, r * 0.85, color);
+    along(r * 0.28, r * 0.42, tone(color, 0.16));
   }
 
   /** A ball lit from the upper left: highlight, base, shade and a deeper rim, with dithered seams. */
@@ -134,12 +169,12 @@ class Painter {
 }
 
 /** Where the limbs go for a given frame: arms swing opposite to the legs. */
-function pose(frame: Frame) {
+function swing(frame: Frame) {
   return {
-    legL: frame === 1 ? -2 : frame === 2 ? 1 : 0, // vertical offset of each foot (negative = lifted)
-    legR: frame === 2 ? -2 : frame === 1 ? 1 : 0,
-    armL: frame === 1 ? 1.5 : frame === 2 ? -1.5 : 0,
-    armR: frame === 2 ? 1.5 : frame === 1 ? -1.5 : 0,
+    legL: frame === 1 ? -4 : frame === 2 ? 1.5 : 0, // vertical offset of each foot (negative = lifted)
+    legR: frame === 2 ? -4 : frame === 1 ? 1.5 : 0,
+    armL: frame === 1 ? 3 : frame === 2 ? -3 : 0,
+    armR: frame === 2 ? 3 : frame === 1 ? -3 : 0,
   };
 }
 
@@ -245,12 +280,24 @@ function drawFace(p: Painter, look: Look, blink: boolean): void {
   for (const [mx, my] of [[12.6, 22.6], [13.6, 23.4], [14.6, 23.7], [15.6, 23.7], [16.6, 23.4], [17.6, 22.6]] as const) p.set(mx, my, mouth);
 }
 
-function drawBody(p: Painter, look: Look, facing: Facing, frame: Frame): void {
+function drawBody(p: Painter, look: Look, facing: Facing, frame: Frame, seated = false): void {
   const skin = rgb(look.skin), shirt = rgb(look.shirt), pants = rgb(look.pants);
-  const o = pose(frame);
+  const o = swing(frame);
 
-  // Legs and shoes first (they sit behind the shirt's hem).
-  for (const [x0, off] of [[9, o.legL], [15.4, o.legR]] as const) {
+  // Legs and shoes first (they sit behind the shirt's hem). Seated: knees forward, shins hanging down.
+  if (seated) {
+    // Chibi legs are short and the seat is high: the feet dangle a little above the floor, toes forward.
+    const shoe = rgb(0x2a2140);
+    for (const x0 of [8.8, 15.6]) {
+      p.block(x0, 38, x0 + 5.8, 44.6, pants, 1.3);
+      p.block(x0 + 0.4, 38, x0 + 5.4, 41, tone(pants, 0.1), 1);
+      p.block(x0 - 1.4, 43.6, x0 + 7, 49.4, shoe, 2, true);
+      p.block(x0 - 1.4, 47.8, x0 + 7, 49.4, tone(shoe, -0.4), 0.5, false);
+      p.set(x0 + 0.4, 44.6, tone(rgb(0x6c61a3), 0.1));
+      p.set(x0 + 1.4, 44.6, tone(rgb(0x6c61a3), 0.1));
+    }
+  }
+  for (const [x0, off] of seated ? [] : ([[9, o.legL], [15.4, o.legR]] as const)) {
     p.block(x0, 38 + off * 0.5, x0 + 5.6, 44.4 + off, pants, 1.3);
     p.block(x0 - 1.2, 43.4 + off, x0 + 6.4, 47.4 + off, rgb(0x2a2140), 1.8, true);
     p.block(x0 - 1.2, 46.2 + off, x0 + 6.4, 47.4 + off, tone(rgb(0x2a2140), -0.4), 0.5, false);
@@ -293,26 +340,84 @@ function drawBody(p: Painter, look: Look, facing: Facing, frame: Frame): void {
   }
 }
 
-function build(look: Look, facing: Facing, frame: Frame, blink: boolean): Painter {
-  const p = new Painter();
+function drawHead(p: Painter, look: Look, facing: Facing, blink: boolean): void {
   const skin = rgb(look.skin), hair = rgb(look.hair);
-  drawBody(p, look, facing, frame);
-  // Head: a ball of skin with its ears, then the face (front only), hair and accessories.
+  // A ball of skin with its ears, then the face (front only), hair and accessories.
   p.ball(5, 18, 1.8, 2.4, tone(skin, -0.06));
   p.ball(25, 18, 1.8, 2.4, tone(skin, -0.2));
   p.ball(15, 16, 10, 9.6, skin);
   if (facing === 'front') drawFace(p, look, blink);
   drawHair(p, look, facing, hair);
   drawAccessory(p, look, facing);
+}
+
+/**
+ * Lying on the back, along the iso axis, the head up-left on the pillow and the
+ * feet down-right. The body is built from rounded limbs; the head is the usual one.
+ */
+function drawLying(p: Painter, look: Look): void {
+  const skin = rgb(look.skin), shirt = rgb(look.shirt), pants = rgb(look.pants), shoe = rgb(0x2a2140);
+  const d: [number, number] = [0.894, 0.447]; // one pixel along the iso x axis
+  const side: [number, number] = [-0.447, 0.894]; // across the body, toward the viewer
+  const head: [number, number] = [14, 14];
+  const at = (from: [number, number], dist: number, across = 0): [number, number] => [
+    from[0] + d[0] * dist + side[0] * across,
+    from[1] + d[1] * dist + side[1] * across,
+  ];
+  const shoulders = at(head, 12);
+  const hips = at(shoulders, 13);
+  const knees = at(hips, 10);
+  const feet = at(knees, 9);
+
+  // The far arm and leg first, then the body, then what is nearest the viewer.
+  p.capsule(...at(shoulders, 1, -5), ...at(hips, -1, -5.5), 2.4, shirt);
+  p.ball(...at(hips, 1, -5.5), 2.2, 2.2, skin);
+  p.capsule(...at(hips, 0, -2), ...at(feet, 0, -2), 3.1, pants);
+  p.capsule(...at(feet, 0, -2), ...at(feet, 4, -2), 2.6, shoe);
+  p.capsule(...at(hips, 0, 2), ...at(feet, 0, 2.2), 3.3, tone(pants, 0.05));
+  p.capsule(...at(feet, 0, 2.2), ...at(feet, 4.5, 2.2), 2.8, shoe);
+  p.capsule(...shoulders, ...hips, 5.8, shirt);
+  p.capsule(...at(shoulders, 1, 6), ...at(hips, -1, 6.4), 2.5, tone(shirt, 0.04));
+  p.ball(...at(hips, 1.5, 6.4), 2.3, 2.3, skin);
+  p.block(...at(shoulders, -2, -3), ...at(shoulders, 3, 3), tone(shirt, -0.1), 1);
+  p.ball(...at(head, 8.5, 0), 2.6, 2.6, tone(skin, -0.12));
+  drawHead(p, look, 'front', true);
+}
+
+function build(look: Look, facing: Facing, frame: Frame, blink: boolean, pose: Pose): Painter {
+  const { w, h } = avatarSize(pose);
+  const p = new Painter(w, h);
+  if (pose === 'lie') {
+    // The head sits near the top left of the canvas.
+    p.ox = -1;
+    p.oy = 2;
+    drawLying(p, look);
+  } else if (pose === 'sit') {
+    // Hips at seat height: the upper body is raised, the legs hang from the knees down to the floor.
+    p.oy = -1;
+    drawBody(p, look, facing, 0, true);
+    drawHead(p, look, facing, blink);
+  } else {
+    p.oy = 8;
+    drawBody(p, look, facing, frame);
+    drawHead(p, look, facing, blink);
+  }
   return p;
 }
 
-/** RGBA pixels of one frame, outline included: AVATAR_W x AVATAR_H. No DOM needed. */
-export function avatarPixels(look: Look, facing: Facing = 'front', frame: Frame = 0, blink = false): Uint8ClampedArray {
-  const p = build(look, facing, frame, blink);
-  const data = new Uint8ClampedArray(AVATAR_W * AVATAR_H * 4);
+/** RGBA pixels of one frame, outline included. No DOM needed. */
+export function avatarPixels(
+  look: Look,
+  facing: Facing = 'front',
+  frame: Frame = 0,
+  blink = false,
+  pose: Pose = 'stand',
+): Uint8ClampedArray {
+  const p = build(look, facing, frame, blink, pose);
+  const { w, h } = avatarSize(pose);
+  const data = new Uint8ClampedArray(w * h * 4);
   const put = (x: number, y: number, c: RGB) => {
-    const o = (y * AVATAR_W + x) * 4;
+    const o = (y * w + x) * 4;
     data[o] = c[0];
     data[o + 1] = c[1];
     data[o + 2] = c[2];
@@ -320,14 +425,14 @@ export function avatarPixels(look: Look, facing: Facing = 'front', frame: Frame 
   };
   const out = rgb(OUTLINE);
   // Outline: every empty pixel touching a filled one (4-neighbourhood), then the body on top.
-  for (let y = 0; y < AVATAR_H; y++) {
-    for (let x = 0; x < AVATAR_W; x++) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       if (p.get(x, y)) continue;
       if (p.get(x - 1, y) || p.get(x + 1, y) || p.get(x, y - 1) || p.get(x, y + 1)) put(x, y, out);
     }
   }
-  for (let y = 0; y < AVATAR_H; y++) {
-    for (let x = 0; x < AVATAR_W; x++) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       const c = p.get(x, y);
       if (c) put(x, y, c);
     }
@@ -336,15 +441,18 @@ export function avatarPixels(look: Look, facing: Facing = 'front', frame: Frame 
 }
 
 /** One frame of the avatar on a canvas. */
-export function avatarFrame(look: Look, facing: Facing = 'front', frame: Frame = 0, blink = false): HTMLCanvasElement {
+export function avatarFrame(
+  look: Look,
+  facing: Facing = 'front',
+  frame: Frame = 0,
+  blink = false,
+  pose: Pose = 'stand',
+): HTMLCanvasElement {
+  const { w, h } = avatarSize(pose);
   const cv = document.createElement('canvas');
-  cv.width = AVATAR_W;
-  cv.height = AVATAR_H;
-  cv.getContext('2d')!.putImageData(
-    new ImageData(new Uint8ClampedArray(avatarPixels(look, facing, frame, blink)), AVATAR_W, AVATAR_H),
-    0,
-    0,
-  );
+  cv.width = w;
+  cv.height = h;
+  cv.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(avatarPixels(look, facing, frame, blink, pose)), w, h), 0, 0);
   return cv;
 }
 

@@ -202,7 +202,7 @@ export function startLoginScene(canvas: HTMLCanvasElement): () => void {
       const ax = x + 8 + (goingRight ? phase : span * 2 - phase);
       const step = Math.floor(t / 150) % 2;
       const img = walkers[room.walker]!;
-      const aw = Math.round(img.width * 0.72), ah = Math.round(img.height * 0.72);
+      const aw = Math.round(img.width * 0.62), ah = Math.round(img.height * 0.62);
       ctx.save();
       if (!goingRight) {
         ctx.translate(Math.round(ax) + aw, 0);

@@ -195,6 +195,112 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await expect(asAccount(leo).joinOrCreate('apartment', {})).rejects.toThrow(); // may match any room, which still checks its own owner
     });
 
+    describe('sitting and lying down', () => {
+      // A new account's apartment holds the starter kit: the bed on (1, 1), the chair on (5, 4).
+      const CHAIR = { i: 5, j: 4 };
+      const BED = { i: 1, j: 1 };
+      const poseOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { pose: number } | undefined)?.pose;
+      const at = (room: AnyRoom, id: string, c: { i: number; j: number }) => {
+        const p = playerOf(room, id);
+        return !!p && p.i === c.i && p.j === c.j;
+      };
+      const walk = 12000;
+
+      it('sits a player down on a free chair, and stands them up when they walk away', async () => {
+        const ivy = await signUp('ivy');
+        const room = await joinApartment(ivy, ivy.id);
+        await until(() => playerOf(room, ivy.id));
+        expect(poseOf(room, ivy.id)).toBe(0);
+
+        room.send('move', CHAIR);
+        await until(() => at(room, ivy.id, CHAIR) && poseOf(room, ivy.id) === 1, walk);
+        room.send('move', { i: 7, j: 2 });
+        await until(() => poseOf(room, ivy.id) === 0, 3000);
+        await until(() => at(room, ivy.id, { i: 7, j: 2 }), walk);
+      });
+
+      it('lies a player down on the bed', async () => {
+        const jay = await signUp('jay');
+        const room = await joinApartment(jay, jay.id);
+        await until(() => playerOf(room, jay.id));
+        room.send('move', BED);
+        await until(() => at(room, jay.id, BED) && poseOf(room, jay.id) === 2, walk);
+      });
+
+      it('lets only one player at a time sit on a chair', async () => {
+        const kai = await signUp('kai');
+        const lea = await signUp('lea');
+        await setAccess(kai.id, 'building');
+        const host = await joinApartment(kai, kai.id);
+        const guest = await joinApartment(lea, kai.id);
+        await until(() => host.state?.players?.size === 2);
+
+        host.send('move', CHAIR);
+        await until(() => at(host, kai.id, CHAIR) && poseOf(host, kai.id) === 1, walk);
+        // The visitor tries the same chair: refused, they stay on their feet where they are.
+        const start = { ...playerOf(guest, lea.id)! };
+        guest.send('move', CHAIR);
+        await new Promise((r) => setTimeout(r, 1500));
+        expect(poseOf(guest, lea.id)).toBe(0);
+        expect(playerOf(guest, lea.id)).toMatchObject(start);
+        expect(poseOf(guest, kai.id)).toBe(1);
+      });
+
+      it('lets a visitor sit on a free chair of the apartment they visit', async () => {
+        const max = await signUp('max');
+        const noe = await signUp('noe');
+        await setAccess(max.id, 'building');
+        const host = await joinApartment(max, max.id);
+        const guest = await joinApartment(noe, max.id);
+        await until(() => host.state?.players?.size === 2);
+        guest.send('move', CHAIR);
+        await until(() => at(guest, noe.id, CHAIR) && poseOf(guest, noe.id) === 1, walk);
+      });
+
+      it('does not let a player sit on, or walk onto, a creation', async () => {
+        const oli = await signUp('oli');
+        const created = await app.inject({
+          method: 'POST',
+          url: '/api/creations',
+          payload: { description: 'une lampe' },
+          cookies: { coloxel_sid: oli.sid },
+        });
+        await app.inject({
+          method: 'PUT',
+          url: '/api/placements',
+          payload: { itemId: created.json().item.id, i: 3, j: 3 },
+          cookies: { coloxel_sid: oli.sid },
+        });
+        const room = await joinApartment(oli, oli.id);
+        await until(() => playerOf(room, oli.id));
+        const start = { ...playerOf(room, oli.id)! };
+        room.send('move', { i: 3, j: 3 });
+        await new Promise((r) => setTimeout(r, 1200));
+        expect(playerOf(room, oli.id)).toMatchObject(start);
+        expect(poseOf(room, oli.id)).toBe(0);
+      });
+
+      it('gets a player back on their feet when the chair they sit on is taken away', async () => {
+        const pam = await signUp('pam');
+        const room = await joinApartment(pam, pam.id);
+        await until(() => playerOf(room, pam.id));
+        room.send('move', CHAIR);
+        await until(() => at(room, pam.id, CHAIR) && poseOf(room, pam.id) === 1, walk);
+
+        const inventory = (
+          await app.inject({ method: 'GET', url: '/api/inventory', cookies: { coloxel_sid: pam.sid } })
+        ).json().furniture as { id: string; key: string }[];
+        const chair = inventory.find((f) => f.key === 'chaise')!;
+        const res = await app.inject({
+          method: 'DELETE',
+          url: `/api/placements/${chair.id}`,
+          cookies: { coloxel_sid: pam.sid },
+        });
+        expect(res.statusCode).toBe(204);
+        await until(() => poseOf(room, pam.id) === 0, 4000);
+      });
+    });
+
     describe('when the owner changes the door or the decor', () => {
       const api = (owner: Account, payload: object) =>
         app.inject({ method: 'PUT', url: '/api/apartment', payload, cookies: { coloxel_sid: owner.sid } });

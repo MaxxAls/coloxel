@@ -61,7 +61,7 @@ export function createVisitPanel(options: VisitPanelOptions): VisitPanel {
   card.append(cardHead, body);
   close.addEventListener('click', () => (card.hidden = true));
 
-  const hint = el('p', 'muted small', 'Clique sur un objet pour voir sa fiche, ou sur une case pour te déplacer.');
+  const hint = el('p', 'muted small', 'Clique sur une case pour te déplacer, sur une chaise ou un lit pour t’y installer. Clic droit sur un objet : sa fiche.');
   root.append(head, present, links, card, hint);
 
   return {
