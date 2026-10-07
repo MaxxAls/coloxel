@@ -13,6 +13,8 @@ export interface Panel {
   element: HTMLElement;
   setItems(items: InventoryItem[]): void;
   setSelected(itemId: string | null): void;
+  /** Show the item card for this item; null closes it. */
+  inspect(itemId: string | null): void;
   setMessage(text: string): void;
   refreshCharges(): Promise<void>;
 }
@@ -23,6 +25,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   if (text !== undefined) node.textContent = text;
   return node;
 };
+
+const serialLabel = (n: number) => String(n).padStart(4, '0');
 
 export function createPanel(user: User, handlers: PanelHandlers): Panel {
   const root = el('aside', 'panel');
@@ -55,14 +59,44 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
   const message = el('p', 'message');
   message.setAttribute('role', 'status');
 
+  // Item card: everything the server stores about the item, nothing the client could invent.
+  const cardBox = el('section', 'item-card');
+  cardBox.hidden = true;
+  cardBox.setAttribute('aria-label', 'Fiche objet');
+  const cardHead = el('div', 'item-card-head');
+  cardHead.append(el('h2', undefined, 'Fiche objet'));
+  const cardClose = el('button', 'link', 'Fermer');
+  cardClose.type = 'button';
+  cardHead.append(cardClose);
+  const cardBody = el('div', 'item-card-body');
+  const cardImg = el('img');
+  cardImg.alt = '';
+  cardImg.width = 96;
+  cardImg.height = 112;
+  const cardMeta = el('div', 'meta');
+  const cardName = el('strong', 'name');
+  const cardDesc = el('p', 'muted small');
+  const cardSerial = el('p', 'small');
+  const cardCreator = el('p', 'muted small');
+  cardMeta.append(cardName, cardDesc, cardSerial, cardCreator);
+  cardBody.append(cardImg, cardMeta);
+  const cardActions = el('div', 'item-card-actions');
+  const cardPlace = el('button', 'primary');
+  cardPlace.type = 'button';
+  const cardPickUp = el('button', undefined, 'Reprendre');
+  cardPickUp.type = 'button';
+  cardActions.append(cardPlace, cardPickUp);
+  cardBox.append(cardHead, cardBody, cardActions);
+
   const listTitle = el('h2', undefined, 'Mon inventaire');
   const list = el('ul', 'inventory');
   const empty = el('p', 'muted small', 'Rien pour l’instant : invente ton premier objet !');
 
-  root.append(header, form, message, listTitle, list, empty);
+  root.append(header, form, message, cardBox, listTitle, list, empty);
 
   let items: InventoryItem[] = [];
   let selected: string | null = null;
+  let inspected: string | null = null;
   let busy = false;
 
   const setCharges = (n: number) => {
@@ -70,7 +104,22 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     create.disabled = busy || n <= 0;
   };
 
+  const renderCard = () => {
+    const item = items.find((it) => it.id === inspected);
+    cardBox.hidden = !item;
+    if (!item) return;
+    cardImg.src = itemSpriteUrl(item.id);
+    cardName.textContent = item.name;
+    cardDesc.textContent = `« ${item.description} »`;
+    cardSerial.textContent = `N° ${serialLabel(item.serial)} · Exemplaire ${item.editionNumber}/${item.editionSize}`;
+    const date = new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    cardCreator.textContent = `Créé par ${item.creator} le ${date}`;
+    cardPlace.textContent = item.id === selected ? 'Annuler' : item.placement ? 'Déplacer' : 'Poser';
+    cardPickUp.hidden = !item.placement;
+  };
+
   const render = () => {
+    renderCard();
     list.replaceChildren();
     empty.hidden = items.length > 0;
     for (const item of items) {
@@ -86,7 +135,7 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
       const info = el('div', 'info');
       info.append(
         el('strong', undefined, item.name),
-        el('span', 'muted small', `n° ${String(item.serial).padStart(4, '0')} · ${item.editionNumber}/${item.editionSize}`),
+        el('span', 'muted small', `n° ${serialLabel(item.serial)} · ${item.editionNumber}/${item.editionSize}`),
         el('span', 'muted small', item.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
       );
 
@@ -95,6 +144,15 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
       action.addEventListener('click', () => {
         if (item.placement) handlers.onPickUp(item.id);
         else handlers.onSelect(item.id === selected ? null : item.id);
+      });
+
+      info.tabIndex = 0;
+      info.addEventListener('click', () => panel.inspect(item.id));
+      info.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          panel.inspect(item.id);
+        }
       });
 
       li.append(img, info, action);
@@ -115,12 +173,20 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     if (result.ok) {
       input.value = '';
       setCharges(result.data.charges);
-      panel.setMessage(`« ${result.data.item.name} » est né, exemplaire n° ${String(result.data.item.serial).padStart(4, '0')} !`);
+      panel.setMessage(`« ${result.data.item.name} » est né, exemplaire n° ${serialLabel(result.data.item.serial)} !`);
       handlers.onChange();
     } else {
       formError.textContent = result.error;
       await panel.refreshCharges();
     }
+  });
+
+  cardClose.addEventListener('click', () => panel.inspect(null));
+  cardPlace.addEventListener('click', () => {
+    if (inspected) handlers.onSelect(inspected === selected ? null : inspected);
+  });
+  cardPickUp.addEventListener('click', () => {
+    if (inspected) handlers.onPickUp(inspected);
   });
 
   const panel: Panel = {
@@ -132,6 +198,10 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
     setSelected(id) {
       selected = id;
       render();
+    },
+    inspect(id) {
+      inspected = id;
+      renderCard();
     },
     setMessage(text) {
       message.textContent = text;

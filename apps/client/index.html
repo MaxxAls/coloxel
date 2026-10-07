@@ -48,6 +48,15 @@
       .create label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       .create p { margin: 0; }
       .message { margin: 0; min-height: 1.4em; color: var(--accent); }
+      .item-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--accent); border-radius: 8px; }
+      .item-card-head { display: flex; justify-content: space-between; align-items: center; }
+      .item-card-head h2 { margin: 0; }
+      .item-card-body { display: flex; gap: 12px; align-items: center; }
+      .item-card-body img { image-rendering: pixelated; background: #120f22; border: 1px solid var(--line); border-radius: 8px; flex: none; }
+      .item-card .meta { min-width: 0; display: grid; gap: 4px; }
+      .item-card .meta p { margin: 0; overflow-wrap: anywhere; }
+      .item-card .name { font-family: 'Press Start 2P', monospace; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+      .item-card-actions { display: flex; gap: 8px; }
       .inventory { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow-y: auto; }
       .inventory li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }
       .inventory li.selected { border-color: var(--accent); }

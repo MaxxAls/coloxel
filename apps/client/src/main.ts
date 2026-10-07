@@ -154,7 +154,7 @@ async function startGame(user: User) {
       return;
     }
     items = res.data.items;
-    if (selected && !items.some((it) => it.id === selected && !it.placement)) selected = null;
+    if (selected && !items.some((it) => it.id === selected)) selected = null;
     panel.setItems(items);
     panel.setSelected(selected);
     syncRoom();
@@ -201,6 +201,14 @@ async function startGame(user: User) {
     const { x, y } = toRoom(ev);
     const target = tileAt(x, y);
     if (!target) return;
+    if (!selected) {
+      // Clicking an item opens its card instead of walking onto it.
+      const here = items.find((it) => it.placement?.i === target.i && it.placement?.j === target.j);
+      if (here) {
+        panel.inspect(here.id);
+        return;
+      }
+    }
     if (selected) {
       // The server validates ownership and that the cell is free; we only send the intention.
       const res = await api.place(selected, target.i, target.j);
