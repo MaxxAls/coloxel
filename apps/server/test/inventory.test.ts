@@ -37,6 +37,8 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
       url: '/api/auth/register',
       payload: { email: `${nickname}@test.dev`, password: 'motdepasse', nickname, birthDate: '1990-01-01' },
     });
+    // These tests place creations on cells of their own choosing: start from a bare apartment.
+    await pool.query('DELETE FROM furniture WHERE owner_id = $1', [res.json().user.id]);
     return res.cookies.find((c) => c.name === 'coloxel_sid')!.value;
   }
   const as = (sid: string) => ({ coloxel_sid: sid });

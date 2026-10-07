@@ -23,6 +23,7 @@ const limits: RateLimits = {
   registerPerIp: { max: 2, window: hour },
   creationsPerUser: { max: 2, window: hour },
   creationsPerIp: { max: 100, window: hour },
+  furniturePerUser: { max: 100, window: hour },
 };
 
 describe.skipIf(!available)('rate limits (PostgreSQL)', () => {

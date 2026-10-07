@@ -13,6 +13,7 @@ export interface RateLimits {
   registerPerIp: Limit;
   creationsPerUser: Limit;
   creationsPerIp: Limit;
+  furniturePerUser: Limit;
 }
 
 const MINUTE = 60_000;
@@ -23,6 +24,7 @@ export const DEFAULT_LIMITS: RateLimits = {
   registerPerIp: { max: 5, window: 60 * MINUTE },
   creationsPerUser: { max: 10, window: MINUTE },
   creationsPerIp: { max: 60, window: MINUTE },
+  furniturePerUser: { max: 120, window: MINUTE },
 };
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -32,9 +34,10 @@ export interface RateGuards {
   login: Guard[];
   register: Guard[];
   creations: Guard[];
+  furniture: Guard[];
 }
 
-export const NO_GUARDS: RateGuards = { login: [], register: [], creations: [] };
+export const NO_GUARDS: RateGuards = { login: [], register: [], creations: [], furniture: [] };
 
 /**
  * Brute force on login and spam of the generator are the two things that cost
@@ -90,5 +93,6 @@ export async function buildRateGuards(
         rule(limits.creationsPerUser, (req) => `creations:user:${req.user?.id ?? req.ip}`, slowDown),
       ),
     ],
+    furniture: [guard(rule(limits.furniturePerUser, (req) => `furniture:user:${req.user?.id ?? req.ip}`, slowDown))],
   };
 }

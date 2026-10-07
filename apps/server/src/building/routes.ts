@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
+import { FLOORS, WALLS, catalogueEntry } from '@coloxel/render';
 import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
 import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
 
@@ -33,6 +34,7 @@ interface ApartmentRow {
   floor: number;
   slot: number;
   name: string | null;
+  wall_style: string;
   owner_id: string | null;
   nickname: string | null;
   open: boolean;
@@ -58,7 +60,7 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const [{ rows }, present] = await Promise.all([
       pool.query<ApartmentRow>(
-        `SELECT a.id, a.floor, a.slot, a.name, a.owner_id, host.nickname,
+        `SELECT a.id, a.floor, a.slot, a.name, a.wall_style, a.owner_id, host.nickname,
                 COALESCE(${apartmentAccessSql('$1')}, false) AS open
            FROM apartments a
            LEFT JOIN users host ON host.id = a.owner_id
@@ -73,6 +75,7 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
         floor: r.floor,
         slot: r.slot,
         name: r.name,
+        wall: r.wall_style,
         owner: r.owner_id ? { id: r.owner_id, nickname: r.nickname } : null,
         mine: r.owner_id === req.user!.id,
         open: r.open,
@@ -90,8 +93,9 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
       return reply.code(404).send({ error: 'Appartement introuvable' });
     }
     const [owner, placed] = await Promise.all([
-      pool.query<{ id: string; nickname: string; name: string | null }>(
-        `SELECT u.id, u.nickname, a.name FROM users u LEFT JOIN apartments a ON a.owner_id = u.id WHERE u.id = $1`,
+      pool.query<{ id: string; nickname: string; name: string | null; floor_style: string | null; wall_style: string | null }>(
+        `SELECT u.id, u.nickname, a.name, a.floor_style, a.wall_style
+           FROM users u LEFT JOIN apartments a ON a.owner_id = u.id WHERE u.id = $1`,
         [ownerId],
       ),
       pool.query<PlacedRow>(
@@ -105,9 +109,23 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
         [ownerId],
       ),
     ]);
+    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j
+         FROM placements p JOIN furniture f ON f.id = p.furniture_id
+        WHERE p.user_id = $1 ORDER BY p.i, p.j`,
+      [ownerId],
+    );
     return {
       owner: { id: owner.rows[0]!.id, nickname: owner.rows[0]!.nickname },
       name: owner.rows[0]!.name,
+      floor: owner.rows[0]!.floor_style ?? FLOORS[0]!.id,
+      wall: owner.rows[0]!.wall_style ?? WALLS[0]!.id,
+      furniture: base.rows.map((r) => ({
+        id: r.id,
+        key: r.catalogue_key,
+        name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
+        placement: { i: r.i, j: r.j },
+      })),
       items: placed.rows.map((r) => ({
         id: r.id,
         serial: r.serial,
@@ -137,6 +155,8 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
         .nullable()
         .optional(),
       access: z.enum(['closed', 'friends', 'building'], 'Accès invalide').optional(),
+      floor: z.string('Sol invalide').refine((id) => FLOORS.some((f) => f.id === id), 'Sol inconnu').optional(),
+      wall: z.string('Papier peint invalide').refine((id) => WALLS.some((w) => w.id === id), 'Papier peint inconnu').optional(),
     })
     .strict();
 
@@ -145,7 +165,7 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const parsed = settingsSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
-    const { name, access } = parsed.data;
+    const { name, access, floor, wall } = parsed.data;
 
     let newName: string | null | undefined = undefined;
     if (name !== undefined) {
@@ -161,6 +181,8 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     if (access !== undefined) {
       await pool.query('UPDATE users SET apartment_access = $1 WHERE id = $2', [access, req.user.id]);
     }
+    if (floor !== undefined) await pool.query('UPDATE apartments SET floor_style = $1 WHERE owner_id = $2', [floor, req.user.id]);
+    if (wall !== undefined) await pool.query('UPDATE apartments SET wall_style = $1 WHERE owner_id = $2', [wall, req.user.id]);
     return mineOf(pool, req.user.id);
   });
 
@@ -197,11 +219,19 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
 }
 
 async function mineOf(pool: pg.Pool, userId: string) {
-  const { rows } = await pool.query<{ id: number; floor: number; slot: number; name: string | null; access: string }>(
-    `SELECT a.id, a.floor, a.slot, a.name, u.apartment_access AS access
+  const { rows } = await pool.query<{
+    id: number;
+    floor: number;
+    slot: number;
+    name: string | null;
+    access: string;
+    floor_style: string;
+    wall_style: string;
+  }>(
+    `SELECT a.id, a.floor, a.slot, a.name, a.floor_style, a.wall_style, u.apartment_access AS access
        FROM users u LEFT JOIN apartments a ON a.owner_id = u.id WHERE u.id = $1`,
     [userId],
   );
   const r = rows[0]!;
-  return { id: r.id, floor: r.floor, slot: r.slot, name: r.name, access: r.access };
+  return { id: r.id, floor: r.floor, slot: r.slot, name: r.name, access: r.access, floorStyle: r.floor_style, wallStyle: r.wall_style };
 }

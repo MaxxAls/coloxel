@@ -6,6 +6,7 @@ import { registerAuthRoutes } from './auth/routes';
 import { registerBuildingRoutes, type Occupancy } from './building/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
+import { registerFurnitureRoutes } from './furniture/routes';
 import { registerInventoryRoutes } from './inventory/routes';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
@@ -55,6 +56,7 @@ export function buildServer({
       registerAuthRoutes(scope, pool, guards);
       registerCreationRoutes(scope, pool, model, guards);
       registerInventoryRoutes(scope, pool);
+      registerFurnitureRoutes(scope, pool, guards);
       registerBuildingRoutes(scope, pool, occupancy);
     });
   }

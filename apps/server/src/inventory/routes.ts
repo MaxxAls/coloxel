@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
+import { catalogueEntry } from '@coloxel/render';
 
 export const GRID_SIZE = 8;
 
@@ -44,7 +45,21 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
        ORDER BY it.serial`,
       [req.user.id],
     );
+    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j
+         FROM furniture f LEFT JOIN placements p ON p.furniture_id = f.id
+        WHERE f.owner_id = $1
+        ORDER BY f.created_at, f.id`,
+      [req.user.id],
+    );
     return {
+      // Base furniture is listed apart: it is not a creation (no number, creator or edition).
+      furniture: owned.rows.map((r) => ({
+        id: r.id,
+        key: r.catalogue_key,
+        name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
+        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j },
+      })),
       items: rows.map((r) => ({
         id: r.id,
         serial: r.serial,
@@ -70,14 +85,21 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
     }
     const { itemId, i, j } = parsed.data;
 
-    const owned = await pool.query('SELECT 1 FROM items WHERE id = $1 AND owner_id = $2', [itemId, user.id]);
-    if (owned.rowCount === 0) return reply.code(404).send({ error: 'Objet introuvable' });
+    // A creation or a piece of base furniture: the same rule for both, and the
+    // object must belong to the player.
+    const creation = await pool.query('SELECT 1 FROM items WHERE id = $1 AND owner_id = $2', [itemId, user.id]);
+    const furniture =
+      creation.rowCount === 0
+        ? await pool.query('SELECT 1 FROM furniture WHERE id = $1 AND owner_id = $2', [itemId, user.id])
+        : null;
+    if (creation.rowCount === 0 && furniture?.rowCount === 0) return reply.code(404).send({ error: 'Objet introuvable' });
+    const column = creation.rowCount ? 'item_id' : 'furniture_id';
 
     try {
       // The UNIQUE (user_id, i, j) constraint arbitrates concurrent requests.
       await pool.query(
-        `INSERT INTO placements (item_id, user_id, i, j) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (item_id) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, placed_at = now()`,
+        `INSERT INTO placements (${column}, user_id, i, j) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, placed_at = now()`,
         [itemId, user.id, i, j],
       );
     } catch (err) {
@@ -95,10 +117,10 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool) {
     const { itemId } = req.params;
     if (!UUID.test(itemId)) return reply.code(404).send({ error: 'Objet introuvable' });
 
-    const { rowCount } = await pool.query('DELETE FROM placements WHERE item_id = $1 AND user_id = $2', [
-      itemId,
-      user.id,
-    ]);
+    const { rowCount } = await pool.query(
+      'DELETE FROM placements WHERE (item_id = $1 OR furniture_id = $1) AND user_id = $2',
+      [itemId, user.id],
+    );
     if (rowCount === 0) return reply.code(404).send({ error: 'Cet objet n’est pas posé' });
     return reply.code(204).send();
   });

@@ -3,6 +3,7 @@ import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { assignApartment } from '../building/routes';
+import { giveStarterKit } from '../furniture/routes';
 import { withTransaction } from '../db/pool';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { ageOn, containsBannedWord, loginSchema, MIN_AGE, parseBirthDate, registerSchema } from './rules';
@@ -86,7 +87,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
 
     const passwordHash = await hash(password);
     try {
-      // The user and their apartment appear together or not at all.
+      // The user, their apartment and its starter kit appear together or not at all.
       const user = await withTransaction(pool, async (client) => {
         const { rows } = await client.query<SessionUser>(
           `INSERT INTO users (email, password_hash, nickname, birth_date)
@@ -95,6 +96,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
         );
         const created = rows[0]!;
         if ((await assignApartment(client, created.id)) === null) throw new BuildingFull();
+        await giveStarterKit(client, created.id);
         return created;
       });
       await openSession(pool, user.id, reply);
