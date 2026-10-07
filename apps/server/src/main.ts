@@ -9,10 +9,13 @@ const pool = createPool();
 const redisUrl = process.env.REDIS_URL;
 const redis = redisUrl ? new Redis(redisUrl) : undefined;
 
-Promise.all([buildServer({ pool, redis }).listen({ port, host: '0.0.0.0' }), startRealtime({ pool })]).then(
-  ([, realtime]) => console.log(`realtime (Colyseus) on port ${realtime.port}`),
-  (err) => {
-    console.error(err);
-    process.exit(1);
-  },
-);
+async function main() {
+  const realtime = await startRealtime({ pool });
+  await buildServer({ pool, redis, occupancy: () => realtime.occupancy() }).listen({ port, host: '0.0.0.0' });
+  console.log(`realtime (Colyseus) on port ${realtime.port}`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

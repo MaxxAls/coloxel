@@ -35,6 +35,10 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await migrateDownAll(url).catch(() => {});
     await migrate('up', url);
     pool = createPool(url);
+    // This file signs up far more players than the real building holds.
+    await pool.query(
+      'INSERT INTO apartments (id, floor, slot) SELECT n, 10 + n, 0 FROM generate_series(31, 120) AS n',
+    );
     app = buildServer({ pool, model });
     // Redis is optional here: without it presence stays in memory.
     realtime = await startRealtime({ pool, port: 0, redisUrl, allowedOrigins: [ORIGIN] });
@@ -184,6 +188,21 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await expect(joinApartment(leo, '00000000-0000-4000-8000-000000000000')).rejects.toThrow(/fermé/);
       await expect(asAccount(leo).joinOrCreate('apartment', { ownerId: 'not-a-uuid' })).rejects.toThrow(/invalide/);
       await expect(asAccount(leo).joinOrCreate('apartment', {})).rejects.toThrow(); // may match any room, which still checks its own owner
+    });
+
+    it('counts the players inside each apartment for the building view', async () => {
+      const sam = await signUp('sam');
+      const tess = await signUp('tess');
+      await setAccess(sam.id, 'building');
+      const host = await joinApartment(sam, sam.id);
+      const guest = await joinApartment(tess, sam.id);
+      await until(() => playerOf(host, tess.id) && playerOf(guest, sam.id));
+      expect((await realtime.occupancy()).get(sam.id)).toBe(2);
+      await guest.leave();
+      await until(async () => true);
+      await new Promise((r) => setTimeout(r, 300));
+      expect((await realtime.occupancy()).get(sam.id)).toBe(1);
+      expect((await realtime.occupancy()).get(tess.id)).toBeUndefined();
     });
 
     it('cannot be entered by forcing the room id with another owner’s options', async () => {

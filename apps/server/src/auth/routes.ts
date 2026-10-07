@@ -2,8 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
+import { assignApartment } from '../building/routes';
+import { withTransaction } from '../db/pool';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { ageOn, containsBannedWord, loginSchema, MIN_AGE, parseBirthDate, registerSchema } from './rules';
+
+class BuildingFull extends Error {}
 
 export const SESSION_COOKIE = 'coloxel_sid';
 const SESSION_DAYS = 30;
@@ -82,15 +86,23 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
 
     const passwordHash = await hash(password);
     try {
-      const { rows } = await pool.query<SessionUser>(
-        `INSERT INTO users (email, password_hash, nickname, birth_date)
-         VALUES ($1, $2, $3, $4) RETURNING id, nickname`,
-        [email, passwordHash, nickname, birthDate],
-      );
-      const user = rows[0]!;
+      // The user and their apartment appear together or not at all.
+      const user = await withTransaction(pool, async (client) => {
+        const { rows } = await client.query<SessionUser>(
+          `INSERT INTO users (email, password_hash, nickname, birth_date)
+           VALUES ($1, $2, $3, $4) RETURNING id, nickname`,
+          [email, passwordHash, nickname, birthDate],
+        );
+        const created = rows[0]!;
+        if ((await assignApartment(client, created.id)) === null) throw new BuildingFull();
+        return created;
+      });
       await openSession(pool, user.id, reply);
       return reply.code(201).send({ user });
     } catch (err) {
+      if (err instanceof BuildingFull) {
+        return reply.code(503).send({ error: 'L’immeuble est complet pour le moment. Reviens bientôt !' });
+      }
       const e = err as { code?: string; constraint?: string };
       if (e.code === '23505') {
         const msg = e.constraint === 'users_nickname_key' ? 'Ce pseudo est déjà pris' : 'Cet email est déjà utilisé';

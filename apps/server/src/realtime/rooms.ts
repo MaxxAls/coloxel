@@ -152,6 +152,8 @@ export class ApartmentRoom extends BuildingRoom {
       throw new ServerError(400, 'Appartement invalide');
     }
     this.ownerId = options.ownerId.toLowerCase();
+    // Lets the building view count who is inside.
+    void this.setMetadata({ ownerId: this.ownerId });
     super.onCreate();
   }
 

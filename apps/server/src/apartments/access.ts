@@ -3,8 +3,9 @@ import type pg from 'pg';
 // Single place deciding who may see into an apartment. The owner always can;
 // others depend on the owner's apartment_access. 'friends' fails closed until
 // the friends list exists, so no visitor gets in by accident.
-// `host` is the apartment owner's users row, $2 the viewer.
-export const APARTMENT_ACCESS_SQL = `(host.id = $2 OR host.apartment_access = 'building')`;
+// `host` is the apartment owner's users row; `viewer` is the SQL parameter holding the viewer's id.
+export const apartmentAccessSql = (viewer: string) => `(host.id = ${viewer} OR host.apartment_access = 'building')`;
+export const APARTMENT_ACCESS_SQL = apartmentAccessSql('$2');
 
 // Can `viewerId` see the sprite of `itemId`? Either they own it, or it is
 // placed in an apartment they may enter. Returns the recipe when allowed.

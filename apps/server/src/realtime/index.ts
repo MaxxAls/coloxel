@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from 'node:http';
-import { Server } from '@colyseus/core';
+import { Server, matchMaker } from '@colyseus/core';
 import { RedisPresence } from '@colyseus/redis-presence';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
@@ -18,6 +18,8 @@ export interface RealtimeOptions {
 export interface Realtime {
   server: Server;
   port: number;
+  /** Players currently inside each apartment, by owner id (for the building view). */
+  occupancy(): Promise<Map<string, number>>;
   close(): Promise<void>;
 }
 
@@ -47,6 +49,15 @@ export async function startRealtime({
   return {
     server,
     port: actualPort,
+    async occupancy() {
+      const rooms = await matchMaker.query({ name: 'apartment' });
+      const present = new Map<string, number>();
+      for (const room of rooms) {
+        const ownerId = (room.metadata as { ownerId?: string } | undefined)?.ownerId;
+        if (ownerId && room.clients > 0) present.set(ownerId, (present.get(ownerId) ?? 0) + room.clients);
+      }
+      return present;
+    },
     close: () => server.gracefullyShutdown(false),
   };
 }

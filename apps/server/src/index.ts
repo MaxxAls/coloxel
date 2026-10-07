@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import type pg from 'pg';
 import { SEEDS, renderSprite } from '@coloxel/render';
 import { registerAuthRoutes } from './auth/routes';
+import { registerBuildingRoutes, type Occupancy } from './building/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
 import { registerInventoryRoutes } from './inventory/routes';
@@ -20,6 +21,8 @@ export interface ServerDeps {
   rateLimits?: RateLimits | false;
   /** ioredis client for shared counters; in-memory counters without it. */
   redis?: unknown;
+  /** Players currently inside each apartment (from the realtime server). */
+  occupancy?: Occupancy;
 }
 
 export function buildServer({
@@ -27,6 +30,7 @@ export function buildServer({
   model = modelFromEnv(),
   rateLimits = process.env.NODE_ENV === 'test' ? false : DEFAULT_LIMITS,
   redis,
+  occupancy,
 }: ServerDeps = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -51,6 +55,7 @@ export function buildServer({
       registerAuthRoutes(scope, pool, guards);
       registerCreationRoutes(scope, pool, model, guards);
       registerInventoryRoutes(scope, pool);
+      registerBuildingRoutes(scope, pool, occupancy);
     });
   }
 
