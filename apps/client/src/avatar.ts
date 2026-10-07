@@ -156,13 +156,21 @@ function paletteOf(look: Look, tint: Tint): Palette {
   };
 }
 
-/** Where the limbs go for a given frame: arms swing opposite to the legs. */
+/**
+ * Where the limbs go for a given frame. A step is a real stride: the planted leg reaches forward
+ * (toward the way the avatar faces, down-right before the mirror), the other one trails and lifts,
+ * and the arms swing opposite to the legs.
+ */
 function swing(frame: Frame) {
+  const l = frame === 1; // left leg trails and lifts
+  const r = frame === 2; // right leg trails and lifts
   return {
-    legL: frame === 1 ? -3 : frame === 2 ? 1 : 0, // vertical offset of each foot (negative = lifted)
-    legR: frame === 2 ? -3 : frame === 1 ? 1 : 0,
-    armL: frame === 1 ? 2.4 : frame === 2 ? -2.4 : 0,
-    armR: frame === 2 ? 2.4 : frame === 1 ? -2.4 : 0,
+    legL: l ? -4 : r ? 1.5 : 0, // vertical offset of each foot (negative = lifted)
+    legR: r ? -4 : l ? 1.5 : 0,
+    legLx: l ? -2.4 : r ? 2.4 : 0, // horizontal offset of each leg
+    legRx: r ? -2.4 : l ? 2.4 : 0,
+    armL: l ? 3.4 : r ? -3.4 : 0,
+    armR: r ? 3.4 : l ? -3.4 : 0,
   };
 }
 
@@ -701,7 +709,7 @@ function drawBody(p: Painter, look: Look, pal: Palette, facing: Facing, frame: F
   const o = swing(frame);
   drawBehind(p, look, pal, frame);
 
-  for (const [x0, off] of seated ? ([[9.4, 0], [15.2, 0]] as const) : ([[9.6, o.legL], [15.2, o.legR]] as const)) {
+  for (const [x0, off] of seated ? ([[9.4, 0], [15.2, 0]] as const) : ([[9.6 + o.legLx, o.legL], [15.2 + o.legRx, o.legR]] as const)) {
     drawLeg(p, look, pal, x0, off, seated);
   }
   // A skirt hangs from the waist, over the tops of the legs.

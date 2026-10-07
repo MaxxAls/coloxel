@@ -44,7 +44,7 @@ export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = 
 
 const petCache = new Map<string, Texture>();
 export function petTexture(species: string, color: number, frame: PetFrame): Texture {
-  const key = `..`;
+  const key = `${species}.${color}.${frame}`;
   let tex = petCache.get(key);
   if (!tex) {
     tex = nearest(Texture.from(petCanvas(species, color, frame)));
