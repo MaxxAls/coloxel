@@ -41,7 +41,7 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
   type Account = Awaited<ReturnType<typeof signUp>>;
   const staffMember = async (nickname: string) => {
     const a = await signUp(nickname);
-    await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [a.id]);
+    await pool.query("UPDATE users SET role = 'administrateur' WHERE id = $1", [a.id]);
     return a;
   };
   const as = (a: Account) => ({ coloxel_sid: a.sid });

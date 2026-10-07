@@ -9,6 +9,8 @@ import { filterText } from '../moderation/text-filter';
 import { spriteToPng } from '../sprite-png';
 import { findAnnouncement, listAnnouncements, type Announcement } from './announcements';
 import { avatarPng, heroScenePng } from './art';
+import { ROLES, STAFF_ROLES, isStaffRole, type RoleId } from '../staff/roles';
+import { hostRanking, upcomingEvents, type EventRow } from '../staff/team';
 import { isMaintenance, isStaff } from './settings';
 import { esc, icon, logo, page, type PageOptions } from './theme';
 
@@ -83,6 +85,20 @@ const crowd = (people: { nickname: string }[]) =>
     )
     .join('');
 
+const frWhen = (d: Date) => ({
+  day: d.toLocaleDateString('fr-FR', { day: 'numeric', timeZone: 'Europe/Paris' }),
+  month: d.toLocaleDateString('fr-FR', { month: 'short', timeZone: 'Europe/Paris' }),
+  time: d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }),
+});
+
+const events = (list: EventRow[]) =>
+  list
+    .map((e) => {
+      const w = frWhen(e.startsAt);
+      return `<article class="event"><div class="when"><b>${esc(w.day)}</b><span>${esc(w.month)}</span><span>${esc(w.time)}</span></div><div class="what"><h3>${esc(e.title)}</h3><p>${esc(excerpt(e.description, 400))}</p><p class="small muted">Lieu : ${esc(e.place)} · animé par <a href="${playerLink(e.host)}">${esc(e.host)}</a></p></div></article>`;
+    })
+    .join('');
+
 export interface SiteDeps {
   occupancy?: () => Promise<Presence>;
   /** Where the game itself is served: the "Jouer" buttons and the place sign-in leads to. */
@@ -139,7 +155,7 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
 
   // ----- Home ---------------------------------------------------------------------
   app.get('/site', async (req, reply) => {
-    const [players, serial, news, items, arrivals, present, maintenance] = await Promise.all([
+    const [players, serial, news, items, arrivals, present, maintenance, coming] = await Promise.all([
       pool.query<{ n: string }>('SELECT count(*) AS n FROM users'),
       pool.query<{ last_value: number }>('SELECT last_value FROM item_serial WHERE id = 1'),
       listAnnouncements(pool, { limit: 3 }),
@@ -147,6 +163,7 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
       pool.query<{ nickname: string }>('SELECT nickname FROM users ORDER BY created_at DESC, id DESC LIMIT 10'),
       deps.occupancy ? deps.occupancy().catch(() => null) : Promise.resolve(null),
       isMaintenance(pool),
+      upcomingEvents(pool, 3),
     ]);
     const online = present ? present.hall + [...present.apartments.values()].reduce((a, b) => a + b, 0) : 0;
 
@@ -206,6 +223,12 @@ ${items.length ? `<div class="strip-row">${pieces(items)}</div>` : '<p class="mu
 
 <section class="block reveal"><div class="head"><div><h2 class="px">Les derniers arrivés</h2><p>Dis bonjour à tes futurs voisins.</p></div></div>
 <div class="crowd">${crowd(arrivals.rows)}</div></section>
+
+${
+  coming.length
+    ? `<section class="block reveal"><div class="head"><div><h2 class="px">Bientôt dans l’immeuble</h2><p>Des événements animés par l’équipe : viens, c’est ouvert à tous.</p></div><a class="btn white small" href="/site/evenements">Tout voir</a></div><div class="events">${events(coming)}</div></section>`
+    : ''
+}
 
 <section class="block reveal"><div class="head"><div><h2 class="px">Les nouvelles</h2></div><a class="btn white small" href="/site/actualites">Tout voir</a></div>
 ${news.length ? `<div class="news">${posts(news)}</div>` : '<p class="muted">Pas encore d’actualité.</p>'}</section>
@@ -308,11 +331,30 @@ ${more ? `<p style="margin-top:26px"><a class="btn white" href="/site/actualites
     return html(req, reply, 200, { title: 'Classement', active: 'ranking', body });
   });
 
+  // ----- Events ---------------------------------------------------------------------------
+  app.get('/site/evenements', async (req, reply) => {
+    const [coming, ranking] = await Promise.all([upcomingEvents(pool, 20), hostRanking(pool, 5)]);
+    const body = `<main class="wrap page"><h1 class="px">Événements</h1><p class="lead">Jeux, concours, fêtes : l’équipe d’animation organise des rendez-vous dans l’immeuble. Rendez-vous au lieu indiqué à l’heure dite.</p>
+${coming.length ? `<div class="events">${events(coming)}</div>` : '<p class="muted">Aucun événement de prévu pour l’instant. Reviens bientôt !</p>'}
+${
+  ranking.length
+    ? `<div class="head" style="margin-top:36px"><div><h2 class="px" style="font-size:14px">${icon('crown', 16)} Les animateurs les plus actifs</h2></div></div><table class="rank">${ranking.map((r2, k) => `<tr><td>${k + 1}</td><td><b><a href="${playerLink(r2.nickname)}">${esc(r2.nickname)}</a></b></td><td>${r2.events} événement(s)</td></tr>`).join('')}</table>`
+    : ''
+}</main>`;
+    return html(req, reply, 200, { title: 'Événements', active: 'events', body });
+  });
+
   // ----- Team and state of the game ----------------------------------------------------
   app.get('/site/equipe', async (req, reply) => {
-    const { rows } = await pool.query<{ nickname: string }>("SELECT nickname FROM users WHERE role = 'staff' ORDER BY lower(nickname)");
-    const body = `<main class="wrap page"><h1 class="px">L’équipe</h1><p class="lead">Elle veille sur le jeu, répond aux signalements et garde l’immeuble agréable pour tous. Un souci ? Signale-le en jeu : un membre de l’équipe le lira.</p>
-${rows.length ? `<div class="crowd" style="flex-wrap:wrap">${crowd(rows)}</div>` : '<p class="muted">Personne pour l’instant.</p>'}</main>`;
+    const { rows } = await pool.query<{ nickname: string; role: string }>("SELECT nickname, role FROM users WHERE role <> 'user' ORDER BY lower(nickname)");
+    // From the top: administrators first.
+    const groups = [...STAFF_ROLES].reverse().map((def) => ({ def, people: rows.filter((r2) => r2.role === def.id) })).filter((g) => g.people.length);
+    const body = `<main class="wrap page"><h1 class="px">L’équipe</h1><p class="lead">Elle veille sur le jeu, anime l’immeuble, répond aux signalements et garde l’endroit agréable pour tous. Un souci ? Signale-le en jeu : un membre de l’équipe le lira. Et méfie-toi de qui prétend en faire partie sans figurer ici.</p>
+${
+  groups.length
+    ? `<div class="roles">${groups.map((g) => `<section class="role-group"><h2 class="px"><span class="role-tag ${g.def.id}">${esc(g.def.title)}</span></h2><p>${esc(g.def.summary)}</p><div class="crowd" style="flex-wrap:wrap">${crowd(g.people)}</div></section>`).join('')}</div>`
+    : '<p class="muted">Personne pour l’instant.</p>'
+}</main>`;
     return html(req, reply, 200, { title: 'L’équipe', active: 'team', body });
   });
 
@@ -340,7 +382,7 @@ ${rows.length ? `<div class="crowd" style="flex-wrap:wrap">${crowd(rows)}</div>`
     const flat = p.access === 'building' ? `ouvert à tous${p.name && filterText(p.name).ok ? ` : « ${esc(p.name)} »` : ''}` : 'sur invitation';
     const body = `<main class="wrap page"><div class="profile">
 <div class="win violetbar"><div class="in"><div class="stage"><img src="/site/avatar/${encodeURIComponent(p.nickname)}.png" alt="Avatar de ${esc(p.nickname)}" width="120" height="232"></div></div></div>
-<div><h1 class="px">${esc(p.nickname)}${p.role === 'staff' ? '<span class="badge">équipe</span>' : ''}</h1>
+<div><h1 class="px">${esc(p.nickname)}${isStaffRole(p.role) ? `<span class="badge">${esc(ROLES[p.role as RoleId].title)}</span>` : ''}</h1>
 <ul class="facts"><li>${icon('heart', 18)} Membre depuis ${esc(frMonth(p.created_at))}</li><li>${icon('wand', 18)} ${Number(count.rows[0]!.n)} objet(s) inventé(s)</li><li>${icon('home', 18)} Appartement ${flat}</li></ul></div></div>
 <div class="head"><div><h2 class="px" style="font-size:14px">Ses créations</h2></div></div>${grid(items)}</main>`;
     return html(req, reply, 200, { title: p.nickname, body });

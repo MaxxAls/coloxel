@@ -26,6 +26,7 @@ import { registerAnnouncementRoutes } from './site/announcements';
 import { registerSiteRoutes } from './site/routes';
 import { registerMaintenance } from './site/settings';
 import { registerStaffRoutes } from './staff/routes';
+import { registerTeamRoutes } from './staff/team';
 
 export { spriteToPng };
 
@@ -96,6 +97,7 @@ export function buildServer({
       registerVisitorRoutes(scope, pool, { notifyUser, notifyApartment, locate }, guards);
       registerNoticeRoutes(scope, pool);
       registerStaffRoutes(scope, pool, notifyUser, notifyApartment);
+      registerTeamRoutes(scope, pool);
       registerWalletRoutes(scope, pool, guards);
       registerAvatarRoutes(scope, pool, guards);
       registerShopRoutes(scope, pool, guards, quest);

@@ -72,12 +72,12 @@ export function registerAnnouncementRoutes(app: FastifyInstance, pool: pg.Pool) 
   app.get('/api/status', async () => ({ ok: true, maintenance: await isMaintenance(pool) }));
 
   app.get('/api/staff/announcements', async (req, reply) => {
-    if (!(await requireStaff(pool, req, reply))) return;
+    if (!(await requireStaff(pool, req, reply, 'news.write'))) return;
     return { announcements: await listAnnouncements(pool, { limit: 100, includeDrafts: true }), maintenance: await isMaintenance(pool) };
   });
 
   app.post('/api/staff/announcements', async (req, reply) => {
-    const staff = await requireStaff(pool, req, reply);
+    const staff = await requireStaff(pool, req, reply, 'news.write');
     if (!staff) return;
     const parsed = announcementSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Annonce invalide' });
@@ -90,7 +90,7 @@ export function registerAnnouncementRoutes(app: FastifyInstance, pool: pg.Pool) 
   });
 
   app.put<{ Params: { id: string } }>('/api/staff/announcements/:id', async (req, reply) => {
-    if (!(await requireStaff(pool, req, reply))) return;
+    if (!(await requireStaff(pool, req, reply, 'news.write'))) return;
     if (!/^\d{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'Annonce introuvable' });
     const parsed = announcementSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Annonce invalide' });
@@ -104,7 +104,7 @@ export function registerAnnouncementRoutes(app: FastifyInstance, pool: pg.Pool) 
   });
 
   app.delete<{ Params: { id: string } }>('/api/staff/announcements/:id', async (req, reply) => {
-    if (!(await requireStaff(pool, req, reply))) return;
+    if (!(await requireStaff(pool, req, reply, 'news.write'))) return;
     if (!/^\d{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'Annonce introuvable' });
     const { rowCount } = await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
     if (!rowCount) return reply.code(404).send({ error: 'Annonce introuvable' });
@@ -112,7 +112,7 @@ export function registerAnnouncementRoutes(app: FastifyInstance, pool: pg.Pool) 
   });
 
   app.put('/api/staff/maintenance', async (req, reply) => {
-    const staff = await requireStaff(pool, req, reply);
+    const staff = await requireStaff(pool, req, reply, 'maintenance.toggle');
     if (!staff) return;
     const parsed = z.object({ on: z.boolean() }).strict().safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Requête invalide' });

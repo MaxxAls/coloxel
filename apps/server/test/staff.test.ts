@@ -49,7 +49,7 @@ describe.skipIf(!available)('staff panel and sanctions (PostgreSQL)', () => {
   type Account = Awaited<ReturnType<typeof signUp>>;
   const signUpStaff = async (nickname: string) => {
     const a = await signUp(nickname);
-    await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [a.id]);
+    await pool.query("UPDATE users SET role = 'administrateur' WHERE id = $1", [a.id]);
     return a;
   };
   const as = (a: Account) => ({ coloxel_sid: a.sid });
@@ -88,7 +88,7 @@ describe.skipIf(!available)('staff panel and sanctions (PostgreSQL)', () => {
       expect((await post(player, '/api/staff/reports/resolve', { kind: 'player', targetKey: staff.id, decision: 'confirm' })).statusCode).toBe(404);
       expect((await sanction(player, staff, { kind: 'ban', reason: 'pour rire' })).statusCode).toBe(404);
       expect((await post(player, '/api/staff/sanctions/1/revoke')).statusCode).toBe(404);
-      expect((await get(staff, '/api/staff/me')).json()).toEqual({ staff: true });
+      expect((await get(staff, '/api/staff/me')).json()).toMatchObject({ staff: true, role: 'administrateur' });
       // No way to promote oneself through the game.
       expect((await app.inject({ method: 'PUT', url: '/api/me/look', payload: { role: 'staff' }, cookies: as(player) })).statusCode).not.toBe(200);
       expect((await pool.query('SELECT role FROM users WHERE id = $1', [player.id])).rows[0].role).toBe('user');

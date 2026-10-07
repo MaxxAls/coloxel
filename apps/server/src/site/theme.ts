@@ -201,6 +201,23 @@ section.block{padding:58px 0 6px}
 .band h2{margin:0 0 10px;font-size:clamp(14px,2.4vw,22px);color:#fff;text-shadow:0 3px 0 var(--navy),2px 0 0 var(--navy),-2px 0 0 var(--navy)}
 .band p{margin:0 auto 24px;max-width:560px;color:#fff;font-weight:800;text-shadow:0 2px 0 rgba(35,26,74,.6)}
 
+/* ---- Events and team ---- */
+.events{display:grid;gap:16px}
+.event{display:grid;grid-template-columns:96px 1fr;gap:0;background:var(--paper);border:3px solid var(--navy);border-radius:16px;box-shadow:0 7px 0 var(--navy);overflow:hidden}
+.event .when{display:grid;place-content:center;text-align:center;padding:12px 6px;background:linear-gradient(var(--c1,#6bbcff),var(--c2,#3ea7ff));border-right:3px solid var(--navy);color:#fff;text-shadow:0 2px 0 rgba(35,26,74,.5)}
+.event:nth-child(3n+2) .when{--c1:#ff8aa3;--c2:#ff5a7a}.event:nth-child(3n) .when{--c1:#5fe0ad;--c2:#2fc48d}
+.event .when b{display:block;font-family:'Press Start 2P',monospace;font-weight:400;font-size:22px;line-height:1.2}
+.event .when span{font-weight:800;font-size:14px;text-transform:uppercase}
+.event .what{padding:14px 18px}
+.event h3{margin:0 0 4px;font-size:19px}
+.event p{margin:4px 0;font-weight:600;color:var(--ink2)}
+.roles{display:grid;gap:18px}
+.role-group h2{display:flex;align-items:center;gap:10px;font-size:12px;margin:0 0 6px}
+.role-group p{margin:0 0 10px;color:var(--muted);font-weight:700}
+.role-tag{display:inline-block;padding:2px 12px;border-radius:999px;border:2px solid var(--navy);font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;color:#fff;background:var(--purple)}
+.role-tag.animateur{background:#2fc48d}.role-tag.moderateur{background:#3ea7ff}.role-tag.super_moderateur{background:#6b5bb8}.role-tag.gerant{background:#ff9a5a}.role-tag.administrateur{background:#ff5a7a}
+@media (max-width:560px){.event{grid-template-columns:1fr}.event .when{border-right:0;border-bottom:3px solid var(--navy);grid-auto-flow:column;gap:10px;place-content:center}}
+
 /* ---- Tables, lists ---- */
 .rank{width:100%;border-collapse:separate;border-spacing:0 10px}
 .rank td{padding:12px 16px;background:var(--paper);border-top:3px solid var(--navy);border-bottom:3px solid var(--navy)}
@@ -285,6 +302,7 @@ export const logo = () =>
 const NAV: [string, string, string][] = [
   ['home', '/site', 'Accueil'],
   ['news', '/site/actualites', 'Actualités'],
+  ['events', '/site/evenements', 'Événements'],
   ['ranking', '/site/classement', 'Classement'],
   ['team', '/site/equipe', 'L’équipe'],
   ['status', '/site/statut', 'État du jeu'],
@@ -301,7 +319,7 @@ export function page(o: PageOptions): string {
   const foot = o.bare
     ? ''
     : `<footer class="site"><div class="wrap"><div>${logo()}<p>Chaque objet est inventé par un joueur,<br>et n’existe qu’en un seul exemplaire.</p></div>
-<div><p><a href="/site">Accueil</a><a href="/site/actualites">Actualités</a><a href="/site/classement">Classement</a><a href="/site/equipe">L’équipe</a><a href="/site/statut">État du jeu</a></p>
+<div><p><a href="/site">Accueil</a><a href="/site/actualites">Actualités</a><a href="/site/evenements">Événements</a><a href="/site/classement">Classement</a><a href="/site/equipe">L’équipe</a><a href="/site/statut">État du jeu</a></p>
 <p>Coloxel est réservé aux adultes (18 ans et plus) pendant l’alpha.</p></div></div></footer>`;
   return `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

@@ -13,7 +13,8 @@ import {
   type SanctionKind,
 } from '../moderation/sanctions';
 import { REPORT_KINDS } from '../reports/routes';
-import { isMaintenance } from '../site/settings';
+import { ROLES, assignableRoles, can, outranks, sanctionRefusal, type Permission, type StaffMember } from './roles';
+import { isMaintenance, requireStaff } from '../site/settings';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -55,30 +56,22 @@ interface Issued {
 
 /** The staff panel: reports to review, the chat journal, player sheets, sanctions. Every route checks the role in the database. */
 export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyUser?: NotifyUser, notifyApartment?: NotifyApartment) {
-  /** The signed-in staff member, or null after answering. Players who are not staff get the answer an unknown page gets. */
-  async function staffOnly(req: FastifyRequest, reply: FastifyReply): Promise<{ id: string; nickname: string } | null> {
-    if (!req.user) {
-      void reply.code(401).send({ error: 'Non connecté' });
-      return null;
-    }
-    const { rows } = await pool.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [req.user.id]);
-    if (rows[0]?.role !== 'staff') {
-      void reply.code(404).send({ error: 'Introuvable' });
-      return null;
-    }
-    return req.user;
-  }
+  /** The signed-in staff member holding this permission (every staff role holds `admin.access`), or null after answering. */
+  const staffOnly = (req: FastifyRequest, reply: FastifyReply, permission: Permission = 'admin.access') => requireStaff(pool, req, reply, permission);
 
   /** Writes the sanction, inside the caller's transaction. Returns what to announce once it is committed. */
-  async function issue(client: pg.PoolClient, staffId: string, userId: string, input: SanctionInput, reportId?: number): Promise<Issued | { error: string }> {
+  async function issue(client: pg.PoolClient, staff: StaffMember, userId: string, input: SanctionInput, reportId?: number): Promise<Issued | { error: string }> {
     const target = await client.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [userId]);
     if (!target.rows[0]) return { error: 'Joueur introuvable' };
-    if (userId === staffId) return { error: 'Tu ne peux pas te sanctionner toi-même.' };
-    if (target.rows[0].role === 'staff') return { error: 'Impossible de sanctionner un membre de l’équipe.' };
+    if (userId === staff.id) return { error: 'Tu ne peux pas te sanctionner toi-même.' };
+    // Only from above: nobody sanctions somebody of their own level or higher.
+    if (!outranks(staff.role, target.rows[0].role)) return { error: 'Tu ne peux pas sanctionner quelqu’un de ton niveau ou au-dessus.' };
+    const refusal = sanctionRefusal(staff.role, input.kind, input.minutes);
+    if (refusal) return { error: refusal };
     const expiresAt = input.minutes === undefined ? null : new Date(Date.now() + input.minutes * 60_000);
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO sanctions (user_id, kind, reason, issued_by, report_id, expires_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [userId, input.kind, input.reason, staffId, reportId ?? null, expiresAt],
+      [userId, input.kind, input.reason, staff.id, reportId ?? null, expiresAt],
     );
     return { id: Number(rows[0]!.id), userId, kind: input.kind, text: sanctionText(input.kind, input.reason, expiresAt) };
   }
@@ -86,15 +79,27 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   const announce = (issued: Issued) =>
     notifyUser?.({ userId: issued.userId, kind: issued.kind, id: issued.kind === 'warning' ? issued.id : undefined, text: issued.text });
 
+  // Who the signed-in staff member is and what they may do: the administration shows only what their role allows.
   app.get('/api/staff/me', async (req, reply) => {
-    if (!(await staffOnly(req, reply))) return;
-    return { staff: true };
+    const staff = await staffOnly(req, reply);
+    if (!staff) return;
+    const def = ROLES[staff.role];
+    return {
+      staff: true,
+      role: def.id,
+      title: def.title,
+      level: def.level,
+      permissions: def.permissions,
+      maxMuteMinutes: def.maxMuteMinutes ?? null,
+      maxSuspensionMinutes: def.maxSuspensionMinutes ?? null,
+      assignable: assignableRoles(staff.role).map((r) => r.id),
+    };
   });
 
   // ----- Dashboard -----------------------------------------------------------
   // The numbers an administrator looks at first: how the game is doing, and what waits for the staff.
   app.get('/api/staff/dashboard', async (req, reply) => {
-    if (!(await staffOnly(req, reply))) return;
+    if (!(await staffOnly(req, reply, 'dashboard.view'))) return;
     const n = (r: pg.QueryResult<{ n: string }>) => Number(r.rows[0]!.n);
     const [players, today, creations, reportsOpen, sanctions, messages, blocked, perDay, news, maintenance] = await Promise.all([
       pool.query<{ n: string }>('SELECT count(*) AS n FROM users'),
@@ -143,7 +148,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   }
 
   app.get<{ Querystring: { status?: string } }>('/api/staff/reports', async (req, reply) => {
-    if (!(await staffOnly(req, reply))) return;
+    if (!(await staffOnly(req, reply, 'reports.view'))) return;
 
     if (req.query.status === 'handled') {
       const { rows } = await pool.query(
@@ -226,7 +231,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   // Decide about everything reported about one thing at once. A confirmed report on a creation hides it for good,
   // a dismissed one clears it for good; a sanction can be given in the same move.
   app.post('/api/staff/reports/resolve', async (req, reply) => {
-    const staff = await staffOnly(req, reply);
+    const staff = await staffOnly(req, reply, 'reports.resolve');
     if (!staff) return;
     const parsed = resolveSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Requête invalide' });
@@ -260,7 +265,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
       if (sanction) {
         const who = open.rows[0]!.target_user_id;
         if (!who) return { error: 'Ce signalement ne vise aucun joueur.', status: 400 };
-        const result = await issue(client, staff.id, who, sanction, Number(open.rows[0]!.id));
+        const result = await issue(client, staff, who, sanction, Number(open.rows[0]!.id));
         if ('error' in result) return { error: result.error, status: 400 };
         issued = result;
       }
@@ -275,7 +280,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
 
   // Hide, clear or reset a creation without going through a report.
   app.post<{ Params: { id: string } }>('/api/staff/items/:id/moderation', async (req, reply) => {
-    const staff = await staffOnly(req, reply);
+    const staff = await staffOnly(req, reply, 'items.moderate');
     if (!staff) return;
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Objet introuvable' });
     const parsed = moderationSchema.safeParse(req.body);
@@ -298,7 +303,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   app.get<{ Querystring: { userId?: string; nickname?: string; room?: string; owner?: string; q?: string; blocked?: string; before?: string; limit?: string } }>(
     '/api/staff/chat',
     async (req, reply) => {
-      if (!(await staffOnly(req, reply))) return;
+      if (!(await staffOnly(req, reply, 'chat.view'))) return;
       const { userId, nickname, room, owner, q, blocked, before } = req.query;
       if (userId !== undefined && !UUID.test(userId)) return reply.code(400).send({ error: 'Joueur invalide' });
       if (before !== undefined && !/^\d{1,15}$/.test(before)) return reply.code(400).send({ error: 'Page invalide' });
@@ -337,7 +342,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
 
   // ----- Players -------------------------------------------------------------
   app.get<{ Querystring: { q?: string } }>('/api/staff/players', async (req, reply) => {
-    if (!(await staffOnly(req, reply))) return;
+    if (!(await staffOnly(req, reply, 'players.view'))) return;
     const q = (req.query.q ?? '').trim();
     const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     const { rows } = await pool.query<{ id: string; nickname: string; role: string; created_at: Date; sanctions: SanctionKind[] | null }>(
@@ -352,7 +357,7 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   // The sheet of a player: who they are in the game (no email, no birth date: the staff has no use for them),
   // what they created, what was done to them, what was said about them and by them.
   app.get<{ Params: { id: string } }>('/api/staff/players/:id', async (req, reply) => {
-    if (!(await staffOnly(req, reply))) return;
+    if (!(await staffOnly(req, reply, 'players.view'))) return;
     const { id } = req.params;
     if (!UUID.test(id)) return reply.code(404).send({ error: 'Joueur introuvable' });
     const player = await pool.query<{ id: string; nickname: string; role: string; created_at: Date; access: string; apartment_id: number | null; apartment_name: string | null }>(
@@ -419,22 +424,28 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Joueur introuvable' });
     const parsed = sanctionSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Sanction invalide' });
-    const result = await withTransaction(pool, (client) => issue(client, staff.id, req.params.id.toLowerCase(), parsed.data));
-    if ('error' in result) return reply.code(result.error === 'Joueur introuvable' ? 404 : 400).send({ error: result.error });
+    const result = await withTransaction(pool, (client) => issue(client, staff, req.params.id.toLowerCase(), parsed.data));
+    if ('error' in result) return reply.code(result.error === 'Joueur introuvable' ? 404 : result.error.startsWith('Ton rôle') ? 403 : 400).send({ error: result.error });
     announce(result);
     return reply.code(201).send({ id: result.id });
   });
 
-  // Lifting a sanction keeps it in the history, stamped with who lifted it.
+  // Lifting a sanction keeps it in the history, stamped with who lifted it. Only on somebody one outranks,
+  // and a ban only by a role that may give one.
   app.post<{ Params: { id: string } }>('/api/staff/sanctions/:id/revoke', async (req, reply) => {
-    const staff = await staffOnly(req, reply);
+    const staff = await staffOnly(req, reply, 'sanction.revoke');
     if (!staff) return;
     if (!/^\d{1,15}$/.test(req.params.id)) return reply.code(404).send({ error: 'Sanction introuvable' });
-    const { rowCount } = await pool.query(
-      `UPDATE sanctions SET revoked_at = now(), revoked_by = $1 WHERE id = $2 AND revoked_at IS NULL`,
-      [staff.id, req.params.id],
+    const found = await pool.query<{ kind: SanctionKind; role: string }>(
+      'SELECT s.kind, u.role FROM sanctions s JOIN users u ON u.id = s.user_id WHERE s.id = $1 AND s.revoked_at IS NULL',
+      [req.params.id],
     );
-    if (!rowCount) return reply.code(404).send({ error: 'Sanction introuvable ou déjà levée' });
+    if (!found.rows[0]) return reply.code(404).send({ error: 'Sanction introuvable ou déjà levée' });
+    if (!outranks(staff.role, found.rows[0].role)) return reply.code(403).send({ error: 'Tu ne peux pas agir sur quelqu’un de ton niveau ou au-dessus.' });
+    if (found.rows[0].kind === 'ban' && !can(staff.role, 'sanction.ban')) {
+      return reply.code(403).send({ error: 'Seuls les rôles qui peuvent bannir peuvent lever un bannissement.' });
+    }
+    await pool.query('UPDATE sanctions SET revoked_at = now(), revoked_by = $1 WHERE id = $2 AND revoked_at IS NULL', [staff.id, req.params.id]);
     return { ok: true };
   });
 }

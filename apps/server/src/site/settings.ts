@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
+import { ROLES, can, loadStaff, type Permission, type StaffMember } from '../staff/roles';
 
 const CACHE_MS = 3000;
 let cached: { at: number; on: boolean } | null = null;
@@ -27,22 +28,42 @@ export function forgetMaintenance() {
   cached = null;
 }
 
+/** Does this player belong to the staff, whatever their role? */
 export async function isStaff(pool: pg.Pool, userId: string): Promise<boolean> {
-  const { rows } = await pool.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [userId]);
-  return rows[0]?.role === 'staff';
+  return (await loadStaff(pool, userId)) !== null;
 }
 
-/** The signed-in staff member, or null after answering 401 / 404 (players who are not staff get the answer an unknown page gets). */
-export async function requireStaff(pool: pg.Pool, req: FastifyRequest, reply: FastifyReply): Promise<{ id: string; nickname: string } | null> {
+/** May this player keep playing while the game is in maintenance? Only the roles that run the game. */
+export async function bypassesMaintenance(pool: pg.Pool, userId: string): Promise<boolean> {
+  const staff = await loadStaff(pool, userId);
+  return !!staff && can(staff.role, 'maintenance.bypass');
+}
+
+/**
+ * The signed-in staff member who holds `permission`, or null after answering: 401 when nobody is signed in, 404 for a
+ * player who is not staff (an unknown page gets the same answer), 403 for a staff member whose role does not allow it.
+ * The role is read from the database at every request: a change of role counts at once.
+ */
+export async function requireStaff(
+  pool: pg.Pool,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  permission: Permission = 'admin.access',
+): Promise<StaffMember | null> {
   if (!req.user) {
     void reply.code(401).send({ error: 'Non connecté' });
     return null;
   }
-  if (!(await isStaff(pool, req.user.id))) {
+  const staff = await loadStaff(pool, req.user.id);
+  if (!staff) {
     void reply.code(404).send({ error: 'Introuvable' });
     return null;
   }
-  return req.user;
+  if (!can(staff.role, permission)) {
+    void reply.code(403).send({ error: `Ton rôle (${ROLES[staff.role].title}) ne te permet pas cela.` });
+    return null;
+  }
+  return staff;
 }
 
 /** What players get while the game is in maintenance. */
@@ -57,7 +78,7 @@ export function registerMaintenance(app: import('fastify').FastifyInstance, pool
     const path = req.url.split('?')[0]!;
     if (!path.startsWith('/api/') || path === '/api/status' || path.startsWith('/api/auth/') || path.startsWith('/api/staff/')) return;
     if (!(await isMaintenance(pool))) return;
-    if (req.user && (await isStaff(pool, req.user.id))) return;
+    if (req.user && (await bypassesMaintenance(pool, req.user.id))) return;
     return reply.code(503).send({ error: MAINTENANCE_MESSAGE, maintenance: true });
   });
 }

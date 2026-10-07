@@ -594,7 +594,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
   describe('sanctions on connected players', () => {
     const staffMember = async (nickname: string) => {
       const a = await signUp(nickname);
-      await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [a.id]);
+      await pool.query("UPDATE users SET role = 'administrateur' WHERE id = $1", [a.id]);
       return a;
     };
     const sanction = (staff: Account, target: Account, payload: object) =>
@@ -848,7 +848,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
   it('keeps players out of the rooms during maintenance, and lets the staff in', async () => {
     const player = await signUp('mt_player');
     const staff = await signUp('mt_staff');
-    await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [staff.id]);
+    await pool.query("UPDATE users SET role = 'administrateur' WHERE id = $1", [staff.id]);
     await app.inject({ method: 'PUT', url: '/api/staff/maintenance', payload: { on: true }, cookies: { coloxel_sid: staff.sid } });
     try {
       await expect(joinHall(player)).rejects.toThrow(/maintenance/);

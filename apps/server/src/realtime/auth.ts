@@ -1,7 +1,7 @@
 import { ServerError, type AuthContext } from '@colyseus/core';
 import type pg from 'pg';
 import { SESSION_COOKIE, findSessionUser, type SessionUser } from '../auth/routes';
-import { MAINTENANCE_MESSAGE, isMaintenance, isStaff } from '../site/settings';
+import { MAINTENANCE_MESSAGE, bypassesMaintenance, isMaintenance } from '../site/settings';
 
 function cookieValue(header: string, name: string): string | undefined {
   for (const part of header.split(';')) {
@@ -37,6 +37,6 @@ export async function authenticateConnection(
   const user = token ? await findSessionUser(pool, token) : null;
   if (!user) throw new ServerError(401, 'Non connecté');
   // During maintenance only the staff comes in.
-  if ((await isMaintenance(pool)) && !(await isStaff(pool, user.id))) throw new ServerError(503, MAINTENANCE_MESSAGE);
+  if ((await isMaintenance(pool)) && !(await bypassesMaintenance(pool, user.id))) throw new ServerError(503, MAINTENANCE_MESSAGE);
   return user;
 }
