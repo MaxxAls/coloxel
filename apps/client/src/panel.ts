@@ -1,5 +1,6 @@
 import { furnitureThumb } from './thumb';
-import { api, itemSpriteUrl, type FurnitureItem, type InventoryItem, type User } from './api';
+import { api, itemSpriteUrl, type FurnitureItem, type InventoryItem, type MarketRules, type User } from './api';
+import { describeFees } from './market';
 
 export interface PanelHandlers {
   /** The inventory changed (creation); the room must be re-synced. */
@@ -101,17 +102,30 @@ export function createPanel(_user: User, handlers: PanelHandlers): Panel {
       info.append(
         el('strong', undefined, item.name),
         el('span', 'muted small', `n° ${serialLabel(item.serial)} · ${item.editionNumber}/${item.editionSize}`),
-        el('span', 'muted small', item.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
+        el('span', 'muted small', item.listing ? `En vente : ${item.listing.price} Coloxs` : item.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
       );
       inspectable(info, item.id);
 
-      const action = el('button', undefined, item.placement ? 'Reprendre' : item.id === selected ? 'Annuler' : 'Poser');
+      // On the market the item is in escrow: it can only be withdrawn. Otherwise it can be placed or sold.
+      const listing = item.listing;
+      const action = el('button', undefined, listing ? 'Retirer de la vente' : item.placement ? 'Reprendre' : item.id === selected ? 'Annuler' : 'Poser');
       action.type = 'button';
-      action.addEventListener('click', () => {
-        if (item.placement) handlers.onPickUp(item.id);
+      action.addEventListener('click', async () => {
+        if (listing) {
+          action.disabled = true;
+          const res = await api.withdraw(listing.id);
+          panel.setMessage(res.ok ? `« ${item.name} » est de retour dans ton inventaire.` : res.error);
+          handlers.onChange();
+        } else if (item.placement) handlers.onPickUp(item.id);
         else handlers.onSelect(item.id === selected ? null : item.id);
       });
       li.append(img, info, action);
+      if (!listing && !item.underReview) {
+        const sell = el('button', 'link', 'Vendre');
+        sell.type = 'button';
+        sell.addEventListener('click', () => sellForm(li, item, sell));
+        li.append(sell);
+      }
       list.append(li);
     }
 
@@ -136,6 +150,45 @@ export function createPanel(_user: User, handlers: PanelHandlers): Panel {
       furnitureList.append(li);
     }
   };
+
+  let rules: MarketRules | null = null;
+  /** The price to ask for a creation. The server checks the limits and the ownership. */
+  function sellForm(li: HTMLElement, item: InventoryItem, trigger: HTMLButtonElement) {
+    trigger.hidden = true;
+    const box = el('form', 'market-confirm');
+    const price = el('input');
+    price.type = 'number';
+    price.min = '1';
+    price.step = '1';
+    price.required = true;
+    price.placeholder = 'Prix en Coloxs';
+    price.setAttribute('aria-label', 'Prix en Coloxs');
+    const hint = el('p', 'muted small', 'Une fois en vente, l’objet quitte ton appart jusqu’à la vente ou au retrait.');
+    const go = el('button', 'primary', 'Mettre en vente');
+    go.type = 'submit';
+    const cancel = el('button', undefined, 'Annuler');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => {
+      box.remove();
+      trigger.hidden = false;
+    });
+    price.addEventListener('input', () => {
+      const n = Number(price.value);
+      hint.textContent = Number.isInteger(n) && n > 0 ? describeFees(n, rules) : hint.textContent;
+    });
+    box.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      go.disabled = true;
+      const res = await api.sell(item.id, Number(price.value));
+      panel.setMessage(res.ok ? `« ${item.name} » est en vente pour ${res.data.price} Coloxs.` : res.error);
+      if (res.ok) handlers.onChange();
+      else go.disabled = false;
+    });
+    box.append(price, hint, go, cancel);
+    li.append(box);
+    price.focus();
+    if (!rules) void api.marketRules().then((r) => r.ok && (rules = r.data));
+  }
 
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();

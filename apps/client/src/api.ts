@@ -20,6 +20,8 @@ export interface InventoryItem {
   /** Reported by several players or hidden by the staff: only its owner still sees it. */
   underReview?: boolean;
   placement: { i: number; j: number; rot: number } | null;
+  /** On the market: in escrow, it cannot be placed until the offer ends. */
+  listing?: { id: string; price: number } | null;
 }
 
 /** A piece of base furniture: free, not numbered, not tradeable. Not a creation. */
@@ -354,6 +356,40 @@ export interface ChatQuery {
   before?: number;
 }
 
+export interface MarketRules {
+  commissionPercent: number;
+  royaltyPercent: number;
+  minPrice: number;
+  maxPrice: number;
+  listingDays: number;
+  maxActiveListings: number;
+}
+
+export interface MarketListing {
+  id: string;
+  price: number;
+  expiresAt: string;
+  seller: string;
+  mine: boolean;
+  underReview: boolean;
+  item: { id: string; serial: number; name: string; description: string; editionNumber: number; editionSize: number; creator: string };
+}
+
+export interface MarketQuery {
+  q?: string;
+  sort?: 'recent' | 'price_asc' | 'price_desc' | 'serial';
+  mine?: boolean;
+  offset?: number;
+}
+
+export interface OwnerLine {
+  kind: 'creation' | 'sale' | 'trade';
+  from: string | null;
+  to: string;
+  price: number | null;
+  at: string;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -452,6 +488,19 @@ export const api = {
   report: (body: { kind: ReportKind; targetId: string | number; reason: ReportReason; details?: string }) =>
     call<{ ok: true; already: boolean }>('POST', '/api/reports', body),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
+  marketRules: () => call<MarketRules>('GET', '/api/market/rules'),
+  marketListings: (query: MarketQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.q) params.set('q', query.q);
+    if (query.sort) params.set('sort', query.sort);
+    if (query.mine) params.set('mine', '1');
+    if (query.offset) params.set('offset', String(query.offset));
+    return call<{ total: number; listings: MarketListing[] }>('GET', `/api/market/listings?${params}`);
+  },
+  sell: (itemId: string, price: number) => call<{ id: string; price: number; expiresAt: string }>('POST', '/api/market/listings', { itemId, price }),
+  withdraw: (listingId: string) => call<void>('DELETE', `/api/market/listings/${listingId}`),
+  buyListing: (listingId: string) => call<{ itemId: string; price: number; coloxs: number }>('POST', `/api/market/listings/${listingId}/buy`),
+  itemHistory: (itemId: string) => call<{ history: OwnerLine[] }>('GET', `/api/items/${itemId}/history`),
   wallet: () => call<WalletData>('GET', '/api/wallet'),
   daily: () => call<{ pixels: number; gained: number }>('POST', '/api/wallet/daily'),
   redeem: (code: string) => call<{ pixels: number; gained: number }>('POST', '/api/wallet/redeem', { code }),

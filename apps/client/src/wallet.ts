@@ -23,6 +23,11 @@ export const wallet = {
     state = { ...state, pixels };
     emit();
   },
+  setColoxs(coloxs: number | null | undefined) {
+    if (typeof coloxs !== 'number') return;
+    state = { ...state, coloxs };
+    emit();
+  },
   async claimDaily(): Promise<{ ok: boolean; message: string }> {
     const res = await api.daily();
     if (!res.ok) {

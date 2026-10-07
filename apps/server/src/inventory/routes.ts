@@ -39,6 +39,8 @@ interface InventoryRow {
   j: number | null;
   rot: number | null;
   masked: boolean;
+  listing_id: string | null;
+  listing_price: number | null;
 }
 
 export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, notify?: NotifyApartment, quest?: QuestRecorder) {
@@ -46,10 +48,12 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
       `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
-              cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, ${itemMaskedSql('it')} AS masked
+              cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, ${itemMaskedSql('it')} AS masked,
+              ls.id AS listing_id, ls.price AS listing_price
        FROM items it
        JOIN users cr ON cr.id = it.creator_id
        LEFT JOIN placements p ON p.item_id = it.id
+       LEFT JOIN listings ls ON ls.item_id = it.id AND ls.status = 'active' AND ls.expires_at > now()
        WHERE it.owner_id = $1
        ORDER BY it.serial`,
       [req.user.id],
@@ -82,6 +86,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         // Reported by several players, or hidden by the staff: only the owner still sees it, others do not.
         underReview: r.masked,
         placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0 },
+        // On the market: in escrow, it cannot be placed until the offer ends.
+        listing: r.listing_id && r.listing_price !== null ? { id: r.listing_id, price: r.listing_price } : null,
       })),
     };
   });
@@ -123,6 +129,9 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     } catch (err) {
       if ((err as { code?: string }).code === '23505') {
         return reply.code(409).send({ error: 'Cette case est déjà occupée' });
+      }
+      if ((err as { code?: string }).code === 'P0409') {
+        return reply.code(409).send({ error: 'Cet objet est en vente sur le marché' });
       }
       throw err;
     }

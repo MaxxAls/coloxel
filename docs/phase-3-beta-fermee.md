@@ -16,6 +16,13 @@ La phase 3 ne s'ouvre que si la phase 2 a franchi sa porte (`docs/phase-2-multij
 - [ ] Interface vérifiée dans un navigateur par de vrais joueurs, pas seulement par `typecheck` et les tests serveur.
 - [ ] Choix des prix, de la commission et des royalties (voir « Valeurs provisoires »). Les noter dans `docs/contexte-projet.md` dès qu'ils sont tranchés.
 
+## Avancement
+
+- **Étape 1, Coloxs et registre : faite.** `colox_ledger` est le seul chemin vers un solde (déclencheur), `npm run colox:grant -- <pseudo> <montant>` donne des Coloxs aux testeurs.
+- **Étape 2, Stripe : repoussée** à la demande du fondateur. En attendant, les Coloxs se donnent à la main. Le cas « solde négatif après remboursement » sera à traiter avec elle.
+- **Étape 3, marché : faite côté serveur et interface** (fenêtre « Marché », bouton « Vendre » dans l'inventaire). Séquestre garanti par la base (un objet en vente ne peut pas être posé), achat atomique avec verrouillage des comptes dans un ordre fixe, historique de propriété (`item_owners`), ventes archivées (`market_sales`, la commission détruite s'y lit). Valeurs réglables par `MARKET_COMMISSION_PERCENT`, `MARKET_ROYALTY_PERCENT`, `MARKET_MIN_PRICE`, `MARKET_MAX_PRICE`, `MARKET_LISTING_DAYS`, `MARKET_MAX_LISTINGS`. L'interface n'a pas encore été vue dans un navigateur.
+- Reste : l'historique de propriété n'est pas encore affiché sur la fiche objet du client (l'API `GET /api/items/:id/history` existe), puis les étapes 4 à 10.
+
 ## Principes
 
 1. **Le serveur décide de tout.** Prix, commission, royalties et soldes sont calculés et vérifiés côté serveur, jamais lus dans une requête client.

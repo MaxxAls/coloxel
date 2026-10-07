@@ -7,6 +7,7 @@ import { createFriends } from './friends';
 import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
+import { createMarket } from './market';
 import { createQuests } from './quests';
 import { createShop } from './shop';
 import type { StaffPanel } from './staff-panel';
@@ -178,6 +179,7 @@ export async function startApp(user: User) {
     if (except !== 'friends') friends.close();
     if (except !== 'staff') staff?.close();
     if (except !== 'quests') quests.close();
+    if (except !== 'market') market.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
     for (const [key, w] of Object.entries(floating)) if (except !== key) w.close();
@@ -199,6 +201,8 @@ export async function startApp(user: User) {
   let staff: StaffPanel | null = null;
   const quests = createQuests({ onToggle: () => markActive() });
   document.body.append(quests.element);
+  const market = createMarket({ onToggle: () => markActive(), onChanged: () => void scene?.refresh?.(), notify: (text) => notify(text) });
+  document.body.append(market.element);
   const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
   document.body.append(wardrobe.element);
   // Whatever the player saves, the room tells the others.
@@ -238,6 +242,11 @@ export async function startApp(user: User) {
         shop.toggle();
       },
     },
+    { key: 'market', label: 'Marché', active: () => market.isOpen(), run: () => {
+        closeWindows('market');
+        market.toggle();
+      },
+    },
     { key: 'person', label: 'Personnage', active: () => wardrobe.isOpen(), run: () => {
         closeWindows('wardrobe');
         wardrobe.toggle();
@@ -265,6 +274,7 @@ export async function startApp(user: User) {
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
     if (item.key === 'friends') b.dataset.friendsToggle = '';
     if (item.key === 'quests') b.dataset.questsToggle = '';
+    if (item.key === 'market') b.dataset.marketToggle = '';
     if (item.key === 'catalogue') b.dataset.shopToggle = '';
     if (item.key === 'person') b.dataset.wardrobeToggle = '';
     b.addEventListener('click', () => void item.run?.());

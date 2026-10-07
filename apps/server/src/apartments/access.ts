@@ -30,7 +30,8 @@ export async function findViewableItemRecipe<R>(pool: pg.Pool, itemId: string, v
        LEFT JOIN placements p ON p.item_id = i.id
        LEFT JOIN users host ON host.id = p.user_id
       WHERE i.id = $1
-        AND (i.owner_id = $2 OR EXISTS (SELECT 1 FROM users v WHERE v.id = $2 AND v.role <> 'user') OR (p.item_id IS NOT NULL AND ${APARTMENT_ACCESS_SQL} AND NOT ${itemMaskedSql('i')}))`,
+        AND (i.owner_id = $2 OR EXISTS (SELECT 1 FROM users v WHERE v.id = $2 AND v.role <> 'user') OR (p.item_id IS NOT NULL AND ${APARTMENT_ACCESS_SQL} AND NOT ${itemMaskedSql('i')})
+             OR (EXISTS (SELECT 1 FROM listings l WHERE l.item_id = i.id AND l.status = 'active' AND l.expires_at > now()) AND NOT ${itemMaskedSql('i')}))`,
     [itemId, viewerId],
   );
   return rows[0]?.recipe ?? null;

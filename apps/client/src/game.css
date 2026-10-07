@@ -2510,3 +2510,44 @@ body.admin .staff .win-bar button.win-close {
     width: 200px;
   }
 }
+
+/* ---------- Market ---------- */
+
+.market-filters {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+.market-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.market-card .info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.market-price {
+  color: #ffc857;
+  white-space: nowrap;
+}
+.market-confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.market-confirm p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.inventory li .market-confirm {
+  flex: 1 1 100%;
+}
