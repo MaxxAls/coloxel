@@ -28,7 +28,7 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 ## Échelle
 
 - Les objets sont dessinés en double résolution : une unité de recette vaut 2 pixels. Une case de sol : 64 x 32 px dans la salle (de -8 à 8 en x et en y). Sprite d'objet : 192 x 224 px, ancre au pixel (96, 176).
-- Avatar : 30 x 50 px (tête ronde, grands yeux, joues roses, cinq coiffures, quatre hauts, chapeaux et lunettes tirés de l'identifiant du joueur). Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
+- Avatar : 30 x 58 px, proportions de petit personnage (tête ronde d'environ 15 px, cou, torse, bras et jambes, yeux simples, joues roses). Le joueur compose son apparence dans une garde-robe (coiffures, hauts, bas, chaussures, chapeaux, lunettes, extras, couleurs) ; voir docs/personnage-boutique.md. Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
 - Hauteurs : table ou chaise 9 à 16, armoire ou plante haute 30 à 45, maximum 60.
 - Un objet standard tient dans une case (x et y entre -8 et 8). Seuls les objets longs dépassent, jusqu'à 12.
 

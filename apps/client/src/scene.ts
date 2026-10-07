@@ -28,6 +28,8 @@ export interface Scene {
   size: { w: number; h: number };
   /** Reload what the scene shows from the server (after furniture or the look changed). */
   refresh?(): void | Promise<void>;
+  /** I changed my look or my companion: tell the room so that everybody sees it. */
+  refreshAppearance?(): void;
   destroy(): void;
 }
 

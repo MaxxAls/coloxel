@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
-import { ANCHOR_X, ANCHOR_Y, catalogueEntry } from '@coloxel/render';
+import { ANCHOR_X, ANCHOR_Y, catalogueEntry, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { lookFor, type Facing, type Frame, type Look, type Pose } from './avatar';
@@ -8,26 +8,56 @@ import { createPanel } from './panel';
 import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
-import { avatarTexture, furnitureTexture, glowTexture, itemTexture } from './textures';
+import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 import { createVisitPanel } from './visit-panel';
 
-const STEP_MS = 150;
-/** Screen pixels per millisecond: one cell (about 36 px) per server step, a little faster to catch up. */
-const WALK_SPEED = 0.16;
+/** Same as the server's step: one cell every 480 ms. */
+const STEP_MS = 480;
+/** Screen pixels per millisecond: one cell (about 36 px) per server step, a touch faster so that the avatar never waits for the next step. */
+const WALK_SPEED = (Math.hypot(TW / 2, TH / 2) / STEP_MS) * 1.08;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
+
+interface PetView {
+  box: Container;
+  sprite: Sprite;
+  label: Text;
+  species: string;
+  color: number;
+  x: number;
+  y: number;
+  flip: 1 | -1;
+  /** When the companion last moved, to sit down once it has been still for a while. */
+  movedAt: number;
+}
+
+/** A look from what the server broadcast: anything unreadable falls back to the player's default one. */
+function lookOf(raw: string, id: string): Look {
+  try {
+    return parseLook(JSON.parse(raw)) ?? lookFor(id);
+  } catch {
+    return lookFor(id);
+  }
+}
 
 interface PlayerView {
   box: Container;
   body: Sprite;
   look: Look;
+  /** The look as the server sent it, to notice when it changes. */
+  lookRaw: string;
+  /** The companion following this player, if any. */
+  pet: PetView | null;
+  petRaw: string;
   x: number;
   y: number;
   cell: { i: number; j: number };
   facing: Facing;
   flip: 1 | -1;
   moving: boolean;
+  /** When the avatar last covered ground: it keeps its walking legs for a moment between two cells. */
+  movedAt: number;
   pose: Pose;
   label: Text;
   shadow: Graphics;
@@ -273,7 +303,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const WALK: Frame[] = [1, 0, 2, 0];
 
   function addView(p: PlayerState): PlayerView {
-    const look = lookFor(p.id);
+    const look = lookOf(p.look, p.id);
     const box = new Container();
     const shadow = new Graphics();
     diamond(shadow, 0, 1, 15, 7.5);
@@ -308,12 +338,16 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       box,
       body,
       look,
+      lookRaw: p.look,
+      pet: null,
+      petRaw: '',
       x,
       y,
       cell: { i: p.i, j: p.j },
       facing: 'front',
       flip: 1,
       moving: false,
+      movedAt: 0,
       pose: 'stand',
       label,
       shadow,
@@ -324,6 +358,56 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     box.position.set(x, y);
     views.set(p.id, view);
     return view;
+  }
+
+  /** A companion trails its owner: it keeps a little distance, sits when the owner stops, and hops after them when they leave. */
+  function syncPet(view: PlayerView, p: PlayerState, deltaMs: number, now: number) {
+    if (view.petRaw !== p.pet) {
+      view.petRaw = p.pet;
+      view.pet?.box.destroy({ children: true });
+      view.pet = null;
+      const [species, color, ...name] = p.pet.split(':');
+      if (species) {
+        const box = new Container();
+        const shadow = new Graphics();
+        diamond(shadow, 0, 1, 9, 4.5);
+        shadow.fill({ color: 0x1b1530, alpha: 0.3 });
+        const sprite = new Sprite(petTexture(species, Number(color) || 0, 0));
+        sprite.anchor.set(0.5, 1);
+        sprite.position.set(0, 5);
+        const label = new Text({ text: name.join(':'), style: { fontFamily: FONT, fontSize: 7, fill: 0xfff3d6, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+        label.anchor.set(0.5, 0);
+        label.position.set(0, 9);
+        box.addChild(shadow, sprite, label);
+        world.addChild(box);
+        // It starts beside its owner.
+        view.pet = { box, sprite, label, species, color: Number(color) || 0, x: view.x - 22, y: view.y + 6, flip: 1, movedAt: now };
+      }
+    }
+    const pet = view.pet;
+    if (!pet) return;
+    const dx = view.x - pet.x;
+    const dy = view.y - pet.y;
+    const dist = Math.hypot(dx, dy);
+    const keep = view.moving ? 26 : 30;
+    if (dist > 6 * TW) {
+      pet.x = view.x - 22;
+      pet.y = view.y + 6;
+    } else if (dist > keep) {
+      const step = Math.min((reduceMotion ? 1 : WALK_SPEED * 0.95) * deltaMs, dist - keep);
+      pet.x += (dx / dist) * step;
+      pet.y += (dy / dist) * step;
+      pet.movedAt = now;
+      if (Math.abs(dx) > 2) pet.flip = dx > 0 ? 1 : -1;
+    }
+    const walking = now - pet.movedAt < 180;
+    const frame: 0 | 1 | 2 = walking && !reduceMotion ? ((Math.floor(now / 130) % 2) as 0 | 1) : now - pet.movedAt > 900 ? 2 : 0;
+    pet.sprite.texture = petTexture(pet.species, pet.color, frame);
+    pet.sprite.scale.x = pet.flip;
+    const hop = walking && pet.species === 'lapin' && !reduceMotion ? Math.abs(Math.sin(now / 90)) * 3 : 0;
+    pet.sprite.position.y = 5 - Math.round(hop);
+    pet.box.position.set(Math.round(pet.x), Math.round(pet.y));
+    pet.box.zIndex = (pet.y - OY) / (TH / 2) + 0.5;
   }
 
   function syncPlayers(deltaMs: number, now: number) {
@@ -339,6 +423,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.cell = { i: p.i, j: p.j };
       }
       view.pose = POSES[p.pose] ?? 'stand';
+      if (view.lookRaw !== p.look) {
+        view.lookRaw = p.look;
+        view.look = lookOf(p.look, p.id);
+      }
       const goal = tileCenter(p.i, p.j);
       const dx = goal.x - view.x;
       const dy = goal.y - view.y;
@@ -351,11 +439,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.x += (dx / dist) * reach;
         view.y += (dy / dist) * reach;
       }
-      view.moving = Math.hypot(goal.x - view.x, goal.y - view.y) > 0.5;
+      if (Math.hypot(goal.x - view.x, goal.y - view.y) > 0.5) view.movedAt = now;
+      view.moving = now - view.movedAt < 90;
       const seated = view.pose !== 'stand' && !view.moving;
       const pose: Pose = seated ? view.pose : 'stand';
 
-      const phase = Math.floor(now / (STEP_MS / 2)) % 4;
+      const phase = Math.floor(now / (STEP_MS / 4)) % 4;
       const frame: Frame = view.moving && !reduceMotion ? WALK[phase]! : 0;
       // Now and then the eyes close for a moment (a sleeper's stay closed); standing still, the avatar breathes.
       let blink = pose === 'lie';
@@ -367,7 +456,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const facing: Facing = pose === 'stand' ? view.facing : 'front';
       view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && facing === 'front', pose);
       view.body.scale.x = pose === 'stand' ? view.flip : 1;
-      const bob = view.moving && !reduceMotion ? Math.abs(Math.sin((now / STEP_MS) * Math.PI)) * 3 : 0;
+      // The avatar glides at a constant pace: no bounce while walking.
+      const bob = 0;
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
@@ -375,7 +465,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       } else {
         view.body.anchor.set(0.5, 1);
         // Seated, the avatar sits a little forward of the middle of the seat.
-        view.body.position.set(pose === 'sit' ? 3 : 0, (pose === 'sit' ? 12 : 10) - Math.round(bob) - (pose === 'stand' ? breath : 0));
+        view.body.position.set(pose === 'sit' ? 3 : 0, (pose === 'sit' ? 9 : 10) - Math.round(bob) - (pose === 'stand' ? breath : 0));
       }
       view.shadow.visible = pose === 'stand';
       view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -46 : pose === 'sit' ? -45 : -36 - Math.round(bob));
@@ -389,10 +479,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       });
       view.box.position.set(Math.round(view.x), Math.round(view.y));
       view.box.zIndex = (view.y - OY) / (TH / 2) + 0.5;
+      syncPet(view, p, deltaMs, now);
     }
     for (const [id, view] of views) {
       if (seen.has(id)) continue;
       view.box.destroy({ children: true });
+      view.pet?.box.destroy({ children: true });
       views.delete(id);
     }
     setPresent(players);
@@ -555,6 +647,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     panel: panelElement,
     size: { w: ROOM_W, h: ROOM_H },
     refresh: () => (mine ? refreshOwn() : undefined),
+    refreshAppearance: () => room.refreshAppearance(),
     destroy() {
       closing = true;
       abort.abort();

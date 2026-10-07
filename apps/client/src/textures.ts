@@ -1,6 +1,7 @@
 import { Texture } from 'pixi.js';
 import { avatarFrame, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { furnitureSpriteUrl, itemSpriteUrl } from './api';
+import { petCanvas, type PetFrame } from './pets';
 
 const nearest = (tex: Texture) => {
   tex.source.scaleMode = 'nearest';
@@ -32,11 +33,22 @@ export const furnitureTexture = (key: string) => loadTexture(`furniture:${key}`,
 
 const avatarCache = new Map<string, Texture>();
 export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = false, pose: Pose = 'stand'): Texture {
-  const key = `${pose}.${look.skin}.${look.hair}.${look.hairStyle}.${look.shirt}.${look.shirtStyle}.${look.pants}.${look.accessory}.${facing}.${frame}.${blink ? 1 : 0}`;
+  const key = `${pose}.${Object.values(look).join(".")}.${facing}.${frame}.${blink ? 1 : 0}`;
   let tex = avatarCache.get(key);
   if (!tex) {
     tex = nearest(Texture.from(avatarFrame(look, facing, frame, blink, pose)));
     avatarCache.set(key, tex);
+  }
+  return tex;
+}
+
+const petCache = new Map<string, Texture>();
+export function petTexture(species: string, color: number, frame: PetFrame): Texture {
+  const key = `..`;
+  let tex = petCache.get(key);
+  if (!tex) {
+    tex = nearest(Texture.from(petCanvas(species, color, frame)));
+    petCache.set(key, tex);
   }
   return tex;
 }

@@ -69,6 +69,7 @@ export function registerFurnitureRoutes(
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Meuble invalide' });
     const entry = catalogueEntry(parsed.data.key);
     if (!entry) return reply.code(404).send({ error: 'Meuble introuvable' });
+    if (entry.price > 0) return reply.code(402).send({ error: 'Cet article s’achète en boutique, avec des Pixels.' });
 
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO furniture (owner_id, catalogue_key)

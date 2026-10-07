@@ -14,13 +14,14 @@ import {
 import { validateRecipe } from '../src';
 
 describe('base catalogue', () => {
-  it('has about twenty pieces with unique keys and names, all free', () => {
+  it('has unique keys and names; the base twenty are free, the rest has a price', () => {
     expect(CATALOGUE.length).toBeGreaterThanOrEqual(20);
+    expect(CATALOGUE.filter((e) => e.price === 0).length).toBeGreaterThanOrEqual(20);
     expect(new Set(CATALOGUE.map((e) => e.key)).size).toBe(CATALOGUE.length);
     expect(new Set(CATALOGUE.map((e) => e.name)).size).toBe(CATALOGUE.length);
     for (const e of CATALOGUE) {
       expect(e.key).toMatch(/^[a-z]+$/);
-      expect(e.price).toBe(0);
+      expect(Number.isInteger(e.price) && e.price >= 0).toBe(true);
     }
   });
 

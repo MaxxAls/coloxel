@@ -5,11 +5,12 @@ import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
 import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment } from '../apartments/access';
+import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
 import { authenticateConnection } from './auth';
 
-/** One cell per step: slow enough to see the walk. */
-export const STEP_MS = 260;
+/** One cell per step: a calm, continuous walk, about half a second per cell. */
+export const STEP_MS = 480;
 /** How a player is posed: on their feet, sitting, or lying down. */
 export const POSE = { stand: 0, sit: 1, lie: 2 } as const;
 type Interaction = 'sit' | 'lie';
@@ -27,6 +28,10 @@ export const Player = schema(
     i: t.uint8(),
     j: t.uint8(),
     pose: t.uint8(),
+    /** The player's look, as JSON of plain numbers (see packages/render/src/look.ts). */
+    look: t.string(),
+    /** Active companion as "species:colour:name", or empty. */
+    pet: t.string(),
   },
   'Player',
 );
@@ -74,6 +79,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 
   private paths = new Map<string, Cell[]>();
   private clientsByUser = new Map<string, AuthedClient>();
+  private lastRefresh = new Map<string, number>();
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
 
@@ -115,6 +121,19 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   override onCreate(_options?: unknown) {
     this.setState(new RoomState());
     this.setSimulationInterval(() => this.step(), STEP_MS);
+
+    // The player changed what they wear or which companion follows them: read it again from the database.
+    // The message carries nothing; what everybody sees always comes from the server's own records.
+    this.onMessage('refresh', async (client) => {
+      const { id } = userOf(client);
+      const player = this.state.players.get(id);
+      const now = Date.now();
+      if (!player || now - (this.lastRefresh.get(id) ?? 0) < 400) return;
+      this.lastRefresh.set(id, now);
+      const appearance = await loadAppearance(needDeps().pool, id);
+      player.look = JSON.stringify(appearance.look);
+      player.pet = appearance.pet;
+    });
 
     this.onMessage('move', async (client, message) => {
       const parsed = moveSchema.safeParse(message);
@@ -172,6 +191,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const player = new Player();
     player.id = user.id;
     player.nickname = user.nickname;
+    const appearance = await loadAppearance(needDeps().pool, user.id);
+    player.look = JSON.stringify(appearance.look);
+    player.pet = appearance.pet;
     // A second connection of the same player replaces the first: its old cell is free again.
     this.state.players.delete(user.id);
     const spawn = this.spawnCell(blocked);
@@ -188,6 +210,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     // A replaced connection leaving must not remove the player of the new one.
     if (this.clientsByUser.get(id) !== client) return;
     this.clientsByUser.delete(id);
+    this.lastRefresh.delete(id);
     this.paths.delete(id);
     this.pending.delete(id);
     this.state.players.delete(id);

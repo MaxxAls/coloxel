@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_H, AVATAR_W, OUTLINE, avatarPixels, avatarSize, lookFor, type Frame } from '../src/avatar';
+import { DEFAULT_LOOK, LOOK_ITEMS, SLOTS, type Look } from '@coloxel/render';
+import { AVATAR_H, AVATAR_W, OUTLINE, avatarPixels, avatarSize, lookFor, type Frame, type Pose } from '../src/avatar';
 
 const alpha = (px: Uint8ClampedArray, x: number, y: number) => px[(y * AVATAR_W + x) * 4 + 3]!;
 const rgb = (px: Uint8ClampedArray, x: number, y: number) => {
@@ -82,5 +83,60 @@ describe('avatar', () => {
     expect(diff(frames[0]!, frames[1]!)).toBeGreaterThan(80);
     expect(diff(frames[0]!, frames[2]!)).toBeGreaterThan(80);
     expect(diff(frames[1]!, frames[2]!)).toBeGreaterThan(150);
+  });
+});
+
+describe('wardrobe drawing', () => {
+  const edgesAreOutline = (px: Uint8ClampedArray, w: number, h: number) => {
+    const bad: string[] = [];
+    const check = (x: number, y: number) => {
+      const o = (y * w + x) * 4;
+      if (px[o + 3]! > 0 && ((px[o]! << 16) | (px[o + 1]! << 8) | px[o + 2]!) !== OUTLINE) bad.push(`${x},${y}`);
+    };
+    for (let y = 0; y < h; y++) [0, w - 1].forEach((x) => check(x, y));
+    for (let x = 0; x < w; x++) [0, h - 1].forEach((y) => check(x, y));
+    return bad;
+  };
+
+  it('wears every piece in every pose and facing without clipping', () => {
+    for (const slot of SLOTS) {
+      for (const piece of LOOK_ITEMS[slot]) {
+        for (const color of [0, 7, 15]) {
+          const look: Look = { ...DEFAULT_LOOK, [slot]: piece.id, hairColor: color % 12, topColor: color, bottomColor: color, shoesColor: color, hatColor: color, extraColor: color };
+          for (const pose of ['stand', 'sit', 'lie'] as Pose[]) {
+            for (const facing of pose === 'lie' ? (['front'] as const) : (['front', 'back'] as const)) {
+              for (const frame of pose === 'stand' ? ([0, 1, 2] as Frame[]) : ([0] as Frame[])) {
+                const { w, h } = avatarSize(pose);
+                const px = avatarPixels(look, facing, frame, false, pose);
+                expect(edgesAreOutline(px, w, h), `${slot} ${piece.name} ${pose} ${facing} ${frame}`).toEqual([]);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('shows every piece: it changes the picture compared to the first piece of its slot', () => {
+    for (const slot of SLOTS) {
+      const base = avatarPixels({ ...DEFAULT_LOOK, hat: 0, glasses: 0, extra: 0, [slot]: 0 } as Look);
+      for (const piece of LOOK_ITEMS[slot].slice(1)) {
+        const px = avatarPixels({ ...DEFAULT_LOOK, [slot]: piece.id });
+        expect(px, `${slot} ${piece.name}`).not.toEqual(base);
+      }
+    }
+  });
+
+  it('shows the face: every eye and mouth style draws something different', () => {
+    const pictures = new Set<string>();
+    for (const eyes of [0, 1, 2, 3]) for (const mouth of [0, 1, 2, 3]) pictures.add(avatarPixels({ ...DEFAULT_LOOK, eyes, mouth }).join());
+    expect(pictures.size).toBe(16);
+  });
+
+  it('uses the colours it is given', () => {
+    const red = avatarPixels({ ...DEFAULT_LOOK, topColor: 0 });
+    const blue = avatarPixels({ ...DEFAULT_LOOK, topColor: 7 });
+    expect(red).not.toEqual(blue);
+    expect(avatarPixels({ ...DEFAULT_LOOK, skin: 0 })).not.toEqual(avatarPixels({ ...DEFAULT_LOOK, skin: 5 }));
   });
 });

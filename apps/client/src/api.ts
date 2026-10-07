@@ -1,4 +1,4 @@
-import { SPRITE_VERSION } from '@coloxel/render';
+import { SPRITE_VERSION, type Look, type Slot } from '@coloxel/render';
 
 // Thin wrappers over the server API. The server decides everything; these only send intentions.
 
@@ -80,6 +80,40 @@ export interface CatalogueData {
   walls: { id: string; name: string; left: number; right: number }[];
 }
 
+export interface WalletData {
+  pixels: number;
+  dailyAvailable: boolean;
+  dailyPixels: number;
+}
+
+export interface LookData {
+  look: Look;
+  /** Bought pieces by slot; the free basics belong to everybody and are not listed. */
+  owned: Record<Slot, number[]>;
+}
+
+export interface PetData {
+  id: string;
+  species: string;
+  color: number;
+  name: string;
+  active: boolean;
+}
+
+/** What the shop can be asked to sell: the server reads the price from its own catalogues. */
+export type Purchase =
+  | { kind: 'furniture'; key: string }
+  | { kind: 'clothing'; slot: Slot; piece: number }
+  | { kind: 'pet'; species: string; color: number; name: string };
+
+export interface PurchaseResult {
+  /** Balance after the purchase; null when it was free. */
+  pixels: number | null;
+  furniture?: FurnitureItem;
+  clothing?: { slot: Slot; piece: number };
+  pet?: { id: string; species: string; color: number; name: string };
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -122,6 +156,16 @@ export const api = {
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),
+  wallet: () => call<WalletData>('GET', '/api/wallet'),
+  daily: () => call<{ pixels: number; gained: number }>('POST', '/api/wallet/daily'),
+  redeem: (code: string) => call<{ pixels: number; gained: number }>('POST', '/api/wallet/redeem', { code }),
+  myLook: () => call<LookData>('GET', '/api/me/look'),
+  saveLook: (look: Look) => call<{ look: Look }>('PUT', '/api/me/look', look),
+  buy: (order: Purchase) => call<PurchaseResult>('POST', '/api/shop/buy', order),
+  pets: () => call<{ pets: PetData[] }>('GET', '/api/pets'),
+  setActivePet: (id: string | null) => call<{ pets: PetData[] }>('PUT', '/api/pets/active', { id }),
+  renamePet: (id: string, name: string) => call<{ pets: PetData[] }>('PATCH', `/api/pets/${id}`, { name }),
+  releasePet: (id: string) => call<{ pets: PetData[] }>('DELETE', `/api/pets/${id}`),
 };
 
 export const itemSpriteUrl = (id: string) => `/api/items/${id}.png?v=${SPRITE_VERSION}`;

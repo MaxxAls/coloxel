@@ -95,6 +95,8 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
           [email, passwordHash, nickname, birthDate],
         );
         const created = rows[0]!;
+        // The welcome Pixels are the column's default; the ledger tells where they came from.
+        await client.query(`INSERT INTO pixel_ledger (user_id, delta, reason) SELECT id, pixels, 'Bienvenue' FROM users WHERE id = $1`, [created.id]);
         if ((await assignApartment(client, created.id)) === null) throw new BuildingFull();
         await giveStarterKit(client, created.id);
         return created;

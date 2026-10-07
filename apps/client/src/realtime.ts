@@ -16,6 +16,10 @@ export interface PlayerState {
   j: number;
   /** 0 standing, 1 sitting, 2 lying down. */
   pose: number;
+  /** The player's look as JSON (parse with parseLook before use). */
+  look: string;
+  /** Active companion as "species:colour:name", or empty. */
+  pet: string;
 }
 
 export interface BuildingRoom {
@@ -23,6 +27,8 @@ export interface BuildingRoom {
   players(): PlayerState[];
   /** "I want to walk to (i, j)". The server computes the path. */
   moveTo(i: number, j: number): void;
+  /** I changed what I wear or my companion: the server reads it again from its records. */
+  refreshAppearance(): void;
   /** Calls back once when the server closes our connection, with the close code (kicked, replaced, shut down). */
   onClosed(callback: (code: number) => void): void;
   /** A message the server broadcasts to the room. */
@@ -37,11 +43,14 @@ function wrap(room: Room): BuildingRoom {
     players() {
       const out: PlayerState[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0 }));
+      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '' }));
       return out;
     },
     moveTo(i, j) {
       room.send('move', { i, j });
+    },
+    refreshAppearance() {
+      room.send('refresh');
     },
     onClosed(callback) {
       room.onLeave((code: number) => callback(code));

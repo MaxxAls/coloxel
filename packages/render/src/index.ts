@@ -18,3 +18,20 @@ export {
   type WallPattern,
   type WallStyle,
 } from './catalog';
+export {
+  CLOTH_COLORS,
+  DEFAULT_LOOK,
+  EYES,
+  HAIR_COLORS,
+  LOOK_ITEMS,
+  MOUTHS,
+  SKIN_TONES,
+  SLOTS,
+  lookFor,
+  paidPieces,
+  parseLook,
+  type Look,
+  type LookItem,
+  type Slot,
+} from './look';
+export { MAX_PETS, PET_SPECIES, petSpecies, type PetColor, type PetSpecies } from './pets';

@@ -1,45 +1,29 @@
 import { Application, Container } from 'pixi.js';
 import type { User } from './api';
 import { createBuildingScene } from './building-scene';
-import { createCatalogue } from './catalogue';
+import { appearance } from './appearance';
 import { createNavigator } from './navigator';
+import { pixelIcon } from './pixel-icons';
+import { createShop } from './shop';
+import { createHud } from './wallet';
+import { createWardrobe } from './wardrobe';
+import { windowBar } from './window';
 import { createRoomScene } from './room-scene';
 import { sameTarget, type Scene, type SceneHost, type Target } from './scene';
 
 const PANEL_WIDTH = 340;
 const BAR_SPACE = 100;
 
-// 8x8 pixel icons, drawn with the current text color.
-const ICONS: Record<string, string[]> = {
-  building: ['.######.', '.#.##.#.', '.######.', '.#.##.#.', '.######.', '.#.##.#.', '.######.', '.##..##.'],
-  home: ['...##...', '..####..', '.######.', '########', '.#.##.#.', '.#.##.#.', '.#.##.#.', '.######.'],
-  navigator: ['..####..', '.#....#.', '#...#..#', '#..##..#', '#.##...#', '#.#....#', '.#....#.', '..####..'],
-  inventory: ['..####..', '..#..#..', '.######.', '########', '#.####.#', '########', '########', '.######.'],
-  catalogue: ['########', '#.#.#.#.', '########', '#......#', '#.####.#', '#.#..#.#', '#.#..#.#', '########'],
-  friends: ['.##..##.', '.##..##.', '..#...#.', '####.###', '####.###', '.##..##.', '.##..##.', '.#.#.#.#'],
-};
-
-function icon(name: string): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 8 8');
-  svg.setAttribute('width', '18');
-  svg.setAttribute('height', '18');
-  svg.setAttribute('shape-rendering', 'crispEdges');
-  svg.setAttribute('aria-hidden', 'true');
-  ICONS[name]!.forEach((row, y) =>
-    [...row].forEach((ch, x) => {
-      if (ch !== '#') return;
-      const r = document.createElementNS(ns, 'rect');
-      r.setAttribute('x', String(x));
-      r.setAttribute('y', String(y));
-      r.setAttribute('width', '1');
-      r.setAttribute('height', '1');
-      r.setAttribute('fill', 'currentColor');
-      svg.append(r);
-    }),
-  );
-  return svg;
+/** Fade a freshly built scene in so room changes do not pop. */
+function fadeIn(stage: Container, app: Application) {
+  stage.alpha = 0;
+  let t = 0;
+  const step = (ticker: { deltaMS: number }) => {
+    t += ticker.deltaMS / 220;
+    stage.alpha = Math.min(1, t);
+    if (t >= 1) app.ticker.remove(step);
+  };
+  app.ticker.add(step);
 }
 
 /** The game shell: one canvas, a side panel, the permanent bottom bar, and the scene being shown. */
@@ -62,7 +46,9 @@ export async function startApp(user: User) {
   const vignette = document.createElement('div');
   vignette.className = 'vignette';
   const panelHost = document.createElement('div');
-  panelHost.className = 'panel-host';
+  panelHost.className = 'window panel-host';
+  const panelBody = document.createElement('div');
+  panelBody.className = 'win-body';
   const panelToggle = document.createElement('button');
   panelToggle.type = 'button';
   panelToggle.className = 'panel-toggle';
@@ -73,7 +59,8 @@ export async function startApp(user: User) {
   const nav = document.createElement('nav');
   nav.className = 'navbar';
   nav.setAttribute('aria-label', 'Navigation');
-  document.body.append(app.canvas, vignette, panelHost, panelToggle, nav, toast);
+  const hud = createHud({ notify: (text) => notify(text) });
+  document.body.append(app.canvas, vignette, hud, panelHost, panelToggle, nav, toast);
 
   let scene: Scene | null = null;
   let current: Target | null = null;
@@ -81,6 +68,13 @@ export async function startApp(user: User) {
 
   // The panel floats over the right of the window; on a narrow window it starts hidden.
   let panelOpen = innerWidth >= 900;
+  panelHost.append(
+    windowBar('Mon panneau', () => {
+      panelOpen = false;
+      syncPanel();
+    }),
+    panelBody,
+  );
   const syncPanel = () => {
     panelHost.hidden = !panelOpen;
     panelToggle.textContent = panelOpen ? 'Masquer le panneau' : 'Panneau';
@@ -109,6 +103,9 @@ export async function startApp(user: User) {
   const notify = (text: string) => {
     toast.textContent = text;
     toast.hidden = false;
+    toast.classList.remove('show');
+    void toast.offsetWidth;
+    toast.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toast.hidden = true), 3500);
   };
@@ -135,12 +132,29 @@ export async function startApp(user: User) {
   });
   document.body.append(navigator.element);
 
-  // Taking furniture or changing the look works from anywhere; the apartment on screen, if it is ours, follows.
-  const catalogue = createCatalogue({
+  // Windows float over the scene, one at a time.
+  const closeWindows = (except?: string) => {
+    if (except !== 'navigator') navigator.close();
+    if (except !== 'shop') shop.close();
+    if (except !== 'wardrobe') wardrobe.close();
+  };
+
+  // Buying furniture or changing the apartment's look works from anywhere; the apartment on screen, if it is ours, follows.
+  const shop = createShop({
     onChanged: () => void scene?.refresh?.(),
+    onAppearance: () => scene?.refreshAppearance?.(),
     onToggle: () => markActive(),
+    notify: (text) => notify(text),
+    openWardrobe: () => {
+      closeWindows('wardrobe');
+      wardrobe.open();
+    },
   });
-  document.body.append(catalogue.element);
+  document.body.append(shop.element);
+  const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
+  document.body.append(wardrobe.element);
+  // Whatever the player saves, the room tells the others.
+  appearance.onSaved(() => scene?.refreshAppearance?.());
 
   // ----- Bottom bar ----------------------------------------------------------
   interface Item {
@@ -155,7 +169,7 @@ export async function startApp(user: User) {
     { key: 'building', label: 'Immeuble', active: () => current?.kind === 'building', run: () => go({ kind: 'building' }) },
     { key: 'home', label: 'Mon appart', active: () => !!current && sameTarget(current, home), run: () => go(home) },
     { key: 'navigator', label: 'Navigateur', active: () => navigator.isOpen(), run: () => {
-        catalogue.close();
+        closeWindows('navigator');
         navigator.toggle();
       },
     },
@@ -172,9 +186,14 @@ export async function startApp(user: User) {
         setTimeout(() => list?.classList.remove('flash'), 900);
       },
     },
-    { key: 'catalogue', label: 'Catalogue', active: () => catalogue.isOpen(), run: () => {
-        navigator.close();
-        catalogue.toggle();
+    { key: 'catalogue', label: 'Boutique', active: () => shop.isOpen(), run: () => {
+        closeWindows('shop');
+        shop.toggle();
+      },
+    },
+    { key: 'person', label: 'Personnage', active: () => wardrobe.isOpen(), run: () => {
+        closeWindows('wardrobe');
+        wardrobe.toggle();
       },
     },
     { key: 'friends', label: 'Amis', active: () => false, soon: true },
@@ -185,9 +204,10 @@ export async function startApp(user: User) {
     b.type = 'button';
     const label = document.createElement('span');
     label.textContent = item.label;
-    b.append(icon(item.key), label);
+    b.append(pixelIcon(item.key), label);
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
-    if (item.key === 'catalogue') b.dataset.catalogueToggle = '';
+    if (item.key === 'catalogue') b.dataset.shopToggle = '';
+    if (item.key === 'person') b.dataset.wardrobeToggle = '';
     if (item.soon) {
       b.disabled = true;
       b.title = 'Bientôt disponible';
@@ -206,8 +226,7 @@ export async function startApp(user: User) {
   }
 
   async function go(target: Target) {
-    navigator.close();
-    catalogue.close();
+    closeWindows();
     if (current && sameTarget(current, target)) return;
     const ticket = ++switching;
     nav.classList.add('busy');
@@ -215,7 +234,7 @@ export async function startApp(user: User) {
     scene?.destroy();
     scene = null;
     current = null;
-    panelHost.replaceChildren();
+    panelBody.replaceChildren();
 
     const created =
       target.kind === 'building' ? await createBuildingScene(host) : await createRoomScene(host, target);
@@ -234,7 +253,8 @@ export async function startApp(user: User) {
     }
     scene = created;
     current = target;
-    panelHost.replaceChildren(created.panel);
+    panelBody.replaceChildren(created.panel);
+    fadeIn(stage, app);
     fit();
     markActive();
   }

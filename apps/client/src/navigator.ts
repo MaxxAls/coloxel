@@ -1,4 +1,5 @@
 import { api, apartmentTitle, type NavigatorData } from './api';
+import { windowBar } from './window';
 import type { Target } from './scene';
 
 type Tab = 'friends' | 'open' | 'places';
@@ -28,7 +29,7 @@ const people = (n: number) => (n === 1 ? '1 personne' : `${n} personnes`);
 
 /** Where to go: friends, open apartments (busiest first) and public places. */
 export function createNavigator(options: { go(target: Target): void; onToggle(open: boolean): void }): Navigator {
-  const root = el('section', 'navigator');
+  const root = el('section', 'window navigator');
   root.hidden = true;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'Navigateur');
@@ -38,7 +39,9 @@ export function createNavigator(options: { go(target: Target): void; onToggle(op
   const tabButtons = new Map<Tab, HTMLButtonElement>();
   const list = el('ul', 'nav-list');
   const status = el('p', 'muted small');
-  root.append(tabs, list, status);
+  const body = el('div', 'win-body');
+  body.append(tabs, list, status);
+  root.append(windowBar('Navigateur', () => hide()), body);
 
   let tab: Tab = 'open';
   let data: NavigatorData | null = null;

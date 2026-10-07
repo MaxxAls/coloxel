@@ -6,7 +6,11 @@ import { registerAuthRoutes } from './auth/routes';
 import { registerBuildingRoutes, type NotifyApartment, type Occupancy } from './building/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
+import { registerAvatarRoutes } from './avatar/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
+import { registerPetRoutes } from './pets/routes';
+import { registerShopRoutes } from './shop/routes';
+import { registerWalletRoutes } from './wallet/routes';
 import { registerInventoryRoutes } from './inventory/routes';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
@@ -61,6 +65,10 @@ export function buildServer({
       registerInventoryRoutes(scope, pool, notifyApartment);
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment);
+      registerWalletRoutes(scope, pool, guards);
+      registerAvatarRoutes(scope, pool, guards);
+      registerShopRoutes(scope, pool, guards);
+      registerPetRoutes(scope, pool, guards);
     });
   }
 

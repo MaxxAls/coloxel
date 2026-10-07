@@ -12,8 +12,8 @@ export interface CatalogueEntry {
   key: string;
   name: string;
   category: FurnitureCategory;
-  /** Free in phase 2. Phase 3 turns this into a price in Pixels; there is no payment logic yet. */
-  price: 0;
+  /** In Pixels. 0 for the base furniture, which stays free and unlimited. */
+  price: number;
   recipe: Recipe;
   /** The piece lights its surroundings: a warm halo at height z (recipe units), drawn by the client. */
   glow?: { z: number; color: number; radius: number; flicker?: boolean };
@@ -376,15 +376,331 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction'> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
   category,
-  price: 0,
   recipe,
   ...extras,
+  price: extras.price ?? 0,
 });
+
+/** The same piece in other colours: every colour found in the map is swapped, the shape stays. */
+const recolor = (base: Recipe, name: string, map: Record<string, string>): Recipe => ({
+  name,
+  parts: base.parts.map((p) => {
+    const q = { ...p } as Record<string, unknown>;
+    for (const k of ['c', 'c2', 'top', 'left', 'right', 'side']) {
+      const v = q[k];
+      if (typeof v === 'string' && map[v]) q[k] = map[v];
+    }
+    return q as unknown as Part;
+  }),
+});
+
+const mintSofa = recolor(sofa, 'Canapé menthe', {
+  '#3f78c4': '#2f9e7a', '#4a8fe2': '#3fbf94', '#6aa6ee': '#6fd8b0', '#8ec0f5': '#a6ecd0', '#cfe3fa': '#e0fbef',
+});
+const sunArmchair = recolor(armchair, 'Fauteuil soleil', {
+  '#e0608f': '#e0a020', '#ff8fb1': '#ffc83d', '#ffadc7': '#ffdf7a', '#ffd0e0': '#fff1b8',
+});
+const starBed = recolor(bed, 'Lit étoilé', {
+  '#e2483d': '#4a8fe2', '#ff8a80': '#8ec0f5', '#d8382d': '#3f78c4', '#ffa8a0': '#cfe3fa', '#ffe4ec': '#e6f0ff',
+});
+const lagoonRug = recolor(rug, 'Tapis lagon', {
+  '#c0445a': '#2f6fb0', '#f0bf5a': '#8ec0f5', '#e87a8c': '#4a8fe2', '#ffd0e0': '#fff3d6',
+});
+const popChair = recolor(chair, 'Chaise pop', {
+  '#d9a05b': '#e2483d', '#f0be78': '#ff7a6b', '#e8b46b': '#ff8a80',
+});
+
+const bunkBed: Recipe = {
+  name: 'Lits superposés',
+  parts: [
+    ...legs(7.5, 6.5, 0.8, 36, WOOD_DARK, 1.6),
+    box(-7, 7, -6, 6, 5, 7, WOOD),
+    box(-6.8, 6.8, -5.8, 5.8, 7, 10, '#4a8fe2'),
+    box(-6.5, -2.5, -4.6, 4.6, 10, 12, '#fff3d6'),
+    box(-1, 6.8, -5.8, 5.8, 10, 11, '#8ec0f5'),
+    box(-7, 7, -6, 6, 22, 24, WOOD),
+    box(-6.8, 6.8, -5.8, 5.8, 24, 27, '#ff8fb1'),
+    box(-6.5, -2.5, -4.6, 4.6, 27, 29, '#fff3d6'),
+    box(-1, 6.8, -5.8, 5.8, 27, 28, '#e2483d'),
+    box(-7.2, 7.2, 5.6, 6.2, 24, 31, WOOD),
+    box(6.6, 7.6, 1, 1.8, 5, 29, WOOD_DARK),
+    box(6.6, 7.6, 4, 4.8, 5, 29, WOOD_DARK),
+    ...[9, 14, 19, 24].map((z) => box(6.6, 7.4, 1, 4.8, z, z + 1, WOOD)),
+    pix(-4, 0, 29, 3, 1, '#ffffff'),
+    ball(-7.5, -6, 36.5, 0.9, GOLD),
+    ball(-7.5, 6, 36.5, 0.9, GOLD),
+  ],
+};
+
+const piano: Recipe = {
+  name: 'Piano droit',
+  parts: [
+    box(-4, 4, -9, -7.5, 0, 3, INK),
+    box(-4, 4, 7.5, 9, 0, 3, INK),
+    box(-4, 4, -9, 9, 3, 30, '#3b3366'),
+    box(-4.4, 4.4, -9.4, 9.4, 30, 31.5, '#4a3f7a'),
+    quad('#4a3f7a', [4, -8, 18], [4, 8, 18], [4, 8, 28], [4, -8, 28]),
+    quad('#5a4d99', [4, -7, 20], [4, 7, 20], [4, 7, 26], [4, -7, 26]),
+    box(4, 6.4, -8, 8, 14, 16, INK),
+    box(4, 6.8, -7.4, 7.4, 16, 17, CREAM),
+    ...[-5.5, -3.5, -0.5, 1.5, 3.5, 5.5].map((y) => pix(6.6, y, 17, 0.5, 1.5, INK)),
+    box(2, 3, -4, 4, 31.5, 37, CREAM),
+    pix(2.6, -2, 35, 3, 0.5, INK),
+    pix(2.6, -2, 33.5, 4, 0.5, INK),
+    pix(4.5, -3, 3, 1.5, 1, GOLD),
+    pix(4.5, 3, 3, 1.5, 1, GOLD),
+    pix(-3, 6, 29, 1, 1, '#8f86bf'),
+  ],
+};
+
+const fireplace: Recipe = {
+  name: 'Cheminée de campagne',
+  parts: [
+    box(-4, 4, -8, 8, 0, 26, '#a85a4a'),
+    box(-4.6, 5.2, -8.6, 8.6, 26, 28, '#e0b080'),
+    ...[4, 9, 14, 19, 24].map((z) => box(4, 4.6, -8, 8, z, z + 0.5, '#c0745e')),
+    quad(INK, [4, -4.5, 2], [4, 4.5, 2], [4, 4.5, 15], [4, -4.5, 15]),
+    quad('#ff8a3c', [4, -3.4, 2], [4, 3.4, 2], [4, 1.6, 10], [4, -1.6, 12]),
+    quad('#ffc857', [4, -2, 2], [4, 2, 2], [4, 0.6, 7.4], [4, -0.8, 8.6]),
+    quad('#fff3d6', [4, -0.8, 2], [4, 0.8, 2], [4, 0, 4.6]),
+    box(3.6, 4.6, -3.8, 3.8, 2, 4, WOOD),
+    cyl(-1, -5, 1.4, 28, 33, '#5fc46a', '#7ad778'),
+    pix(0, 4, 28, 3, 3, '#fff3d6'),
+    pix(0, 4.5, 31, 2, 1, '#ff8fb1'),
+  ],
+};
+
+const aquarium: Recipe = {
+  name: 'Aquarium',
+  parts: [
+    box(-4.5, 4.5, -8, 8, 0, 12, WOOD_DARK),
+    box(-4.8, 4.8, -8.4, 8.4, 12, 13, WOOD),
+    box(-4, 4, -7.5, 7.5, 13, 27, '#6ec6e8'),
+    quad('#8ee0f5', [4, -7, 14], [4, 7, 14], [4, 7, 26], [4, -7, 26]),
+    quad('#f0d9a0', [4, -7, 14], [4, 7, 14], [4, 7, 16], [4, -7, 16]),
+    quad('#3f9b4b', [4, 4, 16], [4, 5.6, 16], [4, 5, 24], [4, 4.2, 24]),
+    quad('#5fc46a', [4, -5.4, 16], [4, -4, 16], [4, -4.6, 22], [4, -5.2, 22]),
+    pix(4, -2, 20, 2.5, 1.5, '#ff8a3c'),
+    pix(4, 1.6, 22.4, 2.5, 1.5, '#ffc857'),
+    pix(4, -0.4, 18, 1.5, 1, '#ff8fb1'),
+    pix(4, 0.4, 24.6, 0.5, 0.5, '#ffffff'),
+    pix(4, 0.8, 25.6, 0.5, 0.5, '#ffffff'),
+    box(-4.4, 4.4, -7.9, 7.9, 27, 28, '#4a3f7a'),
+    pix(-3, 0, 28, 3, 1, '#fff3d6'),
+  ],
+};
+
+const arcade: Recipe = {
+  name: 'Borne d’arcade',
+  parts: [
+    box(-4, 4, -4.5, 4.5, 0, 40, '#7d4fc9'),
+    box(-4, 4, -4.5, 4.5, 0, 6, '#3b3366'),
+    box(4, 7, -4.5, 4.5, 18, 20, INK),
+    cyl(5.5, -2, 0.5, 20, 23, '#c9c9d6'),
+    ball(5.5, -2, 24, 1.3, '#e2483d'),
+    pix(6.4, 1.6, 20.4, 1, 1, GOLD),
+    pix(6.4, 3.2, 20.4, 1, 1, '#5fc46a'),
+    quad('#1b1530', [4, -3.6, 22], [4, 3.6, 22], [4, 3.6, 35], [4, -3.6, 35]),
+    quad('#5fc46a', [4, -2.8, 24], [4, -0.8, 24], [4, -0.8, 26], [4, -2.8, 26]),
+    quad('#4a8fe2', [4, 0.6, 28], [4, 2.8, 28], [4, 2.8, 30], [4, 0.6, 30]),
+    pix(4, -2, 32, 3, 1, '#ff8fb1'),
+    pix(4, 1, 25, 2, 1, GOLD),
+    box(-4, 5, -4.5, 4.5, 36, 42, INK),
+    pix(5, -3, 38, 6, 1.5, '#ffd870'),
+    pix(-4, 4.5, 28, 1, 8, '#a780e0'),
+  ],
+};
+
+const bathtub: Recipe = {
+  name: 'Baignoire à pattes',
+  parts: [
+    ...[[-4, -6.8], [-4, 6.8], [4, -6.8], [4, 6.8]].map(([x, y]) => cyl(x!, y!, 1, 0, 3, GOLD, '#fff3d6')),
+    box(-5, 5, -8, 8, 3, 10, CREAM),
+    box(-4, 4.2, -6.8, 6.8, 9, 10.2, '#8ee0f5'),
+    box(-5.4, -4, -8.4, 8.4, 9, 11, '#ffffff'),
+    box(4, 5.4, -8.4, 8.4, 9, 11, '#ffffff'),
+    box(-4, 4, -8.4, -6.8, 9, 11, '#ffffff'),
+    box(-4, 4, 6.8, 8.4, 9, 11, '#ffffff'),
+    cyl(-4.5, 0, 0.8, 10, 15, '#c9c9d6', '#e6e6f0'),
+    box(-4.5, -2, -0.8, 0.8, 14, 15.4, '#c9c9d6'),
+    ball(0, -3, 10.6, 1.8, '#ffffff'),
+    ball(1.6, 2, 10.9, 1.4, '#ffffff'),
+    ball(-1, 4.4, 10.4, 1.1, '#fff6f9'),
+    pix(2, -4, 12.4, 1, 1, '#ffffff'),
+  ],
+};
+
+const stove: Recipe = {
+  name: 'Cuisinière',
+  parts: [
+    box(-5, 5, -5, 5, 0, 24, '#d8d2ee'),
+    box(-5.2, 5.2, -5.2, 5.2, 24, 25, '#3b3366'),
+    ...[[-2.4, -2.4], [-2.4, 2.4], [2.4, -2.4], [2.4, 2.4]].map(([x, y]) => cyl(x!, y!, 1.9, 25, 25.6, INK, '#5a4d99')),
+    quad('#8f86bf', [5, -4, 3], [5, 4, 3], [5, 4, 18], [5, -4, 18]),
+    quad('#1b1530', [5, -3, 6], [5, 3, 6], [5, 3, 14], [5, -3, 14]),
+    quad('#3b3366', [5, -2.4, 6.6], [5, 0, 6.6], [5, 0, 10], [5, -2.4, 10]),
+    box(5, 5.8, -3.4, 3.4, 18.6, 19.4, '#c9c9d6'),
+    pix(5, -3, 21.6, 1, 1, '#e2483d'),
+    pix(5, 0, 21.6, 1, 1, GOLD),
+    pix(5, 3, 21.6, 1, 1, '#5fc46a'),
+    box(-5, -4.4, -5, 5, 25, 33, '#d8d2ee'),
+    pix(-4.8, -1, 29, 1, 1, '#ffffff'),
+  ],
+};
+
+const beanbag: Recipe = {
+  name: 'Fauteuil poire',
+  parts: [
+    ball(0, 0, 5, 7.6, '#9b57c9'),
+    ball(-3.4, 0, 10, 6, '#b36bd6'),
+    ball(2.2, 0, 8.2, 4.4, '#c58be6'),
+    ball(-4.4, 0, 14, 3.4, '#c58be6'),
+    pix(-3, 3, 11, 1, 2, '#e6c8f5'),
+    pix(2, -3, 9, 1, 1, '#e6c8f5'),
+  ],
+};
+
+const stool: Recipe = {
+  name: 'Tabouret rouge',
+  parts: [
+    cyl(0, 0, 3.8, 0, 1, INK, '#4a3f7a'),
+    cyl(0, 0, 0.8, 1, 9, '#c9c9d6', '#e6e6f0'),
+    cyl(0, 0, 2.8, 5, 5.6, '#c9c9d6'),
+    cyl(0, 0, 4.4, 8, 10.5, '#e2483d', '#ff7a6b'),
+    pix(-2, 2, 10.5, 2, 1, '#ffb0a8'),
+  ],
+};
+
+const coffeeTable: Recipe = {
+  name: 'Table basse vitrée',
+  parts: [
+    ...legs(6.5, 6.5, 0.6, 7, '#c9c9d6', 1),
+    box(-7, 7, -7, 7, 7, 8.4, '#8ee0f5'),
+    box(-7.2, 7.2, -7.2, 7.2, 8, 8.8, '#cfeefa'),
+    box(-3, 1.5, -3, 2, 8.8, 9.6, '#f4efe6'),
+    cyl(3, 3, 1.3, 8.8, 11, '#ff8fb1', '#ffc0d4'),
+    pix(-1, -1, 9.6, 2, 1, '#e2483d'),
+    pix(3, -4, 8.8, 1, 1, '#ffffff'),
+  ],
+};
+
+const lavaLamp: Recipe = {
+  name: 'Lampe à lave',
+  parts: [
+    cyl(0, 0, 3.2, 0, 3, '#c9c9d6', '#e6e6f0'),
+    cyl(0, 0, 2.4, 3, 18, '#ff6fa8', '#ffa8c8'),
+    ball(0, 0, 8, 1.6, '#ffd870'),
+    ball(0.6, 0, 13, 1.1, '#ffd870'),
+    cyl(0, 0, 1.4, 18, 21, '#c9c9d6', '#e6e6f0'),
+    pix(-1.6, 1, 6, 1, 8, '#ffd0e0'),
+  ],
+};
+
+const monstera: Recipe = {
+  name: 'Monstera géante',
+  parts: [
+    cyl(0, 0, 5, 0, 10, '#e6e0f0', '#5a3a22'),
+    cyl(0, 0, 5.4, 9, 11, '#fff3d6', '#6e4a2c'),
+    cyl(0, 0, 0.9, 11, 22, '#3f9b4b'),
+    ball(-4.4, 1, 24, 4.6, '#2f8a47'),
+    ball(4.4, -1, 27, 4.8, '#3f9b4b'),
+    ball(0, 3, 30, 4.4, '#4fb35a'),
+    ball(-2, -3, 35, 4, '#5fc46a'),
+    ball(2.4, 1, 39, 3.2, '#7ad778'),
+    pix(-5, -1, 26, 1, 2, '#a8f0a0'),
+    pix(3, -3, 30, 1, 2, '#a8f0a0'),
+    pix(0, 5, 33, 1, 2, '#a8f0a0'),
+  ],
+};
+
+const roundRug: Recipe = {
+  name: 'Tapis rond fleuri',
+  parts: [
+    cyl(0, 0, 8, 0, 0.8, '#7d4fc9', '#9b6fe0'),
+    cyl(0, 0, 6.4, 0.8, 1.2, '#ffc857', '#ffd870'),
+    cyl(0, 0, 4.8, 1.2, 1.6, '#ff8fb1', '#ffb0c8'),
+    cyl(0, 0, 2.2, 1.6, 2, '#fff3d6', '#ffffff'),
+    pix(-5, 0, 1.4, 1, 1, '#7d4fc9'),
+    pix(5, 0, 1.4, 1, 1, '#7d4fc9'),
+    pix(0, -5, 1.4, 1, 1, '#7d4fc9'),
+    pix(0, 5, 1.4, 1, 1, '#7d4fc9'),
+  ],
+};
+
+const globe: Recipe = {
+  name: 'Globe terrestre',
+  parts: [
+    cyl(0, 0, 3.4, 0, 1.4, WOOD_DARK, '#8b5e3c'),
+    cyl(0, 0, 0.8, 1.4, 12, GOLD, '#fff3d6'),
+    ball(0, 0, 17, 5.4, '#4a8fe2'),
+    ball(-1.6, 0.8, 18, 2.4, '#5fc46a'),
+    ball(2, -1.6, 15.6, 1.8, '#5fc46a'),
+    ball(0.4, 2.6, 20.2, 1.4, '#7ad778'),
+    pix(-3, 2, 20, 1, 1, '#cfe3fa'),
+  ],
+};
+
+const teddy: Recipe = {
+  name: 'Ours en peluche',
+  parts: [
+    ball(0, 0, 6.4, 6, '#b5651d'),
+    ball(0, 0, 15, 4.6, '#c98a4a'),
+    ball(-2.4, -3.8, 18.6, 1.8, '#b5651d'),
+    ball(-2.4, 3.8, 18.6, 1.8, '#b5651d'),
+    ball(0, -4.6, 8, 1.8, '#c98a4a'),
+    ball(0, 4.6, 8, 1.8, '#c98a4a'),
+    ball(4, 0, 14.4, 2, '#f6d0a4'),
+    pix(4.4, -1.6, 16.2, 1, 1, INK),
+    pix(4.4, 1.6, 16.2, 1, 1, INK),
+    pix(5.4, 0, 14.6, 1, 1, INK),
+    box(3, 3.4, -2, 2, 8, 9, '#e2483d'),
+  ],
+};
+
+const boombox: Recipe = {
+  name: 'Radio à cassettes',
+  parts: [
+    box(-3, 3, -7, 7, 0, 10, '#4a3f7a'),
+    box(-3.2, 3.2, -7.2, 7.2, 9, 10.4, '#6c61a3'),
+    cyl(3, -4, 2.4, 3, 7, '#2a2140'),
+    cyl(3, 4, 2.4, 3, 7, '#2a2140'),
+    { t: 'circle', x: 3.4, y: -4, z: 5, r: 2.2, c: '#8f86bf' },
+    { t: 'circle', x: 3.4, y: 4, z: 5, r: 2.2, c: '#8f86bf' },
+    quad('#8ee0f5', [3, -1.6, 4], [3, 1.6, 4], [3, 1.6, 8], [3, -1.6, 8]),
+    pix(3, -0.8, 8.8, 0.5, 0.5, '#e2483d'),
+    pix(3, 0.8, 8.8, 0.5, 0.5, '#ffc857'),
+    box(-1.4, 1.4, 4.6, 5.4, 10, 17, '#c9c9d6'),
+  ],
+};
+
+const newEntries = (): CatalogueEntry[] => [
+  entry('canapementhe', 'seat', mintSofa, { price: 60, interaction: 'sit' }),
+  entry('fauteuilsoleil', 'seat', sunArmchair, { price: 50, interaction: 'sit' }),
+  entry('chaisepop', 'seat', popChair, { price: 25, interaction: 'sit' }),
+  entry('fauteuilpoire', 'seat', beanbag, { price: 45, interaction: 'sit' }),
+  entry('tabouret', 'seat', stool, { price: 20, interaction: 'sit' }),
+  entry('litetoile', 'sleep', starBed, { price: 80, interaction: 'lie' }),
+  entry('litsuperposes', 'sleep', bunkBed, { price: 140 }),
+  entry('tablebasse', 'table', coffeeTable, { price: 40 }),
+  entry('piano', 'decor', piano, { price: 220 }),
+  entry('cheminee', 'decor', fireplace, { price: 180, anim: 'flicker', glow: { z: 8, color: 0xff9a40, radius: 62, flicker: true } }),
+  entry('aquarium', 'decor', aquarium, { price: 160, glow: { z: 20, color: 0x6ec6e8, radius: 46 } }),
+  entry('baignoire', 'decor', bathtub, { price: 120 }),
+  entry('monstera', 'decor', monstera, { price: 45, anim: 'sway' }),
+  entry('tapisrond', 'decor', roundRug, { price: 35 }),
+  entry('tapislagon', 'decor', lagoonRug, { price: 30 }),
+  entry('globe', 'decor', globe, { price: 55 }),
+  entry('ours', 'decor', teddy, { price: 40 }),
+  entry('lampelave', 'light', lavaLamp, { price: 50, glow: { z: 12, color: 0xff6fa8, radius: 40 } }),
+  entry('arcade', 'tech', arcade, { price: 260, anim: 'flicker', glow: { z: 30, color: 0x7d9fff, radius: 52, flicker: true } }),
+  entry('cuisiniere', 'tech', stove, { price: 90 }),
+  entry('radio', 'tech', boombox, { price: 50 }),
+];
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('lit', 'sleep', bed, { interaction: 'lie' }),
@@ -407,6 +723,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('pouf', 'seat', pouf, { interaction: 'sit' }),
   entry('horloge', 'decor', clock),
   entry('coffre', 'storage', chest),
+  ...newEntries(),
 ];
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));

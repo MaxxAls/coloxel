@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { Client, type Room } from '@colyseus/sdk';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { SEEDS } from '@coloxel/render';
+import { SEEDS, lookFor, parseLook } from '@coloxel/render';
 import type { RecipeModel } from '../src/creations/model';
 import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
@@ -483,6 +483,34 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
   });
 
+  it('shows everybody the look and the companion of each player, from the server records, and updates them on request', async () => {
+    const alice = await signUp('looky');
+    const bob = await signUp('seer');
+    const roomA = await joinHall(alice);
+    const roomB = await joinHall(bob);
+    const seen = () => roomB.state?.players?.get(alice.id) as { look: string; pet: string } | undefined;
+    await until(() => seen());
+    expect(parseLook(JSON.parse(seen()!.look))).toEqual(lookFor(alice.id));
+    expect(seen()!.pet).toBe('');
+
+    // Buy, wear and adopt through the API; the room learns of it when asked, and reads it from the database.
+    await pool.query('UPDATE users SET pixels = 1000 WHERE id = $1', [alice.id]);
+    const call = (method: 'POST' | 'PUT', path: string, payload: object) =>
+      app.inject({ method, url: path, payload, cookies: { coloxel_sid: alice.sid } });
+    expect((await call('POST', '/api/shop/buy', { kind: 'clothing', slot: 'hat', piece: 6 })).statusCode).toBe(201);
+    expect((await call('PUT', '/api/me/look', { ...lookFor(alice.id), hat: 6, hatColor: 3 })).statusCode).toBe(200);
+    expect((await call('POST', '/api/shop/buy', { kind: 'pet', species: 'chat', color: 1, name: 'Minou' })).statusCode).toBe(201);
+    // A look forged in the message itself is ignored.
+    roomA.send('refresh', { look: { ...lookFor(alice.id), hat: 3 }, pet: 'chien:0:Faux' });
+    await until(() => seen()!.pet === 'chat:1:Minou');
+    expect(JSON.parse(seen()!.look)).toMatchObject({ hat: 6, hatColor: 3 });
+
+    // A new player arriving sees the saved look at once.
+    const carol = await signUp('latecomer');
+    const roomC = await joinHall(carol);
+    await until(() => roomC.state?.players?.get(alice.id));
+    expect(JSON.parse((roomC.state.players.get(alice.id) as { look: string }).look).hat).toBe(6);
+  });
   it('holds 30 connected players in the hall, each seeing all the others move', async () => {
     const accounts = await Promise.all(Array.from({ length: 30 }, (_, k) => signUp(`load${k}`)));
     const rooms = await Promise.all(accounts.map((a) => joinHall(a)));

@@ -63,13 +63,14 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
   const lastSerial = async () => (await pool.query('SELECT last_value FROM item_serial')).rows[0].last_value as number;
   const itemCount = async () => (await pool.query('SELECT count(*)::int AS n FROM items')).rows[0].n as number;
 
-  it('serves the catalogue to signed-in players only: twenty free pieces, ten floors, ten wallpapers', async () => {
+  it('serves the catalogue to signed-in players only: free base pieces and priced ones, ten floors, ten wallpapers', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/catalogue' })).statusCode).toBe(401);
     const { sid } = await signUp('alice');
     const res = await app.inject({ method: 'GET', url: '/api/catalogue', cookies: as(sid) });
     const body = res.json();
     expect(body.furniture).toHaveLength(CATALOGUE.length);
-    expect(body.furniture.every((f: { price: number }) => f.price === 0)).toBe(true);
+    expect(body.furniture.map((f: { key: string; price: number }) => [f.key, f.price])).toEqual(CATALOGUE.map((e) => [e.key, e.price]));
+    expect(body.furniture.filter((f: { price: number }) => f.price === 0).length).toBeGreaterThanOrEqual(20);
     expect(body.floors).toHaveLength(FLOORS.length);
     expect(body.walls).toHaveLength(WALLS.length);
   });
@@ -106,7 +107,8 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     const { sid } = await signUp('dave');
     const serialBefore = await lastSerial();
     const itemsBefore = await itemCount();
-    const keys = CATALOGUE.map((e) => e.key);
+    // The free route is for the base furniture only; priced pieces are bought in the shop.
+    const keys = CATALOGUE.filter((e) => e.price === 0).map((e) => e.key);
     const results = await Promise.all(Array.from({ length: 50 }, (_, k) => take(sid, keys[k % keys.length])));
     expect(results.map((r) => r.statusCode)).toEqual(Array(50).fill(201));
     expect((await inventory(sid)).furniture).toHaveLength(STARTER_KIT.length + 50);
