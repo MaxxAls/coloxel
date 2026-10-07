@@ -58,6 +58,6 @@ Avant de considérer une tâche finie : `npm run typecheck` et `npm test` passen
 ## Conventions
 
 - Code, noms de variables et commentaires en anglais. Textes visibles par le joueur en français.
-- Repère des recettes : x et y au sol (une case va de -8 à 8), z vers le haut. Projection écran : `dx = x - y`, `dy = (x + y) / 2 - z`. Sprite de 96 x 112, ancre au pixel (48, 88) = centre de la case.
+- Repère des recettes : x et y au sol (une case va de -8 à 8), z vers le haut. Projection écran : `dx = x - y`, `dy = (x + y) / 2 - z`. Sprite de 192 x 224 (une unité de recette = 2 px), ancre au pixel (96, 176) = centre de la case.
 - Toute nouvelle primitive de rendu : ajout dans `types.ts`, rendu dans `render.ts`, nettoyage dans `validate.ts`, mention dans le prompt, et un test.
 - Petits commits, un sujet par commit.

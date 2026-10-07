@@ -12,7 +12,9 @@ export {
   floorStyle,
   wallStyle,
   type CatalogueEntry,
+  type FloorPattern,
   type FloorStyle,
   type FurnitureCategory,
+  type WallPattern,
   type WallStyle,
 } from './catalog';

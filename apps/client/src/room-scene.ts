@@ -1,22 +1,19 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
-import { ANCHOR_X, ANCHOR_Y } from '@coloxel/render';
+import { ANCHOR_X, ANCHOR_Y, catalogueEntry } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { AVATAR_H, lookFor, type Facing, type Frame, type Look } from './avatar';
-import { HALL_THEME, apartmentTheme, diamond, drawRoom } from './draw';
+import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
-import { OY, TH, TW, tileAt, tileCenter } from './room';
+import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
-import { avatarTexture, furnitureTexture, itemTexture } from './textures';
+import { avatarTexture, furnitureTexture, glowTexture, itemTexture, vignetteTexture } from './textures';
 import { createVisitPanel } from './visit-panel';
 
-export const ROOM_W = 300;
-export const ROOM_H = 216;
-
 const STEP_MS = 150;
-/** Screen pixels per millisecond: one cell (about 18 px) per server step, a little faster to catch up. */
-const WALK_SPEED = 0.13;
+/** Screen pixels per millisecond: one cell (about 36 px) per server step, a little faster to catch up. */
+const WALK_SPEED = 0.26;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
@@ -31,6 +28,9 @@ interface PlayerView {
   facing: Facing;
   flip: 1 | -1;
   moving: boolean;
+  /** When the avatar next blinks, and a personal phase so that nobody breathes in sync. */
+  blinkAt: number;
+  phase: number;
 }
 
 /** Which way the avatar faces when it steps from one cell to the next. */
@@ -75,10 +75,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   app.stage.addChild(world);
 
   // The room itself: the hall's fixed look, or the floor and wallpaper the owner chose.
-  let floor: Graphics | null = null;
+  let floor: Sprite | null = null;
   function drawFloor() {
     floor?.destroy();
-    floor = drawRoom(target.kind === 'hall' ? HALL_THEME : apartmentTheme(look.floor, look.wall));
+    floor = roomSprite(target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall));
     floor.zIndex = -3;
     world.addChild(floor);
   }
@@ -176,9 +176,21 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   // ----- Objects -----------------------------------------------------------
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
-    ...items.flatMap((it) => (it.placement ? [{ id: it.id, placement: it.placement, texture: () => itemTexture(it.id) }] : [])),
-    ...furniture.flatMap((f) => (f.placement ? [{ id: f.id, placement: f.placement, texture: () => furnitureTexture(f.key) }] : [])),
+    ...items.flatMap((it) =>
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, texture: () => itemTexture(it.id) }] : [],
+    ),
+    ...furniture.flatMap((f) =>
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, texture: () => furnitureTexture(f.key) }] : [],
+    ),
   ];
+
+  interface Prop {
+    sprite: Sprite;
+    anim?: 'sway' | 'flicker';
+    phase: number;
+  }
+  const props = new Map<string, Prop>();
+  const lights = new Map<string, { sprite: Sprite; flicker: boolean; base: number; phase: number }>();
 
   function syncItems() {
     occupied.clear();
@@ -187,27 +199,49 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const { i, j } = thing.placement;
       occupied.add(cellKey(i, j));
       placed.add(thing.id);
-      let s = itemSprites.get(thing.id);
-      if (!s) {
-        s = new Sprite();
+      const entry = thing.key ? catalogueEntry(thing.key) : undefined;
+      let prop = props.get(thing.id);
+      if (!prop) {
+        const s = new Sprite();
+        // The pivot is the point on the floor: swaying then rocks the object around its base.
+        s.pivot.set(ANCHOR_X, ANCHOR_Y);
         itemSprites.set(thing.id, s);
         world.addChild(s);
-        const sprite = s;
+        prop = { sprite: s, anim: entry?.anim, phase: Math.random() * 6 };
+        props.set(thing.id, prop);
         thing.texture().then(
           (t) => {
-            if (!sprite.destroyed) sprite.texture = t;
+            if (!s.destroyed) s.texture = t;
           },
-          () => sprite.destroy(),
+          () => s.destroy(),
         );
+        if (entry?.glow) {
+          const halo = new Sprite(glowTexture());
+          halo.anchor.set(0.5);
+          halo.blendMode = 'add';
+          halo.tint = entry.glow.color;
+          halo.width = halo.height = entry.glow.radius * 2;
+          halo.alpha = 0.55;
+          world.addChild(halo);
+          lights.set(thing.id, { sprite: halo, flicker: !!entry.glow.flicker, base: 0.55, phase: Math.random() * 6 });
+        }
       }
       const { x, y } = tileCenter(i, j);
-      s.position.set(x - ANCHOR_X, y - ANCHOR_Y);
-      s.zIndex = i + j;
+      prop.sprite.position.set(x, y);
+      prop.sprite.zIndex = i + j;
+      const light = lights.get(thing.id);
+      if (light && entry?.glow) {
+        light.sprite.position.set(x, y - entry.glow.z * 2);
+        light.sprite.zIndex = i + j + 0.2;
+      }
     }
-    for (const [id, s] of itemSprites) {
+    for (const [id, prop] of props) {
       if (placed.has(id)) continue;
-      s.destroy();
+      prop.sprite.destroy();
+      props.delete(id);
       itemSprites.delete(id);
+      lights.get(id)?.sprite.destroy();
+      lights.delete(id);
     }
   }
   if (mine) await refreshOwn();
@@ -215,32 +249,47 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
   // ----- Players -----------------------------------------------------------
   const views = new Map<string, PlayerView>();
+  const fract = (v: number) => v - Math.floor(v);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function addView(p: PlayerState): PlayerView {
     const look = lookFor(p.id);
     const box = new Container();
     const shadow = new Graphics();
-    diamond(shadow, 0, 0, 7, 3.5);
-    shadow.fill({ color: 0x000000, alpha: 0.28 });
+    diamond(shadow, 0, 1, 15, 7.5);
+    shadow.fill({ color: 0x1b1530, alpha: 0.32 });
+    diamond(shadow, 0, 1, 9, 4.5);
+    shadow.fill({ color: 0x1b1530, alpha: 0.2 });
     const body = new Sprite(avatarTexture(look, 'front', 0));
     body.anchor.set(0.5, 1);
-    body.position.set(0, 4);
+    body.position.set(0, 10);
     const label = new Text({
       text: p.nickname,
       style: {
         fontFamily: FONT,
         fontSize: 8,
         fill: p.id === user.id ? 0xffc857 : 0xffffff,
-        stroke: { color: 0x1b1530, width: 2 },
+        stroke: { color: 0x1b1530, width: 3 },
       },
     });
     label.anchor.set(0.5, 1);
-    label.position.set(0, 4 - AVATAR_H - 2);
+    label.position.set(0, 10 - AVATAR_H - 4);
     box.addChild(shadow, body, label);
     world.addChild(box);
     const { x, y } = tileCenter(p.i, p.j);
-    const view: PlayerView = { box, body, look, x, y, cell: { i: p.i, j: p.j }, facing: 'front', flip: 1, moving: false };
+    const view: PlayerView = {
+      box,
+      body,
+      look,
+      x,
+      y,
+      cell: { i: p.i, j: p.j },
+      facing: 'front',
+      flip: 1,
+      moving: false,
+      blinkAt: performance.now() + 1500 + Math.random() * 4000,
+      phase: Math.random() * 6,
+    };
     box.position.set(x, y);
     views.set(p.id, view);
     return view;
@@ -274,10 +323,17 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
       const stride = Math.floor(now / 120) % 2 === 0 ? 1 : 2;
       const frame: Frame = view.moving && !reduceMotion ? (stride as Frame) : 0;
-      view.body.texture = avatarTexture(view.look, view.facing, frame);
+      // Now and then the eyes close for a moment; standing still, the avatar breathes.
+      let blink = false;
+      if (now >= view.blinkAt) {
+        blink = now < view.blinkAt + 130;
+        if (!blink) view.blinkAt = now + 2200 + Math.random() * 4500;
+      }
+      view.body.texture = avatarTexture(view.look, view.facing, frame, blink && !view.moving && view.facing === 'front');
       view.body.scale.x = view.flip;
-      const bob = view.moving && !reduceMotion ? Math.abs(Math.sin(now / STEP_MS)) * 1.5 : 0;
-      view.body.y = 4 - Math.round(bob);
+      const bob = view.moving && !reduceMotion ? Math.abs(Math.sin(now / STEP_MS)) * 3 : 0;
+      const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
+      view.body.y = 10 - Math.round(bob) - breath;
       view.box.position.set(Math.round(view.x), Math.round(view.y));
       view.box.zIndex = (view.y - OY) / (TH / 2) + 0.5;
     }
@@ -343,9 +399,43 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   );
 
   // ----- Frame loop --------------------------------------------------------
+  // Dust drifting in the sunbeam of an apartment.
+  const dust = new Graphics();
+  dust.zIndex = 9000;
+  world.addChild(dust);
+  const motes = Array.from({ length: 22 }, (_, k) => ({ a: Math.random() * 6, b: Math.random(), speed: 0.6 + Math.random() * 0.8, k }));
+  // The corners of the room darken a little, like a lens.
+  const vignette = new Sprite(vignetteTexture(ROOM_W, ROOM_H));
+  vignette.zIndex = 9999;
+  world.addChild(vignette);
+
   const tick = (ticker: Ticker) => {
     const now = performance.now();
     syncPlayers(ticker.deltaMS, now);
+
+    if (!reduceMotion) {
+      for (const prop of props.values()) {
+        if (prop.anim === 'sway') prop.sprite.skew.x = Math.sin(now / 900 + prop.phase) * 0.035;
+        else if (prop.anim === 'flicker') prop.sprite.tint = Math.sin(now / 90 + prop.phase) + Math.sin(now / 37) > 1.2 ? 0xd9e8ff : 0xffffff;
+      }
+      for (const light of lights.values()) {
+        const wobble = light.flicker ? 0.12 * Math.sin(now / 70 + light.phase) + 0.08 * Math.sin(now / 23) : 0.05 * Math.sin(now / 700 + light.phase);
+        light.sprite.alpha = Math.max(0.1, light.base + wobble);
+      }
+    }
+    dust.clear();
+    if (target.kind === 'apartment' && !reduceMotion) {
+      for (const m of motes) {
+        const t = (now / 1000) * m.speed * 0.12 + m.a;
+        // Motes live inside the beam of sunlight on the floor, floating upward.
+        const v = fract(t) * 3.6;
+        const u = 3.1 + 0.55 * v + 0.2 + (Math.sin(t * 7 + m.k) * 0.5 + m.b * 1.2);
+        const c = tileCenter(u - 0.5, v - 0.5);
+        const lift = fract(t * 1.7 + m.b) * 60;
+        const alpha = 0.25 + 0.5 * Math.abs(Math.sin(now / 500 + m.k * 1.3));
+        dust.rect(Math.round(c.x), Math.round(c.y - lift), 2, 2).fill({ color: 0xfff5cf, alpha });
+      }
+    }
 
     marks.clear();
     if (hover) {

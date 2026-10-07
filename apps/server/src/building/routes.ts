@@ -35,6 +35,7 @@ interface ApartmentRow {
   slot: number;
   name: string | null;
   wall_style: string;
+  floor_style: string;
   owner_id: string | null;
   nickname: string | null;
   open: boolean;
@@ -60,7 +61,7 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const [{ rows }, present] = await Promise.all([
       pool.query<ApartmentRow>(
-        `SELECT a.id, a.floor, a.slot, a.name, a.wall_style, a.owner_id, host.nickname,
+        `SELECT a.id, a.floor, a.slot, a.name, a.wall_style, a.floor_style, a.owner_id, host.nickname,
                 COALESCE(${apartmentAccessSql('$1')}, false) AS open
            FROM apartments a
            LEFT JOIN users host ON host.id = a.owner_id
@@ -76,6 +77,7 @@ export function registerBuildingRoutes(app: FastifyInstance, pool: pg.Pool, occu
         slot: r.slot,
         name: r.name,
         wall: r.wall_style,
+        floorStyle: r.floor_style,
         owner: r.owner_id ? { id: r.owner_id, nickname: r.nickname } : null,
         mine: r.owner_id === req.user!.id,
         open: r.open,

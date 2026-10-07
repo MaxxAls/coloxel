@@ -15,6 +15,10 @@ export interface CatalogueEntry {
   /** Free in phase 2. Phase 3 turns this into a price in Pixels; there is no payment logic yet. */
   price: 0;
   recipe: Recipe;
+  /** The piece lights its surroundings: a warm halo at height z (recipe units), drawn by the client. */
+  glow?: { z: number; color: number; radius: number; flicker?: boolean };
+  /** A little life in the piece, played by the client. */
+  anim?: 'sway' | 'flicker';
 }
 
 // ----- Tiny builders keeping the recipes readable ---------------------------------
@@ -51,9 +55,16 @@ const bed: Recipe = {
     box(-7, 6.5, -5.4, 5.4, 6, 9, CREAM),
     box(-1.5, 6.5, -5.4, 5.4, 9, 10.5, '#e2483d'),
     box(-1.5, 6.5, -5.4, 5.4, 10.5, 10.8, '#ff8a80'),
-    box(-6.5, -2.5, -4.2, 4.2, 9, 11.5, '#fff3d6'),
+    box(-6.5, -2.5, -4.6, -0.2, 9, 11.5, '#fff3d6'),
+    box(-6.5, -2.5, 0.2, 4.6, 9, 11.5, '#ffe4ec'),
     pix(-5, -3, 11.5, 3, 1, '#ffffff'),
+    pix(-5, 2, 11.5, 3, 1, '#fff6f9'),
+    quad('#d8382d', [-1.5, 5.4, 9.2], [6.5, 5.4, 9.2], [6.5, 5.4, 10.3], [-1.5, 5.4, 10.3]),
     pix(2, 4, 10.5, 2, 1, GOLD),
+    pix(-1, -2, 11, 1, 1, '#ffa8a0'),
+    pix(3, 0, 11, 1, 1, '#ffa8a0'),
+    ball(-8, -5.8, 14.5, 0.9, GOLD),
+    ball(-8, 5.8, 14.5, 0.9, GOLD),
   ],
 };
 
@@ -77,6 +88,12 @@ const table: Recipe = {
     cyl(0, 0, 7.4, 10, 12, WOOD_LIGHT, '#e0a874'),
     pix(-3, -2, 12, 2, 1, '#f6d0a4'),
     pix(3, 2, 12, 1, 1, '#f6d0a4'),
+    cyl(-2, 1, 3.2, 12, 12.5, '#f4efe6', '#fffaf0'),
+    cyl(2.5, -2, 1.1, 12, 16, '#4fc3c3', '#8ee0e0'),
+    ball(2.5, -2, 17.4, 1.5, '#ff8fb1'),
+    ball(3.4, -2.6, 16.6, 1, '#ffc857'),
+    pix(-3, 0, 13, 1, 1, '#e2483d'),
+    pix(-2, 1.4, 13, 1, 1, '#ffc857'),
   ],
 };
 
@@ -93,6 +110,10 @@ const sofa: Recipe = {
     box(-5.5, -3, 1, 6, 12, 16, '#8ec0f5'),
     ...[[-7.5, -7.5], [-7.5, 7.5], [4.5, -7.5], [4.5, 7.5]].map(([x, y]) => box(x! - 0.7, x! + 0.7, y! - 0.7, y! + 0.7, 0, 2, WOOD_DARK)),
     pix(2, -4, 10.8, 2, 1, '#cfe3fa'),
+    box(-1, 2, -8.4, -5.4, 8, 12.4, '#ffc857'),
+    box(-0.4, 1.4, -7.8, -6, 12.4, 12.9, '#ffe08a'),
+    box(-1, 2, 5.4, 8.4, 8, 12, '#ff8fb1'),
+    quad('#3f78c4', [6, -9, 2.6], [6, 9, 2.6], [6, 9, 3.6], [6, -9, 3.6]),
   ],
 };
 
@@ -254,15 +275,21 @@ const tv: Recipe = {
 const fridge: Recipe = {
   name: 'Frigo givré',
   parts: [
-    box(-5, 5, -5, 5, 0, 38, '#d8d2ee'),
+    box(-5.5, 5.5, -5.5, 5.5, 0, 2.4, '#8f86bf'),
+    box(-5, 5, -5, 5, 2.4, 38, '#d8d2ee'),
     box(-5.2, 5.2, -5.2, 5.2, 36, 38.4, '#e8e2f8'),
     quad('#b4acd8', [5, -4.8, 24.4], [5, 4.8, 24.4], [5, 4.8, 25.4], [5, -4.8, 25.4]),
     quad('#bdb5de', [-4.8, 5, 24.4], [4.8, 5, 24.4], [4.8, 5, 25.4], [-4.8, 5, 25.4]),
     box(5, 5.8, 3, 3.9, 28, 34, '#8f86bf'),
     box(5, 5.8, 3, 3.9, 14, 21, '#8f86bf'),
-    pix(5, -3, 31, 2, 1, '#fff3d6'),
+    quad('#fff3d6', [5, -4, 26.6], [5, -1.4, 26.6], [5, -1.4, 30.4], [5, -4, 30.4]),
+    pix(5, -3.4, 29.4, 0.5, 2, '#a8a0d0'),
+    pix(5, -3.4, 28.4, 1.5, 0.5, '#a8a0d0'),
+    pix(5, -0.4, 33, 1, 1, '#e2483d'),
+    pix(5, -2.2, 12, 1, 1, '#ffc857'),
+    pix(5, -3.6, 35, 3, 0.5, '#8f86bf'),
     pix(-2, 5, 33, 1, 1, '#ffffff'),
-    box(-4, 4, -4, 4, 0, 2, '#8f86bf'),
+    pix(-3.4, 5, 30, 0.5, 4, '#ffffff'),
   ],
 };
 
@@ -315,11 +342,18 @@ const clock: Recipe = {
     box(-3.8, 3.8, -3.8, 3.8, 31, 33, '#a8764a'),
     box(-3.8, 3.8, -3.8, 3.8, 41.4, 43.4, '#a8764a'),
     ball(0, 0, 45, 2.2, '#a8764a'),
-    { t: 'circle', x: 3, y: 0, z: 37, r: 3.6, c: '#f4efe6', c2: INK },
-    pix(3, 0, 37, 1, 3, INK),
-    pix(3, 0, 37, 2, 1, INK),
+    { t: 'circle', x: 3, y: 0, z: 37, r: 3.9, c: '#8a5a2c' },
+    { t: 'circle', x: 3, y: 0, z: 37, r: 3.2, c: '#f4efe6' },
+    pix(3, 0, 40, 0.5, 3, INK),
+    pix(3, 0, 37, 2, 0.5, INK),
+    pix(3, 0, 40.4, 0.5, 0.5, '#e2483d'),
+    pix(3, 2.4, 37, 0.5, 0.5, INK),
+    pix(3, -2.4, 37, 0.5, 0.5, INK),
+    pix(3, 0, 34.2, 0.5, 0.5, INK),
     quad('#5a3a22', [3, -2, 5], [3, 2, 5], [3, 2, 27], [3, -2, 27]),
-    { t: 'circle', x: 3, y: 0, z: 12, r: 2.2, c: GOLD, c2: '#fff3d6' },
+    quad('#7a4e2c', [3, -1.4, 7], [3, 1.4, 7], [3, 1.4, 25], [3, -1.4, 25]),
+    { t: 'circle', x: 3, y: 0, z: 12, r: 2.4, c: GOLD, c2: '#fff3d6' },
+    pix(3, 0, 26, 0.5, 14, '#c99a6a'),
   ],
 };
 
@@ -336,12 +370,18 @@ const chest: Recipe = {
   ],
 };
 
-const entry = (key: string, category: FurnitureCategory, recipe: Recipe): CatalogueEntry => ({
+const entry = (
+  key: string,
+  category: FurnitureCategory,
+  recipe: Recipe,
+  extras: Pick<CatalogueEntry, 'glow' | 'anim'> = {},
+): CatalogueEntry => ({
   key,
   name: recipe.name,
   category,
   price: 0,
   recipe,
+  ...extras,
 });
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
@@ -350,15 +390,15 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('table', 'table', table),
   entry('canape', 'seat', sofa),
   entry('fauteuil', 'seat', armchair),
-  entry('lampadaire', 'light', lamp),
-  entry('ficus', 'decor', plant),
-  entry('cactus', 'decor', cactus),
+  entry('lampadaire', 'light', lamp, { glow: { z: 27, color: 0xffd870, radius: 74 } }),
+  entry('ficus', 'decor', plant, { anim: 'sway' }),
+  entry('cactus', 'decor', cactus, { anim: 'sway' }),
   entry('etagere', 'storage', bookshelf),
   entry('tapis', 'decor', rug),
   entry('armoire', 'storage', wardrobe),
   entry('bureau', 'table', desk),
-  entry('chevet', 'sleep', nightstand),
-  entry('tele', 'tech', tv),
+  entry('chevet', 'sleep', nightstand, { glow: { z: 16, color: 0xffd870, radius: 40 } }),
+  entry('tele', 'tech', tv, { anim: 'flicker', glow: { z: 15, color: 0x6aa6ee, radius: 52, flicker: true } }),
   entry('frigo', 'tech', fridge),
   entry('commode', 'storage', dresser),
   entry('miroir', 'decor', mirror),
@@ -381,12 +421,17 @@ export const STARTER_KIT: readonly { key: string; i: number; j: number }[] = [
 
 // ----- Floors and wallpapers: settings of the apartment, not objects -----------------
 
+export type FloorPattern = 'planks' | 'checker' | 'tiles' | 'carpet' | 'stone' | 'grass' | 'sand';
+export type WallPattern = 'damask' | 'plain' | 'stripes' | 'dots' | 'panels' | 'leaves' | 'stars' | 'brick';
+
 export interface FloorStyle {
   id: string;
   name: string;
   a: number;
   b: number;
   line: number;
+  /** How the floor is painted (see the client's room painter). */
+  pattern: FloorPattern;
 }
 
 export interface WallStyle {
@@ -395,35 +440,36 @@ export interface WallStyle {
   left: number;
   right: number;
   trim: number;
+  pattern: WallPattern;
 }
 
 export const DEFAULT_FLOOR = 'parquet';
 export const DEFAULT_WALL = 'violet';
 
 export const FLOORS: readonly FloorStyle[] = [
-  { id: 'parquet', name: 'Parquet miel', a: 0xb88b56, b: 0xc79a62, line: 0x8f6a3e },
-  { id: 'chene', name: 'Parquet chêne', a: 0xd6b27a, b: 0xe0be88, line: 0xa88652 },
-  { id: 'noyer', name: 'Parquet noyer', a: 0x7a4e32, b: 0x875a3a, line: 0x573624 },
-  { id: 'damier', name: 'Damier', a: 0xf4efe6, b: 0x4a3f7a, line: 0x2a2140 },
-  { id: 'carrelage', name: 'Carrelage bleu', a: 0x8ec0f5, b: 0x7fb2e8, line: 0x4a78b0 },
-  { id: 'moquette', name: 'Moquette violette', a: 0x8f7bd0, b: 0x9a88d8, line: 0x6c58a8 },
-  { id: 'rose', name: 'Moquette rose', a: 0xf2a6c0, b: 0xf7b6cd, line: 0xc27a96 },
-  { id: 'pierre', name: 'Pierre grise', a: 0xa6a2b8, b: 0xb4b0c6, line: 0x7a7690 },
-  { id: 'herbe', name: 'Gazon', a: 0x5fb85a, b: 0x6cc666, line: 0x3f8a3c },
-  { id: 'sable', name: 'Sable chaud', a: 0xe8cf94, b: 0xf0d9a4, line: 0xb89c62 },
+  { id: 'parquet', name: 'Parquet miel', a: 0xb88b56, b: 0xc79a62, line: 0x8f6a3e, pattern: 'planks' },
+  { id: 'chene', name: 'Parquet chêne', a: 0xd6b27a, b: 0xe0be88, line: 0xa88652, pattern: 'planks' },
+  { id: 'noyer', name: 'Parquet noyer', a: 0x7a4e32, b: 0x875a3a, line: 0x573624, pattern: 'planks' },
+  { id: 'damier', name: 'Damier', a: 0xf4efe6, b: 0x4a3f7a, line: 0x2a2140, pattern: 'checker' },
+  { id: 'carrelage', name: 'Carrelage bleu', a: 0x8ec0f5, b: 0x7fb2e8, line: 0x4a78b0, pattern: 'tiles' },
+  { id: 'moquette', name: 'Moquette violette', a: 0x8f7bd0, b: 0x9a88d8, line: 0x6c58a8, pattern: 'carpet' },
+  { id: 'rose', name: 'Moquette rose', a: 0xf2a6c0, b: 0xf7b6cd, line: 0xc27a96, pattern: 'carpet' },
+  { id: 'pierre', name: 'Pierre grise', a: 0xa6a2b8, b: 0xb4b0c6, line: 0x7a7690, pattern: 'stone' },
+  { id: 'herbe', name: 'Gazon', a: 0x5fb85a, b: 0x6cc666, line: 0x3f8a3c, pattern: 'grass' },
+  { id: 'sable', name: 'Sable chaud', a: 0xe8cf94, b: 0xf0d9a4, line: 0xb89c62, pattern: 'sand' },
 ];
 
 export const WALLS: readonly WallStyle[] = [
-  { id: 'violet', name: 'Violet doux', left: 0x8a7fc0, right: 0x6c61a3, trim: 0xe9e0ff },
-  { id: 'creme', name: 'Crème', left: 0xf0e2c4, right: 0xd9c8a4, trim: 0xffffff },
-  { id: 'ciel', name: 'Bleu ciel', left: 0x8ec0e8, right: 0x6fa4d2, trim: 0xf0f8ff },
-  { id: 'bonbon', name: 'Rose bonbon', left: 0xf4a6c4, right: 0xd888a8, trim: 0xfff0f6 },
-  { id: 'menthe', name: 'Menthe', left: 0x9fe0c4, right: 0x7cc4a6, trim: 0xf0fff8 },
-  { id: 'moutarde', name: 'Moutarde', left: 0xe8c04a, right: 0xc9a23a, trim: 0xfff6d0 },
-  { id: 'ardoise', name: 'Ardoise', left: 0x6e7490, right: 0x565c78, trim: 0xc8cce0 },
-  { id: 'bordeaux', name: 'Bordeaux', left: 0xa8485e, right: 0x883a4c, trim: 0xffd6de },
-  { id: 'foret', name: 'Vert forêt', left: 0x4f9a6a, right: 0x3e7e56, trim: 0xd6f5e0 },
-  { id: 'nuit', name: 'Bleu nuit', left: 0x3e4a8c, right: 0x2f3a72, trim: 0xb8c4f5 },
+  { id: 'violet', name: 'Violet doux', left: 0x8a7fc0, right: 0x6c61a3, trim: 0xe9e0ff, pattern: 'damask' },
+  { id: 'creme', name: 'Crème', left: 0xf0e2c4, right: 0xd9c8a4, trim: 0xffffff, pattern: 'panels' },
+  { id: 'ciel', name: 'Bleu ciel', left: 0x8ec0e8, right: 0x6fa4d2, trim: 0xf0f8ff, pattern: 'stripes' },
+  { id: 'bonbon', name: 'Rose bonbon', left: 0xf4a6c4, right: 0xd888a8, trim: 0xfff0f6, pattern: 'dots' },
+  { id: 'menthe', name: 'Menthe', left: 0x9fe0c4, right: 0x7cc4a6, trim: 0xf0fff8, pattern: 'plain' },
+  { id: 'moutarde', name: 'Moutarde', left: 0xe8c04a, right: 0xc9a23a, trim: 0xfff6d0, pattern: 'stripes' },
+  { id: 'ardoise', name: 'Ardoise', left: 0x6e7490, right: 0x565c78, trim: 0xc8cce0, pattern: 'brick' },
+  { id: 'bordeaux', name: 'Bordeaux', left: 0xa8485e, right: 0x883a4c, trim: 0xffd6de, pattern: 'damask' },
+  { id: 'foret', name: 'Vert forêt', left: 0x4f9a6a, right: 0x3e7e56, trim: 0xd6f5e0, pattern: 'leaves' },
+  { id: 'nuit', name: 'Bleu nuit', left: 0x3e4a8c, right: 0x2f3a72, trim: 0xb8c4f5, pattern: 'stars' },
 ];
 
 export const floorStyle = (id: string): FloorStyle => FLOORS.find((f) => f.id === id) ?? FLOORS[0]!;

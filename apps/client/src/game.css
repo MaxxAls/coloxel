@@ -202,17 +202,17 @@ body {
 }
 .thumb img {
   position: absolute;
-  left: calc(50% - 48px);
-  top: calc(50% - 68px);
-  transform-origin: 48px 68px;
-  image-rendering: pixelated;
+  left: calc(50% - 96px);
+  top: calc(50% - 136px);
+  transform-origin: 96px 136px;
+  image-rendering: auto;
   max-width: none;
 }
 .thumb.lg img {
-  transform: scale(1.5);
+  transform: scale(0.78);
 }
 .thumb.sm img {
-  transform: scale(0.95);
+  transform: scale(0.5);
 }
 .piece strong {
   font-size: 13px;

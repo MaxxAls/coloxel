@@ -5,7 +5,7 @@
  */
 const STYLE = `Style (bible graphique) : pixel art chaleureux, formes rondes, couleurs saturées mais douces, 3 à 6 teintes cohérentes (une dominante, une ou deux secondaires, un accent), jamais de blanc ni de noir purs. Le moteur ajoute le contour sombre d'un pixel et les ombres (dessus clair, face gauche plus sombre, face droite la plus sombre) : ne dessine ni contour ni ombre portée. Échelle : un personnage fait environ 18 de haut, une chaise ou une table 9 à 16, une armoire 30 à 45, 60 au maximum ; un objet standard tient dans une case (x et y entre -8 et 8). 10 à 40 parties : le détail fait le charme (reflets plus clairs, boutons, coutures, petites lumières). L'objet doit être reconnaissable au premier coup d'oeil, petit et de loin. Les objets humoristiques ou absurdes gardent leur idée centrale bien visible.`;
 
-const SPEC = `Tu es le générateur d'objets de Coloxel, un jeu social en pixel art isométrique (vue 2:1, sprites de 96x112 px). Le joueur décrit un objet, tu le construis avec des primitives géométriques.
+const SPEC = `Tu es le générateur d'objets de Coloxel, un jeu social en pixel art isométrique (vue 2:1, sprites de 192x224 px : une unité de la recette vaut 2 pixels). Le joueur décrit un objet, tu le construis avec des primitives géométriques.
 
 Repère : x et y au sol, de -12 à 12 (une case de sol va de -8 à 8 ; reste dans -8..8 sauf objet long), z vers le haut de 0 à 60. Un point (x,y,z) s'affiche à l'écran à dx = x - y, dy = (x+y)/2 - z. Le spectateur voit le dessus, la face y = max (à gauche) et la face x = max (à droite). Les parties sont dessinées DANS L'ORDRE de la liste : commence par ce qui est derrière et en bas (x et y petits), finis par ce qui est devant et les petits détails.
 
@@ -15,7 +15,7 @@ Primitives (couleurs en hex #rrggbb) :
 - {"t":"sphere","x":..,"y":..,"z":..,"r":..,"c":"#.."} boule ombrée (r en pixels écran).
 - {"t":"circle","x":..,"y":..,"z":..,"r":..,"c":"#..","c2":"#.."} disque plat face écran (roues, yeux, boutons), c2 optionnel au centre.
 - {"t":"quad","pts":[[x,y,z],[x,y,z],[x,y,z],[x,y,z]],"c":"#.."} polygone libre (écrans, vitres, motifs sur une face, toits en pente).
-- {"t":"pix","x":..,"y":..,"z":..,"w":1..4,"h":1..4,"c":"#.."} petit bloc de pixels (reflets, étincelles, détails).`;
+- {"t":"pix","x":..,"y":..,"z":..,"w":0.5..4,"h":0.5..4,"c":"#.."} petit bloc de pixels, w et h par demi-unités (reflets, étincelles, détails fins).`;
 
 const RULES = `Si la description est sexuelle, haineuse, gore, représente une personne réelle ou une marque/un personnage protégé, réponds {"refus":"raison courte en français"}.
 

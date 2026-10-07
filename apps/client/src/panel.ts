@@ -75,8 +75,8 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
   const cardBody = el('div', 'item-card-body');
   const cardImg = el('img');
   cardImg.alt = '';
-  cardImg.width = 96;
-  cardImg.height = 112;
+  cardImg.width = 128;
+  cardImg.height = 149;
   const cardMeta = el('div', 'meta');
   const cardName = el('strong', 'name');
   const cardDesc = el('p', 'muted small');

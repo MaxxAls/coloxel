@@ -33,6 +33,8 @@ export interface BuildingApartment {
   name: string | null;
   /** Wallpaper id, used to tint the apartment in the building view. */
   wall: string;
+  /** Floor id, drawn in the apartment's strip of floor. */
+  floorStyle: string;
   owner: { id: string; nickname: string } | null;
   mine: boolean;
   /** The player may walk in (own apartment, or opened to the building). */

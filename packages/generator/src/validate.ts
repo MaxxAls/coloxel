@@ -52,9 +52,10 @@ function cleanPart(p: unknown): Part | null {
       return { t: 'quad', pts, c: o.c };
     }
     case 'pix': {
-      const x = XY(o.x), y = XY(o.y), z = Z(o.z), w = clamp(o.w ?? 1, 1, 8), h = clamp(o.h ?? 1, 1, 8);
+      const x = XY(o.x), y = XY(o.y), z = Z(o.z), w = clamp(o.w ?? 1, 0.5, 8), h = clamp(o.h ?? 1, 0.5, 8);
       if (x === null || y === null || z === null || w === null || h === null || !isHex(o.c)) return null;
-      return { t: 'pix', x, y, z, w: Math.round(w), h: Math.round(h), c: o.c };
+      // Half units are allowed: the finest detail the renderer can draw.
+      return { t: 'pix', x, y, z, w: Math.round(w * 2) / 2, h: Math.round(h * 2) / 2, c: o.c };
     }
     default:
       return null;

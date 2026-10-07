@@ -31,12 +31,50 @@ export const itemTexture = (id: string) => loadTexture(`item:${id}`, itemSpriteU
 export const furnitureTexture = (key: string) => loadTexture(`furniture:${key}`, furnitureSpriteUrl(key));
 
 const avatarCache = new Map<string, Texture>();
-export function avatarTexture(look: Look, facing: Facing, frame: Frame): Texture {
-  const key = `${look.skin}.${look.hair}.${look.hairStyle}.${look.shirt}.${look.pants}.${facing}.${frame}`;
+export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = false): Texture {
+  const key = `${look.skin}.${look.hair}.${look.hairStyle}.${look.shirt}.${look.shirtStyle}.${look.pants}.${look.accessory}.${facing}.${frame}.${blink ? 1 : 0}`;
   let tex = avatarCache.get(key);
   if (!tex) {
-    tex = nearest(Texture.from(avatarFrame(look, facing, frame)));
+    tex = nearest(Texture.from(avatarFrame(look, facing, frame, blink)));
     avatarCache.set(key, tex);
   }
   return tex;
+}
+
+let glow: Texture | null = null;
+/** A soft round halo, white at the centre: tinted and drawn additively to light things up. */
+export function glowTexture(): Texture {
+  if (!glow) {
+    const size = 128;
+    const cv = document.createElement('canvas');
+    cv.width = size;
+    cv.height = size;
+    const ctx = cv.getContext('2d')!;
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    glow = Texture.from(cv);
+  }
+  return glow;
+}
+
+let vignette: Texture | null = null;
+/** Darkens the corners of the room, as a lens would. */
+export function vignetteTexture(w: number, h: number): Texture {
+  if (!vignette) {
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const ctx = cv.getContext('2d')!;
+    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.38, w / 2, h / 2, Math.hypot(w, h) / 2);
+    g.addColorStop(0, 'rgba(10,6,30,0)');
+    g.addColorStop(1, 'rgba(10,6,30,0.55)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    vignette = Texture.from(cv);
+  }
+  return vignette;
 }

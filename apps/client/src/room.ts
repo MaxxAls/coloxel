@@ -3,10 +3,15 @@
 import { N, type Cell } from '@coloxel/world';
 
 export { N, findPath, type Cell } from '@coloxel/world';
-export const TW = 32;
-export const TH = 16;
-export const OX = 150;
-export const OY = 80;
+// Rooms are drawn at twice the old resolution: one cell is 64 x 32 px on the canvas.
+export const TW = 64;
+export const TH = 32;
+export const OX = 300;
+export const OY = 148;
+/** Height of the side walls, and the size of the room canvas. */
+export const WALL_H = 116;
+export const ROOM_W = 600;
+export const ROOM_H = 400;
 
 /** Screen position of the center of a tile. */
 export function tileCenter(i: number, j: number): { x: number; y: number } {

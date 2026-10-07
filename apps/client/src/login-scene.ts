@@ -191,7 +191,8 @@ export function startLoginScene(canvas: HTMLCanvasElement): () => void {
     if (room.object >= 0) {
       const o = objects[room.object]!;
       const bob = Math.round(Math.sin(t / 700 + idx) * 1);
-      ctx.drawImage(o, x + w / 2 + room.objectDx - ANCHOR_X, baseY - ANCHOR_Y + bob);
+      // Sprites are drawn at twice the resolution of this scene: show them at half size.
+      ctx.drawImage(o, x + w / 2 + room.objectDx - ANCHOR_X / 2, baseY - ANCHOR_Y / 2 + bob, o.width / 2, o.height / 2);
     }
 
     if (room.walker >= 0) {
@@ -201,13 +202,14 @@ export function startLoginScene(canvas: HTMLCanvasElement): () => void {
       const ax = x + 8 + (goingRight ? phase : span * 2 - phase);
       const step = Math.floor(t / 150) % 2;
       const img = walkers[room.walker]!;
+      const aw = Math.round(img.width * 0.72), ah = Math.round(img.height * 0.72);
       ctx.save();
       if (!goingRight) {
-        ctx.translate(Math.round(ax) + img.width * 2, 0);
+        ctx.translate(Math.round(ax) + aw, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(img, 0, baseY - img.height * 2 + 6 - step * 2, img.width * 2, img.height * 2);
+        ctx.drawImage(img, 0, baseY - ah + 6 - step * 2, aw, ah);
       } else {
-        ctx.drawImage(img, Math.round(ax), baseY - img.height * 2 + 6 - step * 2, img.width * 2, img.height * 2);
+        ctx.drawImage(img, Math.round(ax), baseY - ah + 6 - step * 2, aw, ah);
       }
       ctx.restore();
     }

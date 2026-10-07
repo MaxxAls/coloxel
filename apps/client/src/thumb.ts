@@ -10,8 +10,8 @@ export function furnitureThumb(key: string, size: 'sm' | 'lg'): HTMLElement {
   const img = document.createElement('img');
   img.src = furnitureSpriteUrl(key);
   img.alt = '';
-  img.width = 96;
-  img.height = 112;
+  img.width = 192;
+  img.height = 224;
   box.append(img);
   return box;
 }

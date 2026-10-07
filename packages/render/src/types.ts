@@ -36,7 +36,7 @@ export interface QuadPart {
   c: string;
 }
 
-/** A small block of screen pixels anchored at a projected point. */
+/** A small block anchored at a projected point; w and h are in recipe units (0.5 to 8), SCALE pixels each. */
 export interface PixPart {
   t: 'pix';
   x: number; y: number; z: number; w: number; h: number;
@@ -59,11 +59,17 @@ export interface Sprite {
   mask: Uint8Array;
 }
 
-export const SPRITE_W = 96;
-export const SPRITE_H = 112;
+/**
+ * Recipes are drawn at twice the resolution of their coordinates: one unit of a
+ * recipe is SCALE sprite pixels. The recipe format did not change, so every
+ * object keeps its shape and simply gets finer, shaded detail.
+ */
+export const SCALE = 2;
+export const SPRITE_W = 96 * SCALE;
+export const SPRITE_H = 112 * SCALE;
 /** Pixel of the sprite that sits on the centre of its floor tile. */
-export const ANCHOR_X = 48;
-export const ANCHOR_Y = 88;
+export const ANCHOR_X = 48 * SCALE;
+export const ANCHOR_Y = 88 * SCALE;
 
 /** Bounds every renderer and validator agrees on. */
 export const LIMITS = {

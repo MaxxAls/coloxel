@@ -49,8 +49,8 @@ export function createVisitPanel(options: VisitPanelOptions): VisitPanel {
   const body = el('div', 'item-card-body');
   const img = el('img');
   img.alt = '';
-  img.width = 96;
-  img.height = 112;
+  img.width = 128;
+  img.height = 149;
   const meta = el('div', 'meta');
   const name = el('strong', 'name');
   const desc = el('p', 'muted small');

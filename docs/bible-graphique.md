@@ -12,7 +12,7 @@ Isométrique 2:1. Le spectateur voit le dessus, la face de gauche (y max) et la 
 
 ## Lumière
 
-Elle vient d'en haut. Dessus le plus clair, face gauche plus sombre (-18 %), face droite la plus sombre (-34 %). Le moteur applique ces ombres tout seul sur les pavés et les cylindres, et ombre les sphères (reflet en haut à gauche). Ne pas les forcer sans raison.
+Elle vient d'en haut. Dessus le plus clair, face gauche plus sombre (-18 %), face droite la plus sombre (-34 %). Le moteur applique ces ombres tout seul sur les pavés et les cylindres, et ombre les sphères (reflet en haut à gauche). Il ajoute aussi un grain léger sur les surfaces, un liseré clair sur les arêtes du dessus, un trait sombre sur les coins verticaux, un dégradé vers le sol (les faces s'assombrissent en bas) et une ombre douce tramée sur le sol, du côté droit de l'objet. Rien de tout cela n'est à dessiner dans une recette.
 
 ## Contour
 
@@ -27,8 +27,8 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 
 ## Échelle
 
-- Une case de sol : 16 x 8 px à l'écran (de -8 à 8 en x et en y). Sprite d'objet : 96 x 112 px, ancre au pixel (48, 88).
-- Avatar : 9 x 18 px. Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
+- Les objets sont dessinés en double résolution : une unité de recette vaut 2 pixels. Une case de sol : 64 x 32 px dans la salle (de -8 à 8 en x et en y). Sprite d'objet : 192 x 224 px, ancre au pixel (96, 176).
+- Avatar : 30 x 50 px (tête ronde, grands yeux, joues roses, cinq coiffures, quatre hauts, chapeaux et lunettes tirés de l'identifiant du joueur). Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
 - Hauteurs : table ou chaise 9 à 16, armoire ou plante haute 30 à 45, maximum 60.
 - Un objet standard tient dans une case (x et y entre -8 et 8). Seuls les objets longs dépassent, jusqu'à 12.
 
