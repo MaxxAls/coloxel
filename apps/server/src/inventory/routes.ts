@@ -49,8 +49,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
        ORDER BY it.serial`,
       [req.user.id],
     );
-    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j
+    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null; lit: boolean | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.lit
          FROM furniture f LEFT JOIN placements p ON p.furniture_id = f.id
         WHERE f.owner_id = $1
         ORDER BY f.created_at, f.id`,
@@ -63,6 +63,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         key: r.catalogue_key,
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
         placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j },
+        on: r.lit ?? true,
       })),
       items: rows.map((r) => ({
         id: r.id,

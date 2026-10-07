@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, renderSprite } from '@coloxel/render';
+import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, renderSprite } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spriteToPng } from '../sprite-png';
+
+const lightSchema = z.object({ on: z.boolean() }).strict();
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,6 +83,26 @@ export function registerFurnitureRoutes(
       return reply.code(409).send({ error: `Tu as déjà ${MAX_FURNITURE_PER_PLAYER} meubles : range-en avant d’en prendre d’autres.` });
     }
     return reply.code(201).send({ furniture: { id: rows[0].id, key: entry.key, name: entry.name, placement: null } });
+  });
+
+  // Switch a lamp (or anything that gives light) on or off. Only the owner, only in their own apartment:
+  // the player is the session's, the piece must be theirs and placed.
+  app.put<{ Params: { id: string } }>('/api/furniture/:id/light', { preHandler: guards.furniture }, async (req, reply) => {
+    const user = req.user;
+    if (!user) return reply.code(401).send({ error: 'Non connecté' });
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Meuble introuvable' });
+    const parsed = lightSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Requête invalide' });
+    const piece = await pool.query<{ catalogue_key: string }>(
+      `SELECT f.catalogue_key FROM furniture f JOIN placements p ON p.furniture_id = f.id
+        WHERE f.id = $1 AND f.owner_id = $2 AND p.user_id = $2`,
+      [req.params.id, user.id],
+    );
+    if (!piece.rows[0]) return reply.code(404).send({ error: 'Meuble introuvable ou pas posé' });
+    if (!isSwitchable(catalogueEntry(piece.rows[0].catalogue_key))) return reply.code(400).send({ error: 'Cet objet ne s’allume pas.' });
+    await pool.query('UPDATE placements SET lit = $2 WHERE furniture_id = $1', [req.params.id, parsed.data.on]);
+    notify?.(user.id, 'decor');
+    return { on: parsed.data.on };
   });
 
   // Throw a copy away. It costs nothing to take another one.

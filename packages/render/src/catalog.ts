@@ -23,6 +23,9 @@ export interface CatalogueEntry {
   interaction?: 'sit' | 'lie';
 }
 
+/** A piece that gives light can be switched on and off by whoever owns the apartment. */
+export const isSwitchable = (entry: CatalogueEntry | undefined): boolean => !!entry?.glow;
+
 // ----- Tiny builders keeping the recipes readable ---------------------------------
 
 const box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, c: string): Part => ({

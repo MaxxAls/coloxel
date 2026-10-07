@@ -127,8 +127,8 @@ export function registerBuildingRoutes(
         [ownerId, req.user.id],
       ),
     ]);
-    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j
+    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; lit: boolean }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.lit
          FROM placements p JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1 ORDER BY p.i, p.j`,
       [ownerId],
@@ -143,6 +143,7 @@ export function registerBuildingRoutes(
         key: r.catalogue_key,
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
         placement: { i: r.i, j: r.j },
+        on: r.lit,
       })),
       items: placed.rows.map((r) => ({
         id: r.id,

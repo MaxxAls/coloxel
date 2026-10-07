@@ -9,6 +9,7 @@ export {
   STARTER_KIT,
   WALLS,
   catalogueEntry,
+  isSwitchable,
   floorStyle,
   wallStyle,
   type CatalogueEntry,

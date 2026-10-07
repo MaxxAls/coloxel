@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
-import { ANCHOR_X, ANCHOR_Y, catalogueEntry, parseLook } from '@coloxel/render';
+import { ANCHOR_X, ANCHOR_Y, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createChat, type ChatMessage } from './chat-ui';
@@ -180,7 +180,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     });
     inspect = (item) => panel.inspect(item.id);
     setMessage = panel.setMessage;
-    panel.setMessage('Clique sur une chaise ou un lit pour t’y installer. Clic droit sur un objet : sa fiche.');
+    panel.setMessage('Clique sur une chaise ou un lit pour t’y installer, sur une lampe pour l’allumer ou l’éteindre. Clic droit sur un objet : sa fiche.');
     refreshOwn = async () => {
       const [res, mineRes] = await Promise.all([api.inventory(), api.myApartment()]);
       if (!res.ok) {
@@ -251,14 +251,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
     ...items.flatMap((it) =>
-      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, texture: () => itemTexture(it.id) }] : [],
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: () => itemTexture(it.id) }] : [],
     ),
     ...furniture.flatMap((f) =>
-      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, texture: () => furnitureTexture(f.key) }] : [],
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: () => furnitureTexture(f.key) }] : [],
     ),
   ];
 
   interface Prop {
+    on: boolean;
     sprite: Sprite;
     anim?: 'sway' | 'flicker';
     phase: number;
@@ -281,7 +282,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         s.pivot.set(ANCHOR_X, ANCHOR_Y);
         itemSprites.set(thing.id, s);
         world.addChild(s);
-        prop = { sprite: s, anim: entry?.anim, phase: Math.random() * 6 };
+        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6 };
         props.set(thing.id, prop);
         thing.texture().then(
           (t) => {
@@ -300,6 +301,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           lights.set(thing.id, { sprite: halo, flicker: !!entry.glow.flicker, base: 0.55, phase: Math.random() * 6 });
         }
       }
+      // A switched-off lamp is dim and gives no light.
+      prop.on = thing.on;
+      prop.sprite.tint = thing.on ? 0xffffff : 0x8c8ca6;
+      const halo = lights.get(thing.id);
+      if (halo) halo.sprite.visible = thing.on;
       const { x, y } = tileCenter(i, j);
       prop.sprite.position.set(x, y);
       prop.sprite.zIndex = i + j;
@@ -655,6 +661,16 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       const cell = tileAt(x, y);
       if (!cell) return;
+      // In our own apartment, a click on a lamp, the fireplace or the TV switches it on or off.
+      if (!selected && mine) {
+        const light = furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j && isSwitchable(catalogueEntry(f.key)));
+        if (light) {
+          const res = await api.setLight(light.id, light.on === false);
+          if (!res.ok) setMessage(res.error);
+          await refreshOwn();
+          return;
+        }
+      }
       if (!selected && seatAt(cell)) {
         // A free chair, sofa, pouf or bed: the server walks us there and sits or lies us down.
         goal = cell;
@@ -706,7 +722,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     if (!reduceMotion) {
       for (const prop of props.values()) {
         if (prop.anim === 'sway') prop.sprite.skew.x = Math.sin(now / 900 + prop.phase) * 0.035;
-        else if (prop.anim === 'flicker') prop.sprite.tint = Math.sin(now / 90 + prop.phase) + Math.sin(now / 37) > 1.2 ? 0xd9e8ff : 0xffffff;
+        else if (prop.anim === 'flicker' && prop.on) prop.sprite.tint = Math.sin(now / 90 + prop.phase) + Math.sin(now / 37) > 1.2 ? 0xd9e8ff : 0xffffff;
       }
       for (const light of lights.values()) {
         const wobble = light.flicker ? 0.12 * Math.sin(now / 70 + light.phase) + 0.08 * Math.sin(now / 23) : 0.05 * Math.sin(now / 700 + light.phase);

@@ -278,10 +278,58 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
         key: expect.any(String),
         name: expect.any(String),
         placement: { i: expect.any(Number), j: expect.any(Number) },
+        on: true,
       });
       // The building view takes the wall color.
       const list = (await app.inject({ method: 'GET', url: '/api/building', cookies: as(sam.sid) })).json().apartments;
       expect(list.find((a: { owner: { id: string } | null }) => a.owner?.id === rose.id).wall).toBe('nuit');
+    });
+  });
+
+  describe('switching lights', () => {
+    const light = (sid: string, id: string, payload: unknown) =>
+      app.inject({ method: 'PUT', url: `/api/furniture/${id}/light`, payload: payload as object, cookies: as(sid) });
+    const piece = async (sid: string, key: string) => (await inventory(sid)).furniture.find((f) => f.key === key)!;
+
+    it('lets the owner switch a lamp off and on, and shows visitors the state', async () => {
+      const ada = await signUp('light_ada');
+      const bob = await signUp('light_bob');
+      await app.inject({ method: 'PUT', url: '/api/apartment', payload: { access: 'building' }, cookies: as(ada.sid) });
+      const lamp = await piece(ada.sid, 'lampadaire');
+      expect(lamp).toMatchObject({ on: true });
+
+      expect((await light(ada.sid, lamp.id, { on: false })).json()).toEqual({ on: false });
+      expect(((await piece(ada.sid, 'lampadaire')) as Furniture & { on: boolean }).on).toBe(false);
+      const seen = (await app.inject({ method: 'GET', url: `/api/apartments/${ada.id}`, cookies: as(bob.sid) })).json().furniture as { id: string; on: boolean }[];
+      expect(seen.find((f) => f.id === lamp.id)!.on).toBe(false);
+      expect(seen.filter((f) => f.id !== lamp.id).every((f) => f.on)).toBe(true);
+
+      expect((await light(ada.sid, lamp.id, { on: true })).json()).toEqual({ on: true });
+    });
+
+    it('refuses anyone but the owner, pieces that give no light, bad requests and strangers’ pieces', async () => {
+      const cat = await signUp('light_cat');
+      const dan = await signUp('light_dan');
+      await app.inject({ method: 'PUT', url: '/api/apartment', payload: { access: 'building' }, cookies: as(cat.sid) });
+      const lamp = await piece(cat.sid, 'lampadaire');
+      const plant = await piece(cat.sid, 'ficus');
+      // A visitor, even in an open apartment, cannot touch the switch.
+      expect((await light(dan.sid, lamp.id, { on: false })).statusCode).toBe(404);
+      expect(((await piece(cat.sid, 'lampadaire')) as Furniture & { on: boolean }).on).toBe(true);
+      expect((await light(cat.sid, plant.id, { on: false })).statusCode).toBe(400);
+      expect((await light(cat.sid, lamp.id, { on: 'no' })).statusCode).toBe(400);
+      expect((await light(cat.sid, lamp.id, { on: false, owner: dan.id })).statusCode).toBe(400);
+      expect((await light(cat.sid, 'not-a-uuid', { on: false })).statusCode).toBe(404);
+      expect((await app.inject({ method: 'PUT', url: `/api/furniture/${lamp.id}/light`, payload: { on: false } })).statusCode).toBe(401);
+    });
+
+    it('lights a piece again when it is taken back and placed again', async () => {
+      const eve = await signUp('light_eve');
+      const lamp = await piece(eve.sid, 'lampadaire');
+      await light(eve.sid, lamp.id, { on: false });
+      await app.inject({ method: 'DELETE', url: `/api/placements/${lamp.id}`, cookies: as(eve.sid) });
+      await app.inject({ method: 'PUT', url: '/api/placements', payload: { itemId: lamp.id, i: 6, j: 6 }, cookies: as(eve.sid) });
+      expect(((await piece(eve.sid, 'lampadaire')) as Furniture & { on: boolean }).on).toBe(true);
     });
   });
 });

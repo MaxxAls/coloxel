@@ -27,6 +27,8 @@ export interface FurnitureItem {
   key: string;
   name: string;
   placement: { i: number; j: number } | null;
+  /** A piece that gives light: lit or switched off. Absent means lit. */
+  on?: boolean;
 }
 
 export interface BuildingApartment {
@@ -268,6 +270,7 @@ export const api = {
   inventory: () => call<{ items: InventoryItem[]; furniture: FurnitureItem[] }>('GET', '/api/inventory'),
   catalogue: () => call<CatalogueData>('GET', '/api/catalogue'),
   takeFurniture: (key: string) => call<{ furniture: FurnitureItem }>('POST', '/api/furniture', { key }),
+  setLight: (id: string, on: boolean) => call<{ on: boolean }>('PUT', `/api/furniture/${id}/light`, { on }),
   throwFurniture: (id: string) => call<unknown>('DELETE', `/api/furniture/${id}`),
   place: (itemId: string, i: number, j: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j }),
   building: () => call<{ apartments: BuildingApartment[] }>('GET', '/api/building'),
