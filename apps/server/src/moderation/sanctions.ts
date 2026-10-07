@@ -49,14 +49,16 @@ export function sanctionText(kind: SanctionKind, reason: string, expiresAt: Date
   }
 }
 
-/** What the realtime rooms are told, so that a sanction takes effect on a player who is connected. */
-export interface UserEvent {
-  userId: string;
-  kind: SanctionKind;
-  /** Warnings only: so that the player's screen can mark it as read. */
-  id?: number;
-  text: string;
-}
+/** What the realtime rooms are told about one player, so that it reaches them on their open connection, wherever the room runs. */
+export type UserEvent =
+  // A sanction: it takes effect on a player who is connected.
+  | { userId: string; kind: SanctionKind; /** Warnings only: so that the player's screen can mark it as read. */ id?: number; text: string }
+  // A challenge tier was reached.
+  | { userId: string; kind: 'quest'; text: string }
+  // Someone rings at the door of this player's apartment.
+  | { userId: string; kind: 'ring'; visitorId: string; nickname: string }
+  // The owner answered a ring: the visitor may come in, or not.
+  | { userId: string; kind: 'bell-answer'; ownerId: string; accepted: boolean; text: string };
 export type NotifyUser = (event: UserEvent) => void;
 /** Presence topic carrying UserEvents to every room, wherever it runs. */
 export const USER_TOPIC = 'coloxel:user-events';

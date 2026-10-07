@@ -9,6 +9,7 @@ import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { nextItemSerial, withTransaction } from '../db/pool';
 import { spriteToPng } from '../sprite-png';
 import { getCharges, refundCharge, reserveCharge } from './charges';
+import type { QuestRecorder } from '../quests/engine';
 import type { RecipeModel } from './model';
 
 const creationSchema = z.object({
@@ -31,6 +32,7 @@ export function registerCreationRoutes(
   pool: pg.Pool,
   model: RecipeModel | null,
   guards: RateGuards = NO_GUARDS,
+  quest?: QuestRecorder,
 ) {
   // Items are immutable, so a rendered sprite never goes stale.
   const pngCache = new Map<string, Buffer>();
@@ -97,6 +99,7 @@ export function registerCreationRoutes(
         await c.query('UPDATE creation_charges SET item_id = $1 WHERE id = $2', [row.id, reservation.chargeId]);
         return { id: row.id, serial, createdAt: row.created_at };
       });
+      quest?.(user.id, 'create');
       return reply.code(201).send({
         item: {
           id: item.id,

@@ -7,6 +7,7 @@ import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment } from '../apartments/access';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
+import type { QuestRecorder } from '../quests/engine';
 import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
 import { SUSPENDED, USER_TOPIC, liveSanction, sanctionText, type UserEvent } from '../moderation/sanctions';
 import { authenticateConnection } from './auth';
@@ -46,6 +47,8 @@ export type RoomState = SchemaType<typeof RoomState>;
 export interface RealtimeDeps {
   pool: pg.Pool;
   allowedOrigins: readonly string[];
+  /** Moves challenges forward (visits, messages, sitting down). */
+  quest: QuestRecorder;
 }
 
 // Wired by startRealtime() before any room is created.
@@ -132,8 +135,25 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (!event || typeof event.userId !== 'string') return;
     for (const client of [...this.clients]) {
       if ((client.auth as SessionUser | undefined)?.id !== event.userId) continue;
-      if (event.kind === 'suspension' || event.kind === 'ban') client.leave(SUSPENDED, event.text);
-      else client.send('notice', { id: event.id, kind: event.kind, text: event.text });
+      switch (event.kind) {
+        case 'suspension':
+        case 'ban':
+          client.leave(SUSPENDED, event.text);
+          break;
+        case 'warning':
+        case 'mute':
+          client.send('notice', { id: event.id, kind: event.kind, text: event.text });
+          break;
+        case 'quest':
+          client.send('quest', { text: event.text });
+          break;
+        case 'ring':
+          client.send('ring', { visitorId: event.visitorId, nickname: event.nickname });
+          break;
+        case 'bell-answer':
+          client.send('bell-answer', { ownerId: event.ownerId, accepted: event.accepted, text: event.text });
+          break;
+      }
     }
   };
 
@@ -214,6 +234,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       }
       const messageId = await logChat(pool, { userId: id, room, text: verdict.text, blocked: false });
       this.broadcast('chat', { id: messageId, from: id, nickname: player.nickname, text: verdict.text });
+      needDeps().quest(id, 'chat');
     } catch {
       // Not journaled, not shown: every message shown is a message the staff can find.
       refuse('error', 'Ton message n’a pas pu être envoyé, réessaie.');
@@ -264,6 +285,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     // Friends can see where we are.
     const entry: WhereEntry = { room: roomLabel(this.location()), roomId: this.roomId };
     await this.presence.hset(WHERE_KEY, user.id, JSON.stringify(entry)).catch(() => {});
+    const at = this.location();
+    if (at.kind === 'apartment' && at.ownerId.toLowerCase() !== user.id.toLowerCase()) needDeps().quest(user.id, 'visit', at.ownerId.toLowerCase());
   }
 
   override onDispose() {
@@ -304,7 +327,10 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         // Arrived: sit down or lie down, unless someone got there first.
         const want = this.pending.get(id);
         this.pending.delete(id);
-        if (want && want.cell.i === next.i && want.cell.j === next.j && !this.taken(next.i, next.j, id)) player.pose = want.pose;
+        if (want && want.cell.i === next.i && want.cell.j === next.j && !this.taken(next.i, next.j, id)) {
+          player.pose = want.pose;
+          needDeps().quest(id, 'sit');
+        }
       }
     }
   }

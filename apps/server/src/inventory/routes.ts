@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
+import type { QuestRecorder } from '../quests/engine';
 import { itemMaskedSql } from '../moderation/masking';
 
 export const GRID_SIZE = 8;
@@ -35,7 +36,7 @@ interface InventoryRow {
   masked: boolean;
 }
 
-export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, notify?: NotifyApartment) {
+export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, notify?: NotifyApartment, quest?: QuestRecorder) {
   app.get('/api/inventory', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
@@ -114,6 +115,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
       throw err;
     }
     notify?.(user.id, 'decor');
+    // Each object counts once, however often it is moved.
+    quest?.(user.id, 'place', itemId);
     return { placement: { itemId, i, j } };
   });
 

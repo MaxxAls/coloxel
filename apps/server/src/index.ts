@@ -9,6 +9,8 @@ import { registerCreationRoutes } from './creations/routes';
 import { registerAvatarRoutes } from './avatar/routes';
 import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
+import { makeQuestRecorder } from './quests/engine';
+import { registerQuestRoutes } from './quests/routes';
 import { registerNoticeRoutes } from './moderation/notices';
 import type { NotifyUser } from './moderation/sanctions';
 import { registerPetRoutes } from './pets/routes';
@@ -52,6 +54,7 @@ export function buildServer({
   locate,
   notifyUser,
 }: ServerDeps = {}) {
+  const quest = pool ? makeQuestRecorder(pool, (event) => notifyUser?.(event)) : undefined;
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
     // Behind a reverse proxy, the client IP comes from X-Forwarded-For: only trust it when told to.
@@ -73,17 +76,18 @@ export function buildServer({
     app.register(async (scope) => {
       const guards = await buildRateGuards(scope, rateLimits, redis);
       registerAuthRoutes(scope, pool, guards);
-      registerCreationRoutes(scope, pool, model, guards);
-      registerInventoryRoutes(scope, pool, notifyApartment);
+      registerCreationRoutes(scope, pool, model, guards, quest);
+      registerInventoryRoutes(scope, pool, notifyApartment, quest);
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
-      registerFriendRoutes(scope, pool, locate, notifyApartment, guards);
+      registerFriendRoutes(scope, pool, locate, notifyApartment, guards, quest);
       registerReportRoutes(scope, pool, guards);
       registerNoticeRoutes(scope, pool);
       registerStaffRoutes(scope, pool, notifyUser, notifyApartment);
       registerWalletRoutes(scope, pool, guards);
       registerAvatarRoutes(scope, pool, guards);
-      registerShopRoutes(scope, pool, guards);
+      registerShopRoutes(scope, pool, guards, quest);
+      registerQuestRoutes(scope, pool);
       registerPetRoutes(scope, pool, guards);
     });
   }

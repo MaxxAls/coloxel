@@ -5,6 +5,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
 import type { Presence } from '../building/routes';
 import { ApartmentRoom, HallRoom, apartmentTopic, configureRooms } from './rooms';
+import { makeQuestRecorder } from '../quests/engine';
 import { USER_TOPIC, type NotifyUser } from '../moderation/sanctions';
 import { WHERE_KEY, locationOf, type Location, type WhereEntry } from './where';
 
@@ -38,7 +39,11 @@ export async function startRealtime({
   redisUrl = process.env.REDIS_URL,
   allowedOrigins = (process.env.CLIENT_ORIGINS ?? 'http://localhost:5173').split(',').map((o) => o.trim()),
 }: RealtimeOptions): Promise<Realtime> {
-  configureRooms({ pool, allowedOrigins });
+  configureRooms({
+    pool,
+    allowedOrigins,
+    quest: makeQuestRecorder(pool, (event) => void matchMaker.presence.publish(USER_TOPIC, event)),
+  });
 
   const presence = redisUrl ? new RedisPresence(redisUrl) : undefined;
   const server = new Server({

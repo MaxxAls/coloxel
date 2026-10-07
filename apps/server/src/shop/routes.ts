@@ -5,6 +5,7 @@ import { LOOK_ITEMS, MAX_PETS, SLOTS, catalogueEntry, petSpecies } from '@coloxe
 import { withTransaction } from '../db/pool';
 import { MAX_FURNITURE_PER_PLAYER } from '../furniture/routes';
 import { checkPetName } from '../pets/routes';
+import type { QuestRecorder } from '../quests/engine';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spendPixels } from '../wallet/routes';
 
@@ -33,7 +34,7 @@ const broke = () => new Refused(402, 'Tu n’as pas assez de Pixels pour ça.');
  * from the code-side catalogues, never from the request, and the payment and
  * the goods happen in one transaction.
  */
-export function registerShopRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS) {
+export function registerShopRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS, quest?: QuestRecorder) {
   app.post('/api/shop/buy', { preHandler: guards.shop }, async (req, reply) => {
     const user = req.user;
     if (!user) return reply.code(401).send({ error: 'Non connecté' });
@@ -93,6 +94,7 @@ export function registerShopRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
         await client.query('UPDATE users SET active_pet_id = COALESCE(active_pet_id, $2) WHERE id = $1', [user.id, rows[0]!.id]);
         return { pixels, pet: { id: rows[0]!.id, species: species.key, color: order.color, name: order.name } };
       });
+      quest?.(user.id, 'buy');
       return reply.code(201).send(result);
     } catch (err) {
       if (err instanceof Refused) return reply.code(err.status).send({ error: err.message });

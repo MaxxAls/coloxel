@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { apartmentAccessSql } from '../apartments/access';
 import type { NotifyApartment } from '../building/routes';
+import type { QuestRecorder } from '../quests/engine';
 import type { Locate, Location } from '../realtime/where';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 
@@ -67,7 +68,12 @@ export function registerFriendRoutes(
   locate: Locate | undefined,
   notify: NotifyApartment | undefined,
   guards: RateGuards = NO_GUARDS,
+  quest?: QuestRecorder,
 ) {
+  const befriended = (a: string, b: string) => {
+    quest?.(a, 'friend', b);
+    quest?.(b, 'friend', a);
+  };
   app.get('/api/friends', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const me = req.user.id;
@@ -128,6 +134,7 @@ export function registerFriendRoutes(
         `UPDATE friendships SET status = 'accepted', accepted_at = now() WHERE requester_id = $1 AND addressee_id = $2`,
         [target.id, me],
       );
+      befriended(me, target.id);
       return { status: 'accepted', friend: { id: target.id, nickname: target.nickname } };
     }
 
@@ -157,6 +164,7 @@ export function registerFriendRoutes(
       [userId, req.user.id],
     );
     if (!rowCount) return reply.code(404).send({ error: 'Demande introuvable' });
+    befriended(userId, req.user.id);
     return { status: 'accepted' };
   });
 

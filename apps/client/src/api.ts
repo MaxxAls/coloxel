@@ -137,6 +137,17 @@ export interface PurchaseResult {
   pet?: { id: string; species: string; color: number; name: string };
 }
 
+export interface Quest {
+  key: string;
+  title: string;
+  description: string;
+  count: number;
+  /** Tiers reached so far. */
+  tier: number;
+  tiers: { goal: number; reward: number; done: boolean }[];
+  done: boolean;
+}
+
 export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment';
 export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
 
@@ -265,6 +276,7 @@ export const api = {
   updateApartment: (body: { name?: string | null; access?: ApartmentAccess; floor?: string; wall?: string }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
+  quests: () => call<{ quests: Quest[] }>('GET', '/api/quests'),
   friends: () => call<FriendsData>('GET', '/api/friends'),
   askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
   acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),

@@ -7,6 +7,7 @@ import { createFriends } from './friends';
 import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
+import { createQuests } from './quests';
 import { createShop } from './shop';
 import { createStaffPanel } from './staff-panel';
 import { createHud } from './wallet';
@@ -149,6 +150,7 @@ export async function startApp(user: User) {
     if (except !== 'navigator') navigator.close();
     if (except !== 'friends') friends.close();
     if (except !== 'staff') staff.close();
+    if (except !== 'quests') quests.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
   };
@@ -168,6 +170,8 @@ export async function startApp(user: User) {
   // The staff panel exists for everybody's code but only staff accounts get a button: the server answers nobody else.
   const staff = createStaffPanel({ onToggle: () => markActive(), notify: (text) => notify(text) });
   document.body.append(staff.element);
+  const quests = createQuests({ onToggle: () => markActive() });
+  document.body.append(quests.element);
   const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
   document.body.append(wardrobe.element);
   // Whatever the player saves, the room tells the others.
@@ -213,6 +217,11 @@ export async function startApp(user: User) {
         wardrobe.toggle();
       },
     },
+    { key: 'quests', label: 'Défis', active: () => quests.isOpen(), run: () => {
+        closeWindows('quests');
+        quests.toggle();
+      },
+    },
     { key: 'friends', label: 'Amis', active: () => friends.isOpen(), run: () => {
         closeWindows('friends');
         friends.toggle();
@@ -225,9 +234,10 @@ export async function startApp(user: User) {
     b.type = 'button';
     const label = document.createElement('span');
     label.textContent = item.label;
-    b.append(pixelIcon(item.key === 'staff' ? 'lock' : item.key), label);
+    b.append(pixelIcon(item.key === 'staff' ? 'lock' : item.key === 'quests' ? 'star' : item.key), label);
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
     if (item.key === 'friends') b.dataset.friendsToggle = '';
+    if (item.key === 'quests') b.dataset.questsToggle = '';
     if (item.key === 'catalogue') b.dataset.shopToggle = '';
     if (item.key === 'person') b.dataset.wardrobeToggle = '';
     if (item.soon) {

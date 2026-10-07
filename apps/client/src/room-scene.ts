@@ -4,6 +4,7 @@ import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './a
 import { createApartmentSettings } from './apartment-settings';
 import { createChat, type ChatMessage } from './chat-ui';
 import { showNotice } from './notice-dialog';
+import { wallet } from './wallet';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
@@ -761,6 +762,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onMessage('decor', () => void reloadVisit());
 
   let closing = false;
+  // A challenge was completed: the Pixels are already ours, the server paid them.
+  room.onQuest((text) => {
+    host.notify(text);
+    void wallet.refresh();
+  });
+
   // The staff speaks to us (a warning, a mute) while we are here.
   room.onNotice((notice) => {
     showNotice(notice.text, notice.id !== undefined && notice.kind === 'warning' ? () => void api.noticesSeen([notice.id!]) : undefined);

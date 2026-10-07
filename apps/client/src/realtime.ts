@@ -42,6 +42,8 @@ export interface BuildingRoom {
   onChat(callback: (message: ChatMessage) => void): void;
   /** The server did not show what we said, and tells us why. */
   onChatRefused(callback: (refusal: { reason: string; message: string }) => void): void;
+  /** A challenge tier was reached: the server tells us what it paid. */
+  onQuest(callback: (text: string) => void): void;
   /** The staff or the server speaks to us (a warning, a mute). */
   onNotice(callback: (notice: Notice) => void): void;
   leave(): Promise<void>;
@@ -85,6 +87,9 @@ function wrap(room: Room): BuildingRoom {
     },
     onChatRefused(callback) {
       room.onMessage('chat-refused', (m: { reason: string; message: string }) => callback(m));
+    },
+    onQuest(callback) {
+      room.onMessage('quest', (m: { text: string }) => callback(m.text));
     },
     onNotice(callback) {
       room.onMessage('notice', (m: Notice) => callback(m));
