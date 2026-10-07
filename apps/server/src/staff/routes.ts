@@ -13,6 +13,7 @@ import {
   type SanctionKind,
 } from '../moderation/sanctions';
 import { REPORT_KINDS } from '../reports/routes';
+import { isMaintenance } from '../site/settings';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,6 +89,42 @@ export function registerStaffRoutes(app: FastifyInstance, pool: pg.Pool, notifyU
   app.get('/api/staff/me', async (req, reply) => {
     if (!(await staffOnly(req, reply))) return;
     return { staff: true };
+  });
+
+  // ----- Dashboard -----------------------------------------------------------
+  // The numbers an administrator looks at first: how the game is doing, and what waits for the staff.
+  app.get('/api/staff/dashboard', async (req, reply) => {
+    if (!(await staffOnly(req, reply))) return;
+    const n = (r: pg.QueryResult<{ n: string }>) => Number(r.rows[0]!.n);
+    const [players, today, creations, reportsOpen, sanctions, messages, blocked, perDay, news, maintenance] = await Promise.all([
+      pool.query<{ n: string }>('SELECT count(*) AS n FROM users'),
+      pool.query<{ n: string }>("SELECT count(*) AS n FROM users WHERE created_at >= date_trunc('day', now())"),
+      pool.query<{ n: string }>('SELECT count(*) AS n FROM items'),
+      pool.query<{ n: string }>("SELECT count(DISTINCT (kind, target_key)) AS n FROM reports WHERE status = 'open'"),
+      pool.query<{ n: string }>(`SELECT count(*) AS n FROM sanctions s WHERE s.kind <> 'warning' AND ${liveSql('s')}`),
+      pool.query<{ n: string }>("SELECT count(*) AS n FROM chat_log WHERE created_at > now() - interval '24 hours'"),
+      pool.query<{ n: string }>("SELECT count(*) AS n FROM chat_log WHERE blocked AND created_at > now() - interval '24 hours'"),
+      pool.query<{ day: string; n: string }>(
+        `SELECT to_char(d::date, 'YYYY-MM-DD') AS day, count(u.id) AS n
+           FROM generate_series(current_date - 6, current_date, interval '1 day') d
+           LEFT JOIN users u ON u.created_at >= d AND u.created_at < d + interval '1 day'
+          GROUP BY d ORDER BY d`,
+      ),
+      pool.query<{ n: string }>('SELECT count(*) AS n FROM announcements WHERE published'),
+      isMaintenance(pool),
+    ]);
+    return {
+      players: n(players),
+      newToday: n(today),
+      creations: n(creations),
+      reportsOpen: n(reportsOpen),
+      sanctionsLive: n(sanctions),
+      messages24h: n(messages),
+      blocked24h: n(blocked),
+      signups: perDay.rows.map((r) => ({ day: r.day, count: Number(r.n) })),
+      announcements: n(news),
+      maintenance,
+    };
   });
 
   // ----- Reports -------------------------------------------------------------

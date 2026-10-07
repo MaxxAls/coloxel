@@ -223,6 +223,17 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       expect(mine).not.toMatch(/@test\.dev/);
     });
 
+    it('shows the staff a link to the administration, and nobody else', async () => {
+      const staff = await staffMember('site_admin_link');
+      const player = await signUp('site_no_admin_link');
+      const asStaff = (await app.inject({ method: 'GET', url: '/site', cookies: as(staff) })).body;
+      expect(asStaff).toMatch(/href="[^"]*\/admin\.html"/);
+      for (const who of [player]) {
+        expect((await app.inject({ method: 'GET', url: '/site', cookies: as(who) })).body).not.toContain('admin.html');
+      }
+      expect((await page('/site')).body).not.toContain('admin.html');
+    });
+
     it('serves the scripts of the pages, and only those', async () => {
       for (const name of ['site.js', 'city.js']) {
         const res = await page(`/site/assets/${name}`);

@@ -270,7 +270,7 @@ export interface PageOptions {
   /** Where the game itself lives. */
   gameUrl: string;
   /** The signed-in player, if any. */
-  user: { nickname: string } | null;
+  user: { nickname: string; staff?: boolean } | null;
   /** Page class for the body, and the animated city behind it. */
   bodyClass?: string;
   city?: boolean;
@@ -293,7 +293,7 @@ const NAV: [string, string, string][] = [
 export function page(o: PageOptions): string {
   const links = NAV.map(([key, href, label]) => `<a href="${href}"${key === o.active ? ' class="on"' : ''}>${label}</a>`).join('');
   const account = o.user
-    ? `<div class="who"><span>Salut, <b>${esc(o.user.nickname)}</b></span><a class="btn gold small" href="${esc(o.gameUrl)}">${icon('play', 14)} Jouer</a><button class="btn white small" type="button" data-logout>Se déconnecter</button></div>`
+    ? `<div class="who"><span>Salut, <b>${esc(o.user.nickname)}</b></span><a class="btn gold small" href="${esc(o.gameUrl)}">${icon('play', 14)} Jouer</a>${o.user.staff ? `<a class="btn pink small" href="${esc(o.gameUrl.replace(/\/+$/, ''))}/admin.html">${icon('shield', 14)} Administration</a>` : ''}<button class="btn white small" type="button" data-logout>Se déconnecter</button></div>`
     : `<div class="who"><a class="btn white small" href="/site/connexion">Se connecter</a><a class="btn gold small" href="/site/inscription">Créer un compte</a></div>`;
   const top = o.bare
     ? ''

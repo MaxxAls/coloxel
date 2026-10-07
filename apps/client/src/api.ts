@@ -247,6 +247,19 @@ export interface SanctionOrder {
   reason: string;
 }
 
+export interface StaffDashboard {
+  players: number;
+  newToday: number;
+  creations: number;
+  reportsOpen: number;
+  sanctionsLive: number;
+  messages24h: number;
+  blocked24h: number;
+  signups: { day: string; count: number }[];
+  announcements: number;
+  maintenance: boolean;
+}
+
 export interface ChatQuery {
   nickname?: string;
   owner?: string;
@@ -315,6 +328,7 @@ export const api = {
   notices: () => call<{ notices: { id: number; kind: 'warning' | 'mute'; text: string }[] }>('GET', '/api/notices'),
   noticesSeen: (ids: number[]) => call<unknown>('POST', '/api/notices/seen', { ids }),
   staffMe: () => call<{ staff: true }>('GET', '/api/staff/me'),
+  staffDashboard: () => call<StaffDashboard>('GET', '/api/staff/dashboard'),
   staffReports: () => call<{ groups: StaffReportGroup[] }>('GET', '/api/staff/reports'),
   staffHandled: () => call<{ handled: StaffHandledReport[] }>('GET', '/api/staff/reports?status=handled'),
   staffResolve: (body: { kind: ReportKind; targetKey: string; decision: 'dismiss' | 'confirm'; note?: string; sanction?: SanctionOrder }) =>

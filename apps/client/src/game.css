@@ -1877,3 +1877,97 @@ body.in-game {
 .staff .check input {
   width: auto;
 }
+
+/* ---------- Dashboard and the administration page ---------- */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.dash-card {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  color: var(--text);
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+button.dash-card {
+  cursor: pointer;
+}
+button.dash-card:hover {
+  border-color: var(--accent);
+  filter: none;
+}
+.dash-card strong {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--accent);
+}
+.dash-alert {
+  border-color: #ff8a80;
+}
+.dash-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 150px;
+  padding: 8px;
+  background: #120f22;
+  border-radius: 8px;
+}
+.dash-bar {
+  flex: 1;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  gap: 3px;
+}
+.dash-bar span {
+  align-self: end;
+  width: 100%;
+  min-height: 3px;
+  background: linear-gradient(#ffd877, #ffc857);
+  border-radius: 4px 4px 0 0;
+}
+
+body.admin {
+  overflow: auto;
+}
+body.admin .admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1100px;
+  margin: 18px auto 0;
+  padding: 0 12px;
+}
+body.admin .admin-bar h1 {
+  margin: 0;
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--accent);
+}
+body.admin .admin-bar a {
+  color: var(--text);
+}
+body.admin .staff.window {
+  position: static;
+  transform: none;
+  --wx: 0px;
+  width: min(1100px, calc(100vw - 24px));
+  height: calc(100vh - 90px);
+  margin: 14px auto 24px;
+  animation: none;
+}
+body.admin .staff .win-bar button.win-close {
+  display: none;
+}

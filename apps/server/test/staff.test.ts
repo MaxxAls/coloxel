@@ -95,6 +95,30 @@ describe.skipIf(!available)('staff panel and sanctions (PostgreSQL)', () => {
     });
   });
 
+  describe('dashboard', () => {
+    it('gives the staff the numbers of the game, and nobody else', async () => {
+      const staff = await signUpStaff('st_dash_staff');
+      const player = await signUp('st_dash_player');
+      expect((await get(player, '/api/staff/dashboard')).statusCode).toBe(404);
+      expect((await app.inject({ method: 'GET', url: '/api/staff/dashboard' })).statusCode).toBe(401);
+
+      await pool.query("INSERT INTO chat_log (user_id, room, text) VALUES ($1, 'hall', 'bonjour')", [player.id]);
+      await pool.query("INSERT INTO chat_log (user_id, room, text, blocked, reason) VALUES ($1, 'hall', 'x', true, 'link')", [player.id]);
+      await post(staff, `/api/staff/players/${player.id}/sanctions`, { kind: 'mute', minutes: 10, reason: 'Pour le test' });
+      const d = (await get(staff, '/api/staff/dashboard')).json();
+      expect(d.players).toBeGreaterThanOrEqual(2);
+      expect(d.newToday).toBeGreaterThanOrEqual(2);
+      expect(d.messages24h).toBeGreaterThanOrEqual(2);
+      expect(d.blocked24h).toBeGreaterThanOrEqual(1);
+      expect(d.sanctionsLive).toBeGreaterThanOrEqual(1);
+      expect(typeof d.maintenance).toBe('boolean');
+      // A week of sign-ups, oldest first, today last, and it adds up.
+      expect(d.signups).toHaveLength(7);
+      expect(d.signups.at(-1).count).toBe(d.newToday);
+      expect(d.signups.map((s: { day: string }) => s.day)).toEqual([...d.signups.map((s: { day: string }) => s.day)].sort());
+    });
+  });
+
   describe('reports', () => {
     it('groups the reports of one thing, most reported first, and keeps who said what', async () => {
       const staff = await signUpStaff('st_rep_staff');

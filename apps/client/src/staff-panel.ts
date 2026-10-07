@@ -14,8 +14,9 @@ import {
 import { REASONS } from './report-dialog';
 import { windowBar } from './window';
 
-type Tab = 'reports' | 'chat' | 'players' | 'news';
+type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news';
 const TABS: [Tab, string][] = [
+  ['dashboard', 'Tableau de bord'],
   ['reports', 'Signalements'],
   ['chat', 'Journal du chat'],
   ['players', 'Joueurs'],
@@ -67,7 +68,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: '2-di
 const roomName = (room: string) => (room === 'hall' ? 'Hall' : room.startsWith('apartment:') ? 'Appart' : room);
 
 /** The staff panel: reports to review, the chat journal, player sheets with their sanctions. Only shown to staff; the server checks the role anyway. */
-export function createStaffPanel(options: { onToggle(open: boolean): void; notify(text: string): void }): StaffPanel {
+export function createStaffPanel(options: { onToggle(open: boolean): void; notify(text: string): void; start?: Tab }): StaffPanel {
   const root = el('section', 'window staff');
   root.hidden = true;
   root.setAttribute('role', 'dialog');
@@ -81,7 +82,7 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
   body.append(tabs, content);
   root.append(windowBar('Panel staff', () => hide()), body);
 
-  let tab: Tab = 'reports';
+  let tab: Tab = options.start ?? 'dashboard';
   let showHandled = false;
   let chatQuery: ChatQuery = {};
   let playerId: string | null = null;
@@ -151,6 +152,57 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
       submit.disabled = false;
     });
     return form;
+  }
+
+  // ----- Dashboard ---------------------------------------------------------
+  async function renderDashboard() {
+    content.replaceChildren(el('p', 'muted', 'Chargement…'));
+    const res = await api.staffDashboard();
+    if (!res.ok) return void content.replaceChildren(el('p', 'error', res.error));
+    const d = res.data;
+    const view = el('div', 'staff-list');
+
+    const card = (label: string, value: number | string, hint?: string, go?: () => void) => {
+      const box = el(go ? 'button' : 'div', 'dash-card');
+      if (box instanceof HTMLButtonElement) box.type = 'button';
+      box.append(el('strong', undefined, String(value)), el('span', undefined, label));
+      if (hint) box.append(el('small', 'muted', hint));
+      if (go) box.addEventListener('click', go);
+      return box;
+    };
+    const grid = el('div', 'dash-grid');
+    grid.append(
+      card('joueurs', d.players, `${d.newToday} inscrit(s) aujourd’hui`),
+      card('objets créés', d.creations),
+      card('signalements en attente', d.reportsOpen, d.reportsOpen ? 'à traiter' : 'rien à traiter', () => ((tab = 'reports'), render())),
+      card('sanctions en cours', d.sanctionsLive, 'sourdines, suspensions, bannissements'),
+      card('messages (24 h)', d.messages24h, `${d.blocked24h} bloqué(s) par le filtre`, () => ((chatQuery = { blocked: 'true' }), (tab = 'chat'), render())),
+      card('annonces publiées', d.announcements, undefined, () => ((tab = 'news'), render())),
+    );
+    view.append(grid);
+
+    const state = el('div', d.maintenance ? 'staff-card dash-alert' : 'staff-card');
+    state.append(
+      el('strong', undefined, d.maintenance ? 'Le jeu est EN MAINTENANCE' : 'Le jeu est ouvert'),
+      el('p', 'muted small', d.maintenance ? 'Seuls les membres de l’équipe peuvent jouer.' : 'Tout est normal.'),
+      button('Gérer', () => ((tab = 'news'), render())),
+    );
+    view.append(state);
+
+    view.append(el('h3', undefined, 'Inscriptions des 7 derniers jours'));
+    const max = Math.max(1, ...d.signups.map((s) => s.count));
+    const chart = el('div', 'dash-chart');
+    chart.setAttribute('role', 'img');
+    chart.setAttribute('aria-label', `Inscriptions par jour : ${d.signups.map((s) => `${s.day} ${s.count}`).join(', ')}`);
+    for (const s of d.signups) {
+      const col = el('div', 'dash-bar');
+      const bar = el('span');
+      bar.style.height = `${Math.round((s.count / max) * 100)}%`;
+      col.append(el('b', undefined, String(s.count)), bar, el('small', 'muted', new Date(`${s.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })));
+      chart.append(col);
+    }
+    view.append(chart);
+    content.replaceChildren(view);
   }
 
   // ----- Reports -----------------------------------------------------------
@@ -570,7 +622,8 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
       b.classList.toggle('active', key === tab);
       b.setAttribute('aria-selected', String(key === tab));
     }
-    if (tab === 'reports') await renderReports();
+    if (tab === 'dashboard') await renderDashboard();
+    else if (tab === 'reports') await renderReports();
     else if (tab === 'chat') await renderChat();
     else if (tab === 'news') await renderNews();
     else await renderPlayers();

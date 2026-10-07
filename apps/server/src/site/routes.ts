@@ -9,7 +9,7 @@ import { filterText } from '../moderation/text-filter';
 import { spriteToPng } from '../sprite-png';
 import { findAnnouncement, listAnnouncements, type Announcement } from './announcements';
 import { avatarPng, heroScenePng } from './art';
-import { isMaintenance } from './settings';
+import { isMaintenance, isStaff } from './settings';
 import { esc, icon, logo, page, type PageOptions } from './theme';
 
 // The public website of the game: a landing page that makes people want to play, news, rankings,
@@ -92,13 +92,13 @@ export interface SiteDeps {
 export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: SiteDeps = {}) {
   const gameUrl = deps.clientUrl ?? process.env.CLIENT_URL ?? 'http://localhost:5173';
 
-  const html = (req: FastifyRequest, reply: FastifyReply, code: number, options: Omit<PageOptions, 'gameUrl' | 'user'>) =>
+  const html = async (req: FastifyRequest, reply: FastifyReply, code: number, options: Omit<PageOptions, 'gameUrl' | 'user'>) =>
     reply
       .code(code)
       .header('content-type', 'text/html; charset=utf-8')
       // Pages change with who is looking: never shared between visitors.
       .header('cache-control', 'private, no-cache')
-      .send(page({ ...options, gameUrl, user: req.user ? { nickname: req.user.nickname } : null }));
+      .send(page({ ...options, gameUrl, user: req.user ? { nickname: req.user.nickname, staff: await isStaff(pool, req.user.id) } : null }));
 
   const notFound = (req: FastifyRequest, reply: FastifyReply) =>
     html(req, reply, 404, {
