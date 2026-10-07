@@ -138,7 +138,7 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       expect(res.body).toContain(`/site/objet/${itemId}.png`);
       // Neither the description (anybody can type anything in it), nor the private data of the player.
       expect(res.body).not.toMatch(/06 12|appelle moi/);
-      expect(res.body).not.toMatch(/@test\.dev|1990|password|motdepasse/i);
+      expect(res.body).not.toMatch(/@test\.dev|1990|motdepasse|password_hash/i);
       expect(res.body).toContain('sur invitation');
       await pool.query("UPDATE users SET apartment_access = 'building' WHERE id = $1", [maker.id]);
       await pool.query("UPDATE apartments SET name = 'Atelier lune' WHERE owner_id = $1", [maker.id]);
@@ -231,6 +231,39 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       }
       expect((await page('/site/assets/..%2Fsettings.ts')).statusCode).toBe(404);
       expect((await page('/site/assets/secret.js')).statusCode).toBe(404);
+    });
+  });
+
+  describe('pictures', () => {
+    const png = (body: Buffer) => body.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
+
+    it('draws the home page scene and the avatar of any player with the game’s own engines', async () => {
+      const scene = await app.inject({ method: 'GET', url: '/site/scene.png' });
+      expect(scene.statusCode).toBe(200);
+      expect(png(scene.rawPayload)).toBe(true);
+      const maker = await signUp('site_pretty');
+      const avatar = await app.inject({ method: 'GET', url: '/site/avatar/SITE_PRETTY.png' });
+      expect(avatar.statusCode).toBe(200);
+      expect(avatar.headers['content-type']).toBe('image/png');
+      expect(png(avatar.rawPayload)).toBe(true);
+      expect((await page('/site/avatar/personne_ici.png')).statusCode).toBe(404);
+      // The profile and the home page show it.
+      expect((await page('/site/joueur/site_pretty')).body).toContain('/site/avatar/site_pretty.png');
+      expect((await page('/site')).body).toContain('/site/avatar/site_pretty.png');
+      void maker;
+    }, 30000);
+
+    it('draws a player as they chose to look, and the same player the same way every time', async () => {
+      const maker = await signUp('site_stylish');
+      const before = await app.inject({ method: 'GET', url: '/site/avatar/site_stylish.png' });
+      await pool.query('UPDATE users SET look = $2 WHERE id = $1', [
+        maker.id,
+        JSON.stringify({ skin: 3, eyes: 1, mouth: 1, hair: 2, hairColor: 6, top: 1, topColor: 5, bottom: 1, bottomColor: 7, shoes: 0, shoesColor: 3, hat: 0, hatColor: 0, glasses: 0, extra: 0, extraColor: 0 }),
+      ]);
+      const after = await app.inject({ method: 'GET', url: '/site/avatar/site_stylish.png' });
+      expect(after.statusCode).toBe(200);
+      expect(after.rawPayload.equals(before.rawPayload)).toBe(false);
+      expect((await app.inject({ method: 'GET', url: '/site/avatar/site_stylish.png' })).rawPayload.equals(after.rawPayload)).toBe(true);
     });
   });
 

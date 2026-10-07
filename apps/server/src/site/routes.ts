@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { renderSprite, type Recipe } from '@coloxel/render';
+import { lookFor, parseLook, renderSprite, type Look, type Recipe } from '@coloxel/render';
 import type { Presence } from '../building/routes';
 import { itemMaskedSql } from '../moderation/masking';
 import { filterText } from '../moderation/text-filter';
 import { spriteToPng } from '../sprite-png';
 import { findAnnouncement, listAnnouncements, type Announcement } from './announcements';
+import { avatarPng, heroScenePng } from './art';
 import { isMaintenance } from './settings';
 import { esc, icon, logo, page, type PageOptions } from './theme';
 
@@ -16,9 +17,9 @@ import { esc, icon, logo, page, type PageOptions } from './theme';
 // sends visitors here to get an account).
 //
 // Everything readable without signing in only shows what a player already shows to the whole
-// building: a nickname, the creations (name and number), the name of an apartment that is open.
-// Never an email, a birth date, who is where, what was said, a description typed by a player
-// (it could hold anything), nor anything the staff or the reports have masked.
+// building: a nickname, how they look, the creations (name and number), the name of an apartment
+// that is open. Never an email, a birth date, who is where, what was said, a description typed
+// by a player (it could hold anything), nor anything the staff or the reports have masked.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const frDate = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' });
@@ -74,6 +75,14 @@ const posts = (list: Announcement[]) =>
     )
     .join('');
 
+const crowd = (people: { nickname: string }[]) =>
+  people
+    .map(
+      (p) =>
+        `<a class="who-card" href="${playerLink(p.nickname)}"><div class="stage"><img src="/site/avatar/${encodeURIComponent(p.nickname)}.png" alt="" width="56" height="108" loading="lazy"></div><b>${esc(p.nickname)}</b></a>`,
+    )
+    .join('');
+
 export interface SiteDeps {
   occupancy?: () => Promise<Presence>;
   /** Where the game itself is served: the "Jouer" buttons and the place sign-in leads to. */
@@ -97,63 +106,74 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
       body: '<main class="wrap page"><h1 class="px">Page introuvable</h1><p class="lead">Cette page n’existe pas (ou plus).</p><a class="btn gold" href="/site">Retour à l’accueil</a></main>',
     });
 
-  // ----- Scripts of the pages ---------------------------------------------------
+  // ----- Scripts and pictures of the pages ---------------------------------------
   app.get<{ Params: { name: string } }>('/site/assets/:name', async (req, reply) => {
     const body = ASSETS[req.params.name];
     if (!body) return reply.code(404).send('Introuvable');
     return reply.header('content-type', 'text/javascript; charset=utf-8').header('cache-control', 'public, max-age=300').send(body);
   });
 
+  // The picture of the home page: furnished apartments with people in them, drawn by the game's own engines (once).
+  let scene: Buffer | null = null;
+  app.get('/site/scene.png', async (_req, reply) => {
+    scene ??= heroScenePng();
+    return reply.header('cache-control', 'public, max-age=3600').type('image/png').send(scene);
+  });
+
+  // How a player looks, as everybody sees them in the game. A look is only numbers: nothing private in it.
+  const avatars = new Map<string, Buffer>();
+  app.get<{ Params: { nickname: string } }>('/site/avatar/:nickname.png', async (req, reply) => {
+    const { rows } = await pool.query<{ id: string; look: unknown }>('SELECT id, look FROM users WHERE lower(nickname) = lower($1)', [req.params.nickname]);
+    const user = rows[0];
+    if (!user) return reply.code(404).send('Introuvable');
+    const look: Look = parseLook(user.look) ?? lookFor(user.id);
+    const key = JSON.stringify(look);
+    let png = avatars.get(key);
+    if (!png) {
+      png = avatarPng(look, 4);
+      if (avatars.size >= 300) avatars.delete(avatars.keys().next().value!);
+      avatars.set(key, png);
+    }
+    return reply.header('cache-control', 'public, max-age=300').type('image/png').send(png);
+  });
+
   // ----- Home ---------------------------------------------------------------------
   app.get('/site', async (req, reply) => {
-    const [players, serial, news, items, present, maintenance] = await Promise.all([
+    const [players, serial, news, items, arrivals, present, maintenance] = await Promise.all([
       pool.query<{ n: string }>('SELECT count(*) AS n FROM users'),
       pool.query<{ last_value: number }>('SELECT last_value FROM item_serial WHERE id = 1'),
       listAnnouncements(pool, { limit: 3 }),
       publicItems(pool, '', [], 12),
+      pool.query<{ nickname: string }>('SELECT nickname FROM users ORDER BY created_at DESC, id DESC LIMIT 10'),
       deps.occupancy ? deps.occupancy().catch(() => null) : Promise.resolve(null),
       isMaintenance(pool),
     ]);
     const online = present ? present.hall + [...present.apartments.values()].reduce((a, b) => a + b, 0) : 0;
 
-    // The card beside the headline: a sign-in form for a visitor, a small summary for a player.
-    let card: string;
+    let copy: string;
     if (req.user) {
       const [me, mine, friends] = await Promise.all([
         pool.query<{ pixels: number }>('SELECT pixels FROM users WHERE id = $1', [req.user.id]),
         pool.query<{ n: string }>('SELECT count(*) AS n FROM items WHERE creator_id = $1', [req.user.id]),
         pool.query<{ n: string }>(`SELECT count(*) AS n FROM friendships WHERE status = 'accepted' AND (requester_id = $1 OR addressee_id = $1)`, [req.user.id]),
       ]);
-      card = `<div class="panel"><h2 class="px">Ton appart t’attend</h2>
-<div class="me-line"><span>Pseudo</span><strong>${esc(req.user.nickname)}</strong></div>
-<div class="me-line"><span>${icon('gem', 14)} Pixels</span><strong>${me.rows[0]?.pixels ?? 0}</strong></div>
-<div class="me-line"><span>${icon('wand', 14)} Objets inventés</span><strong>${Number(mine.rows[0]!.n)}</strong></div>
-<div class="me-line"><span>${icon('friends', 14)} Amis</span><strong>${Number(friends.rows[0]!.n)}</strong></div>
-<p style="margin:16px 0 0"><a class="btn gold big" style="width:100%" href="${esc(gameUrl)}">${icon('play', 18)} Jouer</a></p></div>`;
+      copy = `<span class="eyebrow">${icon('heart', 14)} Content de te revoir</span>
+<h1 class="px">Salut <em>${esc(req.user.nickname)}</em> !<br>Ton appart t’attend.</h1>
+<div class="me-chips"><span>${icon('gem', 16)} ${me.rows[0]?.pixels ?? 0} Pixels</span><span>${icon('wand', 16)} ${Number(mine.rows[0]!.n)} objets inventés</span><span>${icon('friends', 16)} ${Number(friends.rows[0]!.n)} amis</span></div>
+<div class="cta"><a class="btn gold big" href="${esc(gameUrl)}">${icon('play', 18)} Jouer maintenant</a><a class="btn white big" href="${playerLink(req.user.nickname)}">Mon profil</a></div>`;
     } else {
-      card = `<div class="panel"><h2 class="px">Déjà un compte ?</h2>
-<form class="form" data-login novalidate>
-<label class="field">Email<input name="email" type="email" autocomplete="email" required placeholder="toi@exemple.fr"></label>
-<label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="current-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
-<p class="form-error" role="alert"></p>
-<button class="btn gold" type="submit">Entrer dans l’immeuble</button>
-<p class="hint">Pas encore de compte ? <a href="/site/inscription">Crée le tien, c’est gratuit</a>.</p>
-</form></div>`;
-    }
-
-    const cta = req.user
-      ? `<a class="btn gold big" href="${esc(gameUrl)}">${icon('play', 18)} Jouer maintenant</a><a class="btn ghost big" href="/site/actualites">Les nouveautés</a>`
-      : `<a class="btn gold big" href="/site/inscription">${icon('star', 18)} Créer mon compte</a><a class="btn ghost big" href="/site/connexion">J’ai déjà un compte</a>`;
-
-    const body = `
-<section class="hero"><canvas id="city" aria-hidden="true"></canvas>
-<div class="wrap hero-in"><div>
-<span class="eyebrow">${icon('star', 14)} Un jeu social en pixel art</span>
+      copy = `<span class="eyebrow">${icon('star', 14)} Un jeu social en pixel art</span>
 <h1 class="px">Invente un objet.<br><em>Il n’existera qu’une seule fois.</em></h1>
 <p class="lead">Décris-le avec des mots : une IA en dessine la recette, le jeu le dessine, et il naît en exemplaire unique et numéroté. Décore ton appart, rends visite à tes voisins, montre ce que tu as inventé.</p>
-<div class="cta">${cta}</div>
-<p class="stamp">Gratuit · Réservé aux adultes pendant l’alpha · Chat filtré et équipe de modération</p>
-</div>${card}</div></section>
+<div class="cta"><a class="btn gold big" href="/site/inscription">${icon('star', 18)} Créer mon compte</a><a class="btn white big" href="/site/connexion">J’ai déjà un compte</a></div>
+<p class="stamp">Gratuit · Réservé aux adultes pendant l’alpha · Chat filtré et équipe de modération</p>`;
+    }
+
+    const body = `
+<section class="hero"><i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i>
+<div class="wrap hero-in"><div class="hero-copy">${copy}</div>
+<div class="hero-art"><img src="/site/scene.png" alt="Trois appartements décorés où des joueurs se retrouvent" width="1480" height="640"></div></div>
+<div class="grass"></div></section>
 
 <div class="wrap stats"><div class="stats-in">
 <div class="stat"><strong>${Number(players.rows[0]!.n)}</strong><span>joueurs</span></div>
@@ -165,10 +185,10 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
 <div class="wrap">
 <section class="block reveal"><div class="head"><div><h2 class="px">Un immeuble à habiter</h2><p>Chaque joueur a son appart dans un immeuble commun. Ce que tu y poses, c’est toi qui l’as inventé.</p></div></div>
 <div class="tiles">
-<div class="tile" style="--c:var(--pink)"><div class="ico">${icon('wand', 26)}</div><h3>Invente</h3><p>Écris « une lampe en forme de lune » : l’objet apparaît, unique, avec son numéro et ton nom dessus.</p></div>
-<div class="tile" style="--c:var(--gold)"><div class="ico">${icon('home', 26)}</div><h3>Décore</h3><p>Meubles gratuits, sols, papiers peints, lumières à allumer : fais de ton appart un endroit à toi.</p></div>
-<div class="tile" style="--c:var(--teal)"><div class="ico">${icon('friends', 26)}</div><h3>Rencontre</h3><p>Visite les voisins, discute, sonne aux portes, ajoute des amis et retrouve-les en un clic.</p></div>
-<div class="tile" style="--c:var(--blue)"><div class="ico">${icon('shield', 26)}</div><h3>Joue sereinement</h3><p>Messages filtrés, signalements, une équipe qui veille : l’immeuble reste agréable pour tous.</p></div>
+<div class="tile" style="--c:var(--pink)"><div class="ico">${icon('wand', 54)}</div><h3>Invente</h3><p>Écris « une lampe en forme de lune » : l’objet apparaît, unique, avec son numéro et ton nom dessus.</p></div>
+<div class="tile" style="--c:#ffb52e"><div class="ico">${icon('home', 54)}</div><h3>Décore</h3><p>Meubles gratuits, sols, papiers peints, lumières à allumer : fais de ton appart un endroit à toi.</p></div>
+<div class="tile" style="--c:var(--teal)"><div class="ico">${icon('friends', 54)}</div><h3>Rencontre</h3><p>Visite les voisins, discute, sonne aux portes, ajoute des amis et retrouve-les en un clic.</p></div>
+<div class="tile" style="--c:var(--blue)"><div class="ico">${icon('shield', 54)}</div><h3>Joue sereinement</h3><p>Messages filtrés, signalements, une équipe qui veille : l’immeuble reste agréable pour tous.</p></div>
 </div></section>
 
 <section class="block reveal"><div class="head"><div><h2 class="px">Comment ça marche</h2></div></div>
@@ -184,7 +204,10 @@ export function registerSiteRoutes(app: FastifyInstance, pool: pg.Pool, deps: Si
 ${items.length ? `<div class="strip-row">${pieces(items)}</div>` : '<p class="muted">Le premier objet attend son inventeur. Ce sera peut-être le tien !</p>'}
 </section>
 
-<section class="block reveal"><div class="head"><div><h2 class="px">Les nouvelles</h2></div><a class="btn ghost small" href="/site/actualites">Tout voir</a></div>
+<section class="block reveal"><div class="head"><div><h2 class="px">Les derniers arrivés</h2><p>Dis bonjour à tes futurs voisins.</p></div></div>
+<div class="crowd">${crowd(arrivals.rows)}</div></section>
+
+<section class="block reveal"><div class="head"><div><h2 class="px">Les nouvelles</h2></div><a class="btn white small" href="/site/actualites">Tout voir</a></div>
 ${news.length ? `<div class="news">${posts(news)}</div>` : '<p class="muted">Pas encore d’actualité.</p>'}</section>
 </div>
 
@@ -193,28 +216,28 @@ ${
     ? ''
     : `<section class="band reveal"><div class="wrap"><h2 class="px">Ton appart est prêt à être meublé</h2><p>Crée ton compte en une minute : tu arrives dans un appart déjà installé, avec des Pixels pour commencer.</p><a class="btn gold big" href="/site/inscription">${icon('play', 18)} Commencer à jouer</a></div></section>`
 }`;
-    return html(req, reply, 200, { title: 'Accueil', active: 'home', body, city: true });
+    return html(req, reply, 200, { title: 'Accueil', active: 'home', body });
   });
 
   // ----- Sign in and sign up (the game sends people here) -----------------------------
   app.get('/site/connexion', async (req, reply) => {
     if (req.user) return reply.redirect(gameUrl);
     const body = `<main class="auth-page"><canvas id="city" aria-hidden="true"></canvas>
-<div class="panel auth-card">${logo()}<h1 class="px">Content de te revoir</h1><p class="sub">Entre dans l’immeuble.</p>
+<div class="win auth-card"><div class="in">${logo()}<h1 class="px">Content de te revoir</h1><p class="sub">Entre dans l’immeuble.</p>
 <form class="form" data-login novalidate>
 <label class="field">Email<input name="email" type="email" autocomplete="email" required placeholder="toi@exemple.fr"></label>
 <label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="current-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
 <p class="form-error" role="alert"></p>
 <button class="btn gold big" type="submit">Se connecter</button>
 </form>
-<p class="switch">Pas encore de compte ? <a href="/site/inscription">Crée le tien</a> · <a href="/site">Retour au site</a></p></div></main>`;
+<p class="switch">Pas encore de compte ? <a href="/site/inscription">Crée le tien</a> · <a href="/site">Retour au site</a></p></div></div></main>`;
     return html(req, reply, 200, { title: 'Connexion', body, bare: true, city: true });
   });
 
   app.get('/site/inscription', async (req, reply) => {
     if (req.user) return reply.redirect(gameUrl);
     const body = `<main class="auth-page"><canvas id="city" aria-hidden="true"></canvas>
-<div class="panel auth-card">${logo()}<h1 class="px">Bienvenue dans l’immeuble</h1><p class="sub">Trois petites étapes, et ton appart est à toi.</p>
+<div class="win auth-card"><div class="in">${logo()}<h1 class="px">Bienvenue dans l’immeuble</h1><p class="sub">Trois petites étapes, et ton appart est à toi.</p>
 <form class="form" data-register novalidate>
 <ol class="dots" aria-hidden="true"><li></li><li></li><li></li></ol>
 <div class="step form">
@@ -226,15 +249,15 @@ ${
 <label class="field">Mot de passe<span class="pw"><input name="password" type="password" autocomplete="new-password" required><button type="button" data-peek aria-pressed="false">Voir</button></span></label>
 <label class="field">Encore une fois<input name="password2" type="password" autocomplete="new-password" required></label>
 <p class="hint">8 caractères au moins. L’email ne sera jamais montré aux autres joueurs.</p>
-<div class="row"><button class="btn ghost" type="button" data-back>Retour</button><button class="btn gold" type="button" data-next>Continuer</button></div></div>
+<div class="row"><button class="btn white" type="button" data-back>Retour</button><button class="btn gold" type="button" data-next>Continuer</button></div></div>
 <div class="step form" hidden>
 <label class="field">Ta date de naissance<input name="birth" type="date" autocomplete="bday" required></label>
 <p class="hint">Coloxel est réservé aux adultes (18 ans et plus) pendant l’alpha. Ta date de naissance n’est jamais affichée.</p>
 <label class="check"><input type="checkbox" name="rules"><span>Je respecte les autres joueurs, je ne partage aucune information personnelle et j’accepte que l’équipe modère le jeu.</span></label>
-<div class="row"><button class="btn ghost" type="button" data-back>Retour</button><button class="btn gold" type="submit">Créer mon compte</button></div></div>
+<div class="row"><button class="btn white" type="button" data-back>Retour</button><button class="btn gold" type="submit">Créer mon compte</button></div></div>
 <p class="form-error" role="alert"></p>
 </form>
-<p class="switch">Déjà un compte ? <a href="/site/connexion">Connecte-toi</a> · <a href="/site">Retour au site</a></p></div></main>`;
+<p class="switch">Déjà un compte ? <a href="/site/connexion">Connecte-toi</a> · <a href="/site">Retour au site</a></p></div></div></main>`;
     return html(req, reply, 200, { title: 'Inscription', body, bare: true, city: true });
   });
 
@@ -246,7 +269,7 @@ ${
     const shown = list.slice(0, 12);
     const body = `<main class="wrap page"><h1 class="px">Actualités</h1><p class="lead">Les nouveautés du jeu, racontées par l’équipe.</p>
 ${shown.length ? `<div class="news">${posts(shown)}</div>` : '<p class="muted">Rien ici pour l’instant.</p>'}
-${more ? `<p style="margin-top:22px"><a class="btn ghost" href="/site/actualites?avant=${shown[shown.length - 1]!.id}">Plus anciennes</a></p>` : ''}</main>`;
+${more ? `<p style="margin-top:26px"><a class="btn white" href="/site/actualites?avant=${shown[shown.length - 1]!.id}">Plus anciennes</a></p>` : ''}</main>`;
     return html(req, reply, 200, { title: 'Actualités', active: 'news', body });
   });
 
@@ -255,7 +278,7 @@ ${more ? `<p style="margin-top:22px"><a class="btn ghost" href="/site/actualites
     const a = await findAnnouncement(pool, Number(req.params.id));
     if (!a) return notFound(req, reply);
     const body = `<main class="wrap page"><article class="article"><span class="chip${a.pinned ? ' gold' : ''}">${esc(frDate(a.createdAt))} · par ${esc(a.author)}</span>
-<h1 class="px">${esc(a.title)}</h1>${paragraphs(a.body)}<p style="margin-top:26px"><a class="btn ghost" href="/site/actualites">← Toutes les actualités</a></p></article></main>`;
+<h1 class="px">${esc(a.title)}</h1>${paragraphs(a.body)}<p style="margin-top:26px"><a class="btn white" href="/site/actualites">← Toutes les actualités</a></p></article></main>`;
     return html(req, reply, 200, { title: a.title, active: 'news', body, description: excerpt(a.body, 160) });
   });
 
@@ -289,15 +312,15 @@ ${more ? `<p style="margin-top:22px"><a class="btn ghost" href="/site/actualites
   app.get('/site/equipe', async (req, reply) => {
     const { rows } = await pool.query<{ nickname: string }>("SELECT nickname FROM users WHERE role = 'staff' ORDER BY lower(nickname)");
     const body = `<main class="wrap page"><h1 class="px">L’équipe</h1><p class="lead">Elle veille sur le jeu, répond aux signalements et garde l’immeuble agréable pour tous. Un souci ? Signale-le en jeu : un membre de l’équipe le lira.</p>
-${rows.length ? `<ul class="team">${rows.map((r) => `<li>${icon('shield', 18)} ${esc(r.nickname)}</li>`).join('')}</ul>` : '<p class="muted">Personne pour l’instant.</p>'}</main>`;
+${rows.length ? `<div class="crowd" style="flex-wrap:wrap">${crowd(rows)}</div>` : '<p class="muted">Personne pour l’instant.</p>'}</main>`;
     return html(req, reply, 200, { title: 'L’équipe', active: 'team', body });
   });
 
   app.get('/site/statut', async (req, reply) => {
     const maintenance = await isMaintenance(pool);
-    const body = `<main class="wrap page"><h1 class="px">État du jeu</h1><div class="box" style="max-width:620px"><p class="live${maintenance ? ' off' : ''}" style="font-size:20px;font-weight:800;margin:0 0 6px"><i></i> ${
+    const body = `<main class="wrap page"><h1 class="px">État du jeu</h1><div class="win ${maintenance ? 'pinkbar' : 'greenbar'}" style="max-width:640px"><h2 class="px">${maintenance ? 'Maintenance' : 'Tout va bien'}</h2><div class="in"><p class="live${maintenance ? ' off' : ''}" style="font-size:20px;font-weight:800;margin:0 0 6px"><i></i> ${
       maintenance ? '<span class="bad">En maintenance</span>' : '<span class="ok">Le jeu est ouvert</span>'
-    }</p><p class="muted" style="margin:0">${maintenance ? 'Le jeu revient dans quelques instants.' : 'Tout fonctionne. Bonne partie !'}</p></div></main>`;
+    }</p><p class="muted" style="margin:0">${maintenance ? 'Le jeu revient dans quelques instants.' : 'Tout fonctionne. Bonne partie !'}</p></div></div></main>`;
     return html(req, reply, 200, { title: 'État du jeu', active: 'status', body });
   });
 
@@ -315,8 +338,10 @@ ${rows.length ? `<ul class="team">${rows.map((r) => `<li>${icon('shield', 18)} $
       pool.query<{ n: string }>(`SELECT count(*) AS n FROM items it WHERE it.creator_id = $1 AND NOT ${itemMaskedSql('it')}`, [p.id]),
     ]);
     const flat = p.access === 'building' ? `ouvert à tous${p.name && filterText(p.name).ok ? ` : « ${esc(p.name)} »` : ''}` : 'sur invitation';
-    const body = `<main class="wrap page"><h1 class="px">${esc(p.nickname)}${p.role === 'staff' ? '<span class="badge">équipe</span>' : ''}</h1>
-<p class="lead">Membre depuis ${esc(frMonth(p.created_at))} · ${Number(count.rows[0]!.n)} objet(s) inventé(s) · appartement ${flat}</p>
+    const body = `<main class="wrap page"><div class="profile">
+<div class="win violetbar"><div class="in"><div class="stage"><img src="/site/avatar/${encodeURIComponent(p.nickname)}.png" alt="Avatar de ${esc(p.nickname)}" width="120" height="232"></div></div></div>
+<div><h1 class="px">${esc(p.nickname)}${p.role === 'staff' ? '<span class="badge">équipe</span>' : ''}</h1>
+<ul class="facts"><li>${icon('heart', 18)} Membre depuis ${esc(frMonth(p.created_at))}</li><li>${icon('wand', 18)} ${Number(count.rows[0]!.n)} objet(s) inventé(s)</li><li>${icon('home', 18)} Appartement ${flat}</li></ul></div></div>
 <div class="head"><div><h2 class="px" style="font-size:14px">Ses créations</h2></div></div>${grid(items)}</main>`;
     return html(req, reply, 200, { title: p.nickname, body });
   });
