@@ -1,4 +1,5 @@
 import { Container, Graphics, Text, type Ticker } from 'pixi.js';
+import { wallStyle } from '@coloxel/render';
 import { api, apartmentTitle, type BuildingApartment } from './api';
 import { FONT, type Scene, type SceneHost } from './scene';
 
@@ -9,8 +10,6 @@ const ROOF_H = 34;
 const HALL_H = 40;
 const STREET_H = 18;
 const REFRESH_MS = 4000;
-
-const WALL_COLORS = [0xc9b8ff, 0xffc9d6, 0xbfe6d4, 0xffe2a8, 0xb8dcff, 0xf5c0ff];
 
 interface Layout {
   floors: number;
@@ -147,7 +146,8 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
     for (const a of apartments) {
       const r = cellRect(layout, a);
       const lit = !!a.owner;
-      const color = WALL_COLORS[a.id % WALL_COLORS.length]!;
+      // The wallpaper its owner picked tints the whole apartment.
+      const color = wallStyle(a.wall).left;
       if (!lit) {
         // Empty apartment: dark, waiting for someone.
         facade.rect(r.x, r.y, r.w, r.h).fill(0x241d44);

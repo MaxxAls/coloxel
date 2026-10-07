@@ -1,6 +1,7 @@
 import { Application } from 'pixi.js';
 import type { User } from './api';
 import { createBuildingScene } from './building-scene';
+import { createCatalogue } from './catalogue';
 import { createNavigator } from './navigator';
 import { createRoomScene } from './room-scene';
 import { sameTarget, type Scene, type SceneHost, type Target } from './scene';
@@ -100,6 +101,13 @@ export async function startApp(user: User) {
   });
   document.body.append(navigator.element);
 
+  // Taking furniture or changing the look works from anywhere; the apartment on screen, if it is ours, follows.
+  const catalogue = createCatalogue({
+    onChanged: () => void scene?.refresh?.(),
+    onToggle: () => markActive(),
+  });
+  document.body.append(catalogue.element);
+
   // ----- Bottom bar ----------------------------------------------------------
   interface Item {
     key: string;
@@ -112,7 +120,11 @@ export async function startApp(user: User) {
   const items: Item[] = [
     { key: 'building', label: 'Immeuble', active: () => current?.kind === 'building', run: () => go({ kind: 'building' }) },
     { key: 'home', label: 'Mon appart', active: () => !!current && sameTarget(current, home), run: () => go(home) },
-    { key: 'navigator', label: 'Navigateur', active: () => navigator.isOpen(), run: () => navigator.toggle() },
+    { key: 'navigator', label: 'Navigateur', active: () => navigator.isOpen(), run: () => {
+        catalogue.close();
+        navigator.toggle();
+      },
+    },
     {
       key: 'inventory',
       label: 'Inventaire',
@@ -126,7 +138,11 @@ export async function startApp(user: User) {
         setTimeout(() => list?.classList.remove('flash'), 900);
       },
     },
-    { key: 'catalogue', label: 'Catalogue', active: () => false, soon: true },
+    { key: 'catalogue', label: 'Catalogue', active: () => catalogue.isOpen(), run: () => {
+        navigator.close();
+        catalogue.toggle();
+      },
+    },
     { key: 'friends', label: 'Amis', active: () => false, soon: true },
   ];
   const buttons = new Map<string, HTMLButtonElement>();
@@ -137,6 +153,7 @@ export async function startApp(user: User) {
     label.textContent = item.label;
     b.append(icon(item.key), label);
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
+    if (item.key === 'catalogue') b.dataset.catalogueToggle = '';
     if (item.soon) {
       b.disabled = true;
       b.title = 'Bientôt disponible';
@@ -156,6 +173,7 @@ export async function startApp(user: User) {
 
   async function go(target: Target) {
     navigator.close();
+    catalogue.close();
     if (current && sameTarget(current, target)) return;
     const ticket = ++switching;
     nav.classList.add('busy');

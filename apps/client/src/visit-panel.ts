@@ -1,9 +1,9 @@
-import { itemSpriteUrl, type InventoryItem } from './api';
+import { furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 
 export interface VisitPanel {
   element: HTMLElement;
   /** Show the item card for this item; null closes it. */
-  inspect(item: InventoryItem | null): void;
+  inspect(item: InventoryItem | FurnitureItem | null): void;
   setPresent(count: number): void;
 }
 
@@ -69,6 +69,15 @@ export function createVisitPanel(options: VisitPanelOptions): VisitPanel {
     inspect(item) {
       card.hidden = !item;
       if (!item) return;
+      if (!('serial' in item)) {
+        // Base furniture: free, not numbered, not a creation.
+        img.src = furnitureSpriteUrl(item.key);
+        name.textContent = item.name;
+        desc.textContent = 'Gratuit, en quantité illimitée.';
+        serial.textContent = 'Mobilier de base · pas une création';
+        creator.textContent = 'Ni numéroté, ni échangeable.';
+        return;
+      }
       img.src = itemSpriteUrl(item.id);
       name.textContent = item.name;
       desc.textContent = `« ${item.description} »`;

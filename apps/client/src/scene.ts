@@ -22,6 +22,8 @@ export interface Scene {
   panel: HTMLElement;
   /** Canvas size in game pixels; the application scales it to the window. */
   size: { w: number; h: number };
+  /** Reload what the scene shows from the server (after furniture or the look changed). */
+  refresh?(): void | Promise<void>;
   destroy(): void;
 }
 

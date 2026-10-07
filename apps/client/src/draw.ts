@@ -1,4 +1,5 @@
 import { Graphics } from 'pixi.js';
+import { floorStyle, wallStyle } from '@coloxel/render';
 import { N, OX, OY, TH, TW, tileCenter } from './room';
 
 export function diamond(g: Graphics, cx: number, cy: number, hw: number, hh: number) {
@@ -16,15 +17,12 @@ export interface RoomTheme {
   decor: 'apartment' | 'hall';
 }
 
-export const APARTMENT_THEME: RoomTheme = {
-  wallLeft: 0x8a7fc0,
-  wallRight: 0x6c61a3,
-  trim: 0xe9e0ff,
-  floorA: 0xb88b56,
-  floorB: 0xc79a62,
-  floorLine: 0x8f6a3e,
-  decor: 'apartment',
-};
+/** The look of an apartment: a floor and a wallpaper from the catalogue. */
+export function apartmentTheme(floor: string, wall: string): RoomTheme {
+  const f = floorStyle(floor);
+  const w = wallStyle(wall);
+  return { wallLeft: w.left, wallRight: w.right, trim: w.trim, floorA: f.a, floorB: f.b, floorLine: f.line, decor: 'apartment' };
+}
 
 export const HALL_THEME: RoomTheme = {
   wallLeft: 0x6fa8c9,

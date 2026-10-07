@@ -124,6 +124,120 @@ body {
   color: #2a2140;
   font-weight: 600;
 }
+.catalogue {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 12;
+  width: min(560px, calc(100vw - 16px));
+  max-height: min(70vh, 560px);
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 10px;
+  padding: 12px;
+  box-sizing: border-box;
+  background: #231d3f;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(10, 6, 30, 0.7);
+}
+.catalogue .tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.catalogue .tabs button.active {
+  background: var(--accent);
+  color: #2a2140;
+  font-weight: 600;
+}
+.catalogue-head h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 16px;
+}
+.catalogue-head p,
+.catalogue p {
+  margin: 0;
+}
+.catalogue-grid {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  align-content: start;
+}
+.catalogue-grid.furniture {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+}
+.catalogue-grid.floors,
+.catalogue-grid.walls {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+.piece {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
+.thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  flex: none;
+  background: #120f22;
+  border-radius: 6px;
+}
+.thumb.lg {
+  width: 96px;
+  height: 84px;
+}
+.thumb.sm {
+  width: 48px;
+  height: 56px;
+}
+.thumb img {
+  position: absolute;
+  left: calc(50% - 48px);
+  top: calc(50% - 68px);
+  transform-origin: 48px 68px;
+  image-rendering: pixelated;
+  max-width: none;
+}
+.thumb.lg img {
+  transform: scale(1.5);
+}
+.thumb.sm img {
+  transform: scale(0.95);
+}
+.piece strong {
+  font-size: 13px;
+}
+.swatch-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: #2c2552;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.swatch-card.active {
+  border-color: var(--accent);
+}
+.swatch-card .chip {
+  display: block;
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  border: 2px solid #1b1530;
+}
+
 .nav-list {
   list-style: none;
   margin: 0;

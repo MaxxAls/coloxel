@@ -1,4 +1,5 @@
-import { api, itemSpriteUrl, type InventoryItem, type User } from './api';
+import { furnitureThumb } from './thumb';
+import { api, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem, type User } from './api';
 
 export interface PanelHandlers {
   /** The inventory changed (creation); the room must be re-synced. */
@@ -6,12 +7,15 @@ export interface PanelHandlers {
   /** The player picked an item to place; null cancels. */
   onSelect(itemId: string | null): void;
   onPickUp(itemId: string): void;
+  /** Throw a piece of base furniture away (free to take again). */
+  onThrow(furnitureId: string): void;
   onLogout(): void;
 }
 
 export interface Panel {
   element: HTMLElement;
   setItems(items: InventoryItem[]): void;
+  setFurniture(furniture: FurnitureItem[]): void;
   setSelected(itemId: string | null): void;
   /** Show the item card for this item; null closes it. */
   inspect(itemId: string | null): void;
@@ -85,16 +89,23 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
   cardPlace.type = 'button';
   const cardPickUp = el('button', undefined, 'Reprendre');
   cardPickUp.type = 'button';
-  cardActions.append(cardPlace, cardPickUp);
+  const cardThrow = el('button', undefined, 'Jeter');
+  cardThrow.type = 'button';
+  cardThrow.hidden = true;
+  cardActions.append(cardPlace, cardPickUp, cardThrow);
   cardBox.append(cardHead, cardBody, cardActions);
 
-  const listTitle = el('h2', undefined, 'Mon inventaire');
+  const listTitle = el('h2', undefined, 'Mes créations');
   const list = el('ul', 'inventory');
   const empty = el('p', 'muted small', 'Rien pour l’instant : invente ton premier objet !');
+  const furnitureTitle = el('h2', undefined, 'Mobilier de base');
+  const furnitureList = el('ul', 'inventory furniture-list');
+  const furnitureEmpty = el('p', 'muted small', 'Prends des meubles gratuits dans le catalogue.');
 
-  root.append(header, form, message, cardBox, listTitle, list, empty);
+  root.append(header, form, message, cardBox, listTitle, list, empty, furnitureTitle, furnitureList, furnitureEmpty);
 
   let items: InventoryItem[] = [];
+  let furniture: FurnitureItem[] = [];
   let selected: string | null = null;
   let inspected: string | null = null;
   let busy = false;
@@ -106,7 +117,20 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
 
   const renderCard = () => {
     const item = items.find((it) => it.id === inspected);
-    cardBox.hidden = !item;
+    const piece = item ? undefined : furniture.find((f) => f.id === inspected);
+    cardBox.hidden = !item && !piece;
+    cardThrow.hidden = !piece;
+    if (piece) {
+      // Base furniture is not a creation: no number, no creator, no edition.
+      cardImg.src = furnitureSpriteUrl(piece.key);
+      cardName.textContent = piece.name;
+      cardDesc.textContent = 'Gratuit, en quantité illimitée.';
+      cardSerial.textContent = 'Mobilier de base · pas une création';
+      cardCreator.textContent = 'Ni numéroté, ni échangeable.';
+      cardPlace.textContent = piece.id === selected ? 'Annuler' : piece.placement ? 'Déplacer' : 'Poser';
+      cardPickUp.hidden = !piece.placement;
+      return;
+    }
     if (!item) return;
     cardImg.src = itemSpriteUrl(item.id);
     cardName.textContent = item.name;
@@ -158,6 +182,34 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
       li.append(img, info, action);
       list.append(li);
     }
+
+    furnitureList.replaceChildren();
+    furnitureEmpty.hidden = furniture.length > 0;
+    for (const piece of furniture) {
+      const li = el('li', piece.id === selected ? 'selected' : '');
+      const info = el('div', 'info');
+      info.append(
+        el('strong', undefined, piece.name),
+        el('span', 'muted small', 'Mobilier de base'),
+        el('span', 'muted small', piece.placement ? 'Posé dans l’appart' : 'Dans l’inventaire'),
+      );
+      info.tabIndex = 0;
+      info.addEventListener('click', () => panel.inspect(piece.id));
+      info.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          panel.inspect(piece.id);
+        }
+      });
+      const action = el('button', undefined, piece.placement ? 'Reprendre' : piece.id === selected ? 'Annuler' : 'Poser');
+      action.type = 'button';
+      action.addEventListener('click', () => {
+        if (piece.placement) handlers.onPickUp(piece.id);
+        else handlers.onSelect(piece.id === selected ? null : piece.id);
+      });
+      li.append(furnitureThumb(piece.key, 'sm'), info, action);
+      furnitureList.append(li);
+    }
   };
 
   form.addEventListener('submit', async (ev) => {
@@ -188,11 +240,19 @@ export function createPanel(user: User, handlers: PanelHandlers): Panel {
   cardPickUp.addEventListener('click', () => {
     if (inspected) handlers.onPickUp(inspected);
   });
+  cardThrow.addEventListener('click', () => {
+    if (inspected) handlers.onThrow(inspected);
+  });
 
   const panel: Panel = {
     element: root,
     setItems(next) {
       items = next;
+      render();
+    },
+    setFurniture(next) {
+      furniture = next;
+      if (inspected && !items.some((it) => it.id === inspected) && !furniture.some((f) => f.id === inspected)) inspected = null;
       render();
     },
     setSelected(id) {

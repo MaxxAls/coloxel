@@ -1,14 +1,14 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y } from '@coloxel/render';
-import { api, apartmentTitle, type InventoryItem } from './api';
+import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { AVATAR_H, lookFor, type Facing, type Frame, type Look } from './avatar';
-import { APARTMENT_THEME, HALL_THEME, diamond, drawRoom } from './draw';
+import { HALL_THEME, apartmentTheme, diamond, drawRoom } from './draw';
 import { createPanel } from './panel';
 import { joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
-import { avatarTexture, itemTexture } from './textures';
+import { avatarTexture, furnitureTexture, itemTexture } from './textures';
 import { createVisitPanel } from './visit-panel';
 
 export const ROOM_W = 300;
@@ -50,12 +50,16 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let visitedTitle = '';
   let visitedOwner = '';
   let items: InventoryItem[] = [];
+  let furniture: FurnitureItem[] = [];
+  let look = { floor: 'parquet', wall: 'violet' };
   if (target.kind === 'apartment' && !mine) {
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
     visitedOwner = visit.data.owner.nickname;
     visitedTitle = apartmentTitle(visit.data.name, visit.data.owner.nickname);
     items = visit.data.items;
+    furniture = visit.data.furniture;
+    look = { floor: visit.data.floor, wall: visit.data.wall };
   }
 
   const joined = target.kind === 'hall' ? await joinHall() : await joinApartment(target.ownerId);
@@ -70,9 +74,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   world.sortableChildren = true;
   app.stage.addChild(world);
 
-  const floor = drawRoom(target.kind === 'hall' ? HALL_THEME : APARTMENT_THEME);
-  floor.zIndex = -3;
-  world.addChild(floor);
+  // The room itself: the hall's fixed look, or the floor and wallpaper the owner chose.
+  let floor: Graphics | null = null;
+  function drawFloor() {
+    floor?.destroy();
+    floor = drawRoom(target.kind === 'hall' ? HALL_THEME : apartmentTheme(look.floor, look.wall));
+    floor.zIndex = -3;
+    world.addChild(floor);
+  }
+  drawFloor();
 
   const marks = new Graphics();
   marks.zIndex = -1;
@@ -84,7 +94,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let selected: string | null = null;
 
   // ----- Panel -------------------------------------------------------------
-  let inspect: (item: InventoryItem) => void = () => {};
+  let inspect: (item: InventoryItem | FurnitureItem) => void = () => {};
   let setMessage: (text: string) => void = () => {};
   let refreshOwn: () => Promise<void> = async () => {};
   let setPresent: (count: number) => void = () => {};
@@ -103,6 +113,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         panel.setMessage(res.ok ? 'Objet repris dans ton inventaire.' : res.error);
         await refreshOwn();
       },
+      onThrow: async (id) => {
+        const res = await api.throwFurniture(id);
+        panel.setMessage(res.ok ? 'Meuble jeté.' : res.error);
+        await refreshOwn();
+      },
       onLogout: async () => {
         await api.logout();
         location.reload();
@@ -111,17 +126,23 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     inspect = (item) => panel.inspect(item.id);
     setMessage = panel.setMessage;
     refreshOwn = async () => {
-      const res = await api.inventory();
+      const [res, mineRes] = await Promise.all([api.inventory(), api.myApartment()]);
       if (!res.ok) {
         if (res.status === 401) location.reload();
         panel.setMessage(res.error);
         return;
       }
       items = res.data.items;
-      if (selected && !items.some((it) => it.id === selected)) selected = null;
+      furniture = res.data.furniture;
+      if (selected && !items.some((it) => it.id === selected) && !furniture.some((f) => f.id === selected)) selected = null;
       panel.setItems(items);
+      panel.setFurniture(furniture);
       panel.setSelected(selected);
       syncItems();
+      if (mineRes.ok && (mineRes.data.floorStyle !== look.floor || mineRes.data.wallStyle !== look.wall)) {
+        look = { floor: mineRes.data.floorStyle, wall: mineRes.data.wallStyle };
+        drawFloor();
+      }
     };
     panelElement = panel.element;
     // Name and opening of the apartment sit right under the player's name.
@@ -153,21 +174,26 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   }
 
   // ----- Objects -----------------------------------------------------------
+  /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
+  const placedThings = () => [
+    ...items.flatMap((it) => (it.placement ? [{ id: it.id, placement: it.placement, texture: () => itemTexture(it.id) }] : [])),
+    ...furniture.flatMap((f) => (f.placement ? [{ id: f.id, placement: f.placement, texture: () => furnitureTexture(f.key) }] : [])),
+  ];
+
   function syncItems() {
     occupied.clear();
     const placed = new Set<string>();
-    for (const item of items) {
-      if (!item.placement) continue;
-      const { i, j } = item.placement;
+    for (const thing of placedThings()) {
+      const { i, j } = thing.placement;
       occupied.add(cellKey(i, j));
-      placed.add(item.id);
-      let s = itemSprites.get(item.id);
+      placed.add(thing.id);
+      let s = itemSprites.get(thing.id);
       if (!s) {
         s = new Sprite();
-        itemSprites.set(item.id, s);
+        itemSprites.set(thing.id, s);
         world.addChild(s);
         const sprite = s;
-        itemTexture(item.id).then(
+        thing.texture().then(
           (t) => {
             if (!sprite.destroyed) sprite.texture = t;
           },
@@ -288,7 +314,9 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (!cell) return;
       if (!selected) {
         // Clicking an item opens its card instead of walking onto it.
-        const here = items.find((it) => it.placement?.i === cell.i && it.placement?.j === cell.j);
+        const here =
+          items.find((it) => it.placement?.i === cell.i && it.placement?.j === cell.j) ??
+          furniture.find((f) => f.placement?.i === cell.i && f.placement?.j === cell.j);
         if (here) {
           inspect(here);
           return;
@@ -348,6 +376,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   return {
     panel: panelElement,
     size: { w: ROOM_W, h: ROOM_H },
+    refresh: () => (mine ? refreshOwn() : undefined),
     destroy() {
       closing = true;
       abort.abort();
