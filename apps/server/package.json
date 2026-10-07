@@ -6,16 +6,22 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "db:migrate": "tsx src/db/migrate.ts up",
+    "db:rollback": "tsx src/db/migrate.ts down"
   },
   "dependencies": {
     "@coloxel/generator": "*",
     "@coloxel/render": "*",
+    "dotenv": "^18.0.6",
     "fastify": "^5.2.0",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.1",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "@types/pngjs": "^6.0.5",
     "tsx": "^4.19.0"
   }
