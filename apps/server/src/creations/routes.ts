@@ -5,6 +5,7 @@ import { buildPrompt, extractJson, validateRecipe } from '@coloxel/generator';
 import { renderSprite, type Recipe } from '@coloxel/render';
 import { findViewableItemRecipe } from '../apartments/access';
 import { containsBannedWord } from '../auth/rules';
+import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { nextItemSerial, withTransaction } from '../db/pool';
 import { spriteToPng } from '../sprite-png';
 import { getCharges, refundCharge, reserveCharge } from './charges';
@@ -25,7 +26,12 @@ const creationSchema = z.object({
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PNG_CACHE_MAX = 500;
 
-export function registerCreationRoutes(app: FastifyInstance, pool: pg.Pool, model: RecipeModel | null) {
+export function registerCreationRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  model: RecipeModel | null,
+  guards: RateGuards = NO_GUARDS,
+) {
   // Items are immutable, so a rendered sprite never goes stale.
   const pngCache = new Map<string, Buffer>();
 
@@ -34,7 +40,7 @@ export function registerCreationRoutes(app: FastifyInstance, pool: pg.Pool, mode
     return { charges: await getCharges(pool, req.user.id) };
   });
 
-  app.post('/api/creations', async (req, reply) => {
+  app.post('/api/creations', { preHandler: guards.creations }, async (req, reply) => {
     const user = req.user;
     if (!user) return reply.code(401).send({ error: 'Non connecté' });
 

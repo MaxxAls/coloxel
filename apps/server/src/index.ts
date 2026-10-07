@@ -6,6 +6,7 @@ import { registerAuthRoutes } from './auth/routes';
 import { modelFromEnv, type RecipeModel } from './creations/model';
 import { registerCreationRoutes } from './creations/routes';
 import { registerInventoryRoutes } from './inventory/routes';
+import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
 
 export { spriteToPng };
@@ -15,10 +16,23 @@ export interface ServerDeps {
   pool?: pg.Pool;
   /** Object generator. Defaults to the Anthropic API from env; null means not configured. */
   model?: RecipeModel | null;
+  /** Request limits on login, registration and creations. Off by default under tests (NODE_ENV=test). */
+  rateLimits?: RateLimits | false;
+  /** ioredis client for shared counters; in-memory counters without it. */
+  redis?: unknown;
 }
 
-export function buildServer({ pool, model = modelFromEnv() }: ServerDeps = {}) {
-  const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
+export function buildServer({
+  pool,
+  model = modelFromEnv(),
+  rateLimits = process.env.NODE_ENV === 'test' ? false : DEFAULT_LIMITS,
+  redis,
+}: ServerDeps = {}) {
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== 'test',
+    // Behind a reverse proxy, the client IP comes from X-Forwarded-For: only trust it when told to.
+    trustProxy: process.env.TRUST_PROXY === 'true',
+  });
   app.register(cookie);
 
   app.get('/health', async () => ({ ok: true }));
@@ -33,8 +47,9 @@ export function buildServer({ pool, model = modelFromEnv() }: ServerDeps = {}) {
 
   if (pool) {
     app.register(async (scope) => {
-      registerAuthRoutes(scope, pool);
-      registerCreationRoutes(scope, pool, model);
+      const guards = await buildRateGuards(scope, rateLimits, redis);
+      registerAuthRoutes(scope, pool, guards);
+      registerCreationRoutes(scope, pool, model, guards);
       registerInventoryRoutes(scope, pool);
     });
   }

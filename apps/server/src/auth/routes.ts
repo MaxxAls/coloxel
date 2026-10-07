@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
+import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { ageOn, containsBannedWord, loginSchema, MIN_AGE, parseBirthDate, registerSchema } from './rules';
 
 export const SESSION_COOKIE = 'coloxel_sid';
@@ -50,7 +51,7 @@ async function openSession(pool: pg.Pool, userId: string, reply: FastifyReply) {
   });
 }
 
-export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
+export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS) {
   app.decorateRequest('user', null);
 
   app.addHook('onRequest', async (req: FastifyRequest) => {
@@ -59,7 +60,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
     req.user = await findSessionUser(pool, token);
   });
 
-  app.post('/api/auth/register', async (req, reply) => {
+  app.post('/api/auth/register', { preHandler: guards.register }, async (req, reply) => {
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Données invalides' });
@@ -99,7 +100,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool) {
     }
   });
 
-  app.post('/api/auth/login', async (req, reply) => {
+  app.post('/api/auth/login', { preHandler: guards.login }, async (req, reply) => {
     const parsed = loginSchema.safeParse(req.body);
     const invalid = () => reply.code(401).send({ error: 'Email ou mot de passe incorrect' });
     if (!parsed.success) return invalid();
