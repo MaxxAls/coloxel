@@ -1971,3 +1971,45 @@ body.admin .staff.window {
 body.admin .staff .win-bar button.win-close {
   display: none;
 }
+
+/* ---------- Staff roles ---------- */
+
+.role-tag {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: #5a4d99;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.role-tag.animateur { background: #2fa87c; }
+.role-tag.moderateur { background: #3b8fe0; }
+.role-tag.super_moderateur { background: #6b5bb8; }
+.role-tag.gerant { background: #e58a3c; }
+.role-tag.administrateur { background: #d6405f; }
+.role-matrix-box {
+  overflow-x: auto;
+}
+.role-matrix {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.role-matrix th,
+.role-matrix td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+.role-matrix th:first-child,
+.role-matrix td:first-child {
+  text-align: left;
+}
+.role-matrix td.yes {
+  color: #6be07a;
+  font-weight: 700;
+}
+.role-matrix td.no {
+  color: var(--muted);
+}

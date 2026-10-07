@@ -247,6 +247,57 @@ export interface SanctionOrder {
   reason: string;
 }
 
+/** What the signed-in staff member may do, as the server computed it from their role. */
+export interface StaffMe {
+  staff: true;
+  role: string;
+  title: string;
+  level: number;
+  permissions: string[];
+  maxMuteMinutes: number | null;
+  maxSuspensionMinutes: number | null;
+  /** The roles this member may give (strictly below their own). */
+  assignable: string[];
+}
+
+export interface StaffRoleDef {
+  id: string;
+  title: string;
+  summary: string;
+  level: number;
+  permissions: string[];
+  maxMuteMinutes: number | null;
+  maxSuspensionMinutes: number | null;
+}
+
+export interface TeamMember {
+  id: string;
+  nickname: string;
+  role: string;
+  title: string;
+  since: string | null;
+  eventsHeld: number;
+}
+
+export interface RoleChange {
+  nickname: string;
+  from: string;
+  to: string;
+  by: string | null;
+  at: string;
+}
+
+export interface StaffEvent {
+  id: number;
+  title: string;
+  description: string;
+  startsAt: string;
+  place: string;
+  host: string;
+  hostId: string;
+  status: 'planned' | 'done' | 'cancelled';
+}
+
 export interface StaffDashboard {
   players: number;
   newToday: number;
@@ -327,7 +378,13 @@ export const api = {
   removeFriend: (id: string) => call<unknown>('DELETE', `/api/friends/${id}`),
   notices: () => call<{ notices: { id: number; kind: 'warning' | 'mute'; text: string }[] }>('GET', '/api/notices'),
   noticesSeen: (ids: number[]) => call<unknown>('POST', '/api/notices/seen', { ids }),
-  staffMe: () => call<{ staff: true }>('GET', '/api/staff/me'),
+  staffMe: () => call<StaffMe>('GET', '/api/staff/me'),
+  staffRoles: () => call<{ roles: StaffRoleDef[]; mine: string; assignable: string[] }>('GET', '/api/staff/roles'),
+  staffTeam: () => call<{ members: TeamMember[]; history: RoleChange[] }>('GET', '/api/staff/team'),
+  staffSetRole: (playerId: string, role: string) => call<{ role: string; title: string }>('PUT', `/api/staff/players/${playerId}/role`, { role }),
+  staffEvents: () => call<{ events: StaffEvent[]; ranking: { nickname: string; events: number }[] }>('GET', '/api/staff/events'),
+  staffCreateEvent: (event: { title: string; description: string; startsAt: string; place: string }) => call<{ id: number }>('POST', '/api/staff/events', event),
+  staffCloseEvent: (id: number, status: 'done' | 'cancelled') => call<unknown>('PUT', `/api/staff/events/${id}`, { status }),
   staffDashboard: () => call<StaffDashboard>('GET', '/api/staff/dashboard'),
   staffReports: () => call<{ groups: StaffReportGroup[] }>('GET', '/api/staff/reports'),
   staffHandled: () => call<{ handled: StaffHandledReport[] }>('GET', '/api/staff/reports?status=handled'),

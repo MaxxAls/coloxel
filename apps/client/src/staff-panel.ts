@@ -7,6 +7,8 @@ import {
   type SanctionOrder,
   type Announcement,
   type StaffHandledReport,
+  type StaffMe,
+  type StaffRoleDef,
   type StaffPlayerRow,
   type StaffPlayerSheet,
   type StaffReportGroup,
@@ -14,13 +16,46 @@ import {
 import { REASONS } from './report-dialog';
 import { windowBar } from './window';
 
-type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news';
+type Tab = 'dashboard' | 'reports' | 'chat' | 'players' | 'news' | 'events' | 'team';
 const TABS: [Tab, string][] = [
   ['dashboard', 'Tableau de bord'],
   ['reports', 'Signalements'],
   ['chat', 'Journal du chat'],
   ['players', 'Joueurs'],
   ['news', 'Annonces'],
+  ['events', 'Événements'],
+  ['team', 'Équipe'],
+];
+/** What a role must hold to see a tab: the server checks it again on every request. */
+const TAB_PERMISSION: Record<Tab, string> = {
+  dashboard: 'dashboard.view',
+  reports: 'reports.view',
+  chat: 'chat.view',
+  players: 'players.view',
+  news: 'news.write',
+  events: 'events.manage',
+  team: 'roles.view',
+};
+
+/** What each permission means, for the table of the roles. */
+const PERMISSION_LABELS: [string, string][] = [
+  ['dashboard.view', 'Voir le tableau de bord'],
+  ['players.view', 'Consulter les fiches des joueurs'],
+  ['reports.view', 'Voir les signalements'],
+  ['reports.resolve', 'Traiter les signalements'],
+  ['chat.view', 'Lire le journal du chat'],
+  ['sanction.warning', 'Avertir'],
+  ['sanction.mute', 'Mettre en sourdine'],
+  ['sanction.suspension', 'Suspendre'],
+  ['sanction.ban', 'Bannir'],
+  ['sanction.revoke', 'Lever une sanction'],
+  ['items.moderate', 'Masquer ou valider une création'],
+  ['news.write', 'Écrire les actualités'],
+  ['events.manage', 'Organiser des événements'],
+  ['maintenance.toggle', 'Activer la maintenance'],
+  ['maintenance.bypass', 'Jouer pendant la maintenance'],
+  ['roles.view', 'Voir l’équipe'],
+  ['roles.manage', 'Nommer des membres de l’équipe'],
 ];
 
 const KIND_LABELS: Record<ReportKind, string> = {
@@ -68,7 +103,19 @@ const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: '2-di
 const roomName = (room: string) => (room === 'hall' ? 'Hall' : room.startsWith('apartment:') ? 'Appart' : room);
 
 /** The staff panel: reports to review, the chat journal, player sheets with their sanctions. Only shown to staff; the server checks the role anyway. */
-export function createStaffPanel(options: { onToggle(open: boolean): void; notify(text: string): void; start?: Tab }): StaffPanel {
+export function createStaffPanel(options: { me: StaffMe; onToggle(open: boolean): void; notify(text: string): void; start?: Tab }): StaffPanel {
+  const { me } = options;
+  const allowed = (permission: string) => me.permissions.includes(permission);
+  const visibleTabs = TABS.filter(([key]) => allowed(TAB_PERMISSION[key]));
+  /** The sanctions this role may give. */
+  const sanctionKinds = (): SanctionKind[] => (Object.keys(SANCTION_LABELS) as SanctionKind[]).filter((k) => allowed(`sanction.${k}`));
+  const roleLevels = new Map<string, number>();
+  async function loadRoles(): Promise<StaffRoleDef[]> {
+    const res = await api.staffRoles();
+    if (!res.ok) return [];
+    for (const r of res.data.roles) roleLevels.set(r.id, r.level);
+    return res.data.roles;
+  }
   const root = el('section', 'window staff');
   root.hidden = true;
   root.setAttribute('role', 'dialog');
@@ -80,9 +127,9 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
   const content = el('div', 'staff-content');
   const body = el('div', 'win-body');
   body.append(tabs, content);
-  root.append(windowBar('Panel staff', () => hide()), body);
+  root.append(windowBar(`Panel staff · ${me.title}`, () => hide()), body);
 
-  let tab: Tab = options.start ?? 'dashboard';
+  let tab: Tab = options.start && allowed(TAB_PERMISSION[options.start]) ? options.start : (visibleTabs[0]?.[0] ?? 'dashboard');
   let showHandled = false;
   let chatQuery: ChatQuery = {};
   let playerId: string | null = null;
@@ -113,12 +160,24 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
   function sanctionForm(submitLabel: string, onSubmit: (order: SanctionOrder) => Promise<void>): HTMLFormElement {
     const form = el('form', 'sanction-form');
     const kinds = select<SanctionKind>(
-      (Object.keys(SANCTION_LABELS) as SanctionKind[]).map((k) => [k, SANCTION_LABELS[k]]),
-      'warning',
+      sanctionKinds().map((k) => [k, SANCTION_LABELS[k]]),
+      sanctionKinds()[0] ?? 'warning',
     );
     kinds.setAttribute('aria-label', 'Sanction');
     const duration = select(DURATIONS, 60);
     duration.setAttribute('aria-label', 'Durée');
+    // A role has its limits: only the durations it may give are offered.
+    const fillDurations = () => {
+      const max = kinds.value === 'mute' ? me.maxMuteMinutes : me.maxSuspensionMinutes;
+      duration.replaceChildren(
+        ...DURATIONS.filter(([minutes]) => max === null || minutes <= max).map(([minutes, label]) => {
+          const o = el('option', undefined, label);
+          o.value = String(minutes);
+          return o;
+        }),
+      );
+    };
+    fillDurations();
     const reason = el('input');
     reason.placeholder = 'Motif (obligatoire, le joueur le verra)';
     reason.maxLength = 300;
@@ -130,12 +189,17 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     const sync = () => {
       duration.hidden = !(kinds.value === 'mute' || kinds.value === 'suspension');
     };
-    kinds.addEventListener('change', sync);
+    kinds.addEventListener('change', () => {
+      fillDurations();
+      sync();
+    });
     sync();
     template.addEventListener('change', () => {
       const t = TEMPLATES[Number(template.value)];
       if (!t) return;
+      if (!sanctionKinds().includes(t.order.kind)) return say('Ton rôle ne permet pas cette sanction.');
       kinds.value = t.order.kind;
+      fillDurations();
       if (t.order.minutes !== undefined) duration.value = String(t.order.minutes);
       reason.value = t.order.reason;
       sync();
@@ -174,19 +238,20 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     grid.append(
       card('joueurs', d.players, `${d.newToday} inscrit(s) aujourd’hui`),
       card('objets créés', d.creations),
-      card('signalements en attente', d.reportsOpen, d.reportsOpen ? 'à traiter' : 'rien à traiter', () => ((tab = 'reports'), render())),
+      card('signalements en attente', d.reportsOpen, d.reportsOpen ? 'à traiter' : 'rien à traiter', allowed('reports.view') ? () => ((tab = 'reports'), render()) : undefined),
       card('sanctions en cours', d.sanctionsLive, 'sourdines, suspensions, bannissements'),
-      card('messages (24 h)', d.messages24h, `${d.blocked24h} bloqué(s) par le filtre`, () => ((chatQuery = { blocked: 'true' }), (tab = 'chat'), render())),
-      card('annonces publiées', d.announcements, undefined, () => ((tab = 'news'), render())),
+      card('messages (24 h)', d.messages24h, `${d.blocked24h} bloqué(s) par le filtre`, allowed('chat.view') ? () => ((chatQuery = { blocked: 'true' }), (tab = 'chat'), render()) : undefined),
+      card('annonces publiées', d.announcements, undefined, allowed('news.write') ? () => ((tab = 'news'), render()) : undefined),
     );
     view.append(grid);
 
+    const manage = allowed('news.write') && allowed('maintenance.toggle');
     const state = el('div', d.maintenance ? 'staff-card dash-alert' : 'staff-card');
     state.append(
       el('strong', undefined, d.maintenance ? 'Le jeu est EN MAINTENANCE' : 'Le jeu est ouvert'),
       el('p', 'muted small', d.maintenance ? 'Seuls les membres de l’équipe peuvent jouer.' : 'Tout est normal.'),
-      button('Gérer', () => ((tab = 'news'), render())),
     );
+    if (manage) state.append(button('Gérer', () => ((tab = 'news'), render())));
     view.append(state);
 
     view.append(el('h3', undefined, 'Inscriptions des 7 derniers jours'));
@@ -264,13 +329,14 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     };
     const sanctionBox = el('div');
     sanctionBox.hidden = true;
-    if (g.targetUser) sanctionBox.append(sanctionForm('Confirmer et sanctionner', (order) => decide('confirm', order)));
+    const canSanction = !!g.targetUser && sanctionKinds().length > 0;
+    if (canSanction) sanctionBox.append(sanctionForm('Confirmer et sanctionner', (order) => decide('confirm', order)));
     const actions = el('div', 'staff-actions');
     actions.append(
       button('Classer sans suite', () => decide('dismiss')),
       button(g.kind === 'item' ? 'Confirmer (masquer la création)' : 'Confirmer', () => decide('confirm'), 'primary'),
     );
-    if (g.targetUser) actions.append(button('Sanctionner…', () => void (sanctionBox.hidden = !sanctionBox.hidden)));
+    if (canSanction) actions.append(button('Sanctionner…', () => void (sanctionBox.hidden = !sanctionBox.hidden)));
     card.append(note, actions, sanctionBox);
     return card;
   }
@@ -421,20 +487,41 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     await load();
   }
 
-  function sheetView(sheet: StaffPlayerSheet): HTMLElement {
+  function sheetView(sheet: StaffPlayerSheet, roles: StaffRoleDef[]): HTMLElement {
     const view = el('div', 'staff-list');
     const p = sheet.player;
     const head = el('div', 'staff-bar');
     head.append(button('← Joueurs', () => ((playerId = null), render())), el('strong', undefined, p.nickname));
-    if (p.role === 'staff') head.append(el('span', 'chip good', 'Équipe'));
+    const roleTitle = roles.find((r) => r.id === p.role)?.title;
+    if (roleTitle) head.append(el('span', `role-tag ${p.role}`, roleTitle));
     view.append(head);
+    // Only down the ladder: the same rule as the server's.
+    const below = (roleLevels.get(p.role) ?? 0) < me.level;
     const flat = p.apartment ? `appart n° ${p.apartment.id}${p.apartment.name ? ` « ${p.apartment.name} »` : ''} (${p.apartment.access})` : 'sans appart';
     view.append(
       el('p', 'muted small', `Inscrit le ${when(p.createdAt)} · ${flat}`),
       el('p', 'small', `Signalements : ${sheet.reports.againstOpen} en attente contre lui, ${sheet.reports.againstTotal} au total ; ${sheet.reports.made} faits par lui.`),
     );
 
-    if (p.role !== 'staff') {
+    if (me.assignable.length && below) {
+      view.append(el('h3', undefined, 'Rôle'));
+      const choices: [string, string][] = [['user', 'Joueur ordinaire'], ...roles.filter((r) => me.assignable.includes(r.id)).map((r) => [r.id, r.title] as [string, string])];
+      const picker = select<string>(choices, p.role);
+      picker.setAttribute('aria-label', 'Rôle');
+      const row = el('div', 'staff-bar');
+      row.append(
+        picker,
+        button('Changer le rôle', async () => {
+          const res = await api.staffSetRole(p.id, picker.value);
+          if (!res.ok) return failure(res.error);
+          say(`${p.nickname} : ${res.data.title}.`);
+          void render();
+        }, 'primary'),
+      );
+      view.append(row);
+    }
+
+    if (below && sanctionKinds().length) {
       view.append(el('h3', undefined, 'Sanctionner'));
       view.append(
         sanctionForm('Appliquer', async (order) => {
@@ -458,7 +545,8 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
       );
       row.append(t);
       if (s.live) {
-        row.append(el('span', 'chip bad', 'En cours'), button('Lever', async () => {
+        row.append(el('span', 'chip bad', 'En cours'));
+        if (allowed('sanction.revoke') && below) row.append(button('Lever', async () => {
           const res = await api.staffRevoke(s.id);
           if (!res.ok) return failure(res.error);
           say('Sanction levée.');
@@ -489,7 +577,7 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
           say('Création mise à jour.');
           void render();
         });
-      row.append(c.masked ? change('none', 'Rétablir') : change('hidden', 'Masquer'));
+      if (allowed('items.moderate')) row.append(c.masked ? change('none', 'Rétablir') : change('hidden', 'Masquer'));
       view.append(row);
     }
 
@@ -513,7 +601,7 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
       content.replaceChildren(el('p', 'error', res.error));
       return;
     }
-    content.replaceChildren(sheetView(res.data));
+    content.replaceChildren(sheetView(res.data, await loadRoles()));
   }
 
   // ----- News and maintenance ----------------------------------------------
@@ -538,7 +626,7 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
         void renderNews();
       }, res.data.maintenance ? 'primary' : undefined),
     );
-    view.append(maintenance);
+    if (allowed('maintenance.toggle')) view.append(maintenance);
 
     const form = el('form', 'staff-card');
     form.append(el('strong', undefined, editing ? 'Modifier l’annonce' : 'Nouvelle annonce'));
@@ -605,6 +693,142 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     content.replaceChildren(view);
   }
 
+  // ----- Events --------------------------------------------------------------
+  async function renderEvents() {
+    content.replaceChildren(el('p', 'muted', 'Chargement…'));
+    const res = await api.staffEvents();
+    if (!res.ok) return void content.replaceChildren(el('p', 'error', res.error));
+    const view = el('div', 'staff-list');
+
+    const form = el('form', 'staff-card');
+    form.append(el('strong', undefined, 'Nouvel événement'));
+    const title = el('input');
+    title.placeholder = 'Titre (ex. Chasse aux objets)';
+    title.maxLength = 80;
+    title.setAttribute('aria-label', 'Titre');
+    const description = el('textarea');
+    description.rows = 3;
+    description.maxLength = 1000;
+    description.placeholder = 'Ce qui se passe, les règles, les lots…';
+    description.setAttribute('aria-label', 'Description');
+    const startsAt = el('input');
+    startsAt.type = 'datetime-local';
+    startsAt.setAttribute('aria-label', 'Début');
+    const place = el('input');
+    place.placeholder = 'Lieu (ex. Le hall, Chez Léa)';
+    place.maxLength = 60;
+    place.setAttribute('aria-label', 'Lieu');
+    const submit = el('button', 'primary', 'Programmer');
+    submit.type = 'submit';
+    const row = el('div', 'staff-bar');
+    row.append(startsAt, place);
+    form.append(title, description, row, submit);
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const done = await api.staffCreateEvent({
+        title: title.value,
+        description: description.value,
+        startsAt: startsAt.value ? new Date(startsAt.value).toISOString() : '',
+        place: place.value,
+      });
+      if (!done.ok) return failure(done.error);
+      say('Événement programmé.');
+      void renderEvents();
+    });
+    view.append(form);
+
+    const planned = res.data.events.filter((e) => e.status === 'planned');
+    const past = res.data.events.filter((e) => e.status !== 'planned');
+    view.append(el('h3', undefined, `À venir (${planned.length})`));
+    if (!planned.length) view.append(el('p', 'muted small', 'Rien de prévu.'));
+    for (const e of planned) {
+      const card = el('article', 'staff-card');
+      card.append(el('strong', undefined, e.title), el('p', 'small', e.description), el('p', 'muted small', `${when(e.startsAt)} · ${e.place} · animé par ${e.host}`));
+      const actions = el('div', 'staff-actions');
+      actions.append(
+        button('Il a eu lieu', async () => {
+          const done = await api.staffCloseEvent(e.id, 'done');
+          if (!done.ok) return failure(done.error);
+          say('Bravo ! Un événement de plus au compteur.');
+          void renderEvents();
+        }, 'primary'),
+        button('Annuler', async () => {
+          const done = await api.staffCloseEvent(e.id, 'cancelled');
+          if (!done.ok) return failure(done.error);
+          say('Événement annulé.');
+          void renderEvents();
+        }),
+      );
+      card.append(actions);
+      view.append(card);
+    }
+    if (past.length) {
+      view.append(el('h3', undefined, 'Passés'));
+      for (const e of past) {
+        const line = el('div', 'friend-row');
+        const text = el('span', 'nav-text');
+        text.append(el('strong', undefined, e.title), el('span', 'muted small', `${when(e.startsAt)} · ${e.host}`));
+        line.append(text, el('span', e.status === 'done' ? 'chip good' : 'chip bad', e.status === 'done' ? 'Tenu' : 'Annulé'));
+        view.append(line);
+      }
+    }
+    if (res.data.ranking.length) {
+      view.append(el('h3', undefined, 'Les animateurs les plus actifs'));
+      for (const [k, r] of res.data.ranking.entries()) view.append(el('p', 'small', `${k + 1}. ${r.nickname} — ${r.events} événement(s)`));
+    }
+    content.replaceChildren(view);
+  }
+
+  // ----- Team ----------------------------------------------------------------
+  async function renderTeam() {
+    content.replaceChildren(el('p', 'muted', 'Chargement…'));
+    const [team, roles] = await Promise.all([api.staffTeam(), loadRoles()]);
+    if (!team.ok) return void content.replaceChildren(el('p', 'error', team.error));
+    const view = el('div', 'staff-list');
+    view.append(el('h3', undefined, `L’équipe (${team.data.members.length})`));
+    for (const m of team.data.members) {
+      const row = el('div', 'friend-row');
+      const text = el('span', 'nav-text');
+      text.append(
+        el('strong', undefined, m.nickname),
+        el('span', 'muted small', `${m.since ? `depuis le ${when(m.since)}` : 'depuis le début'}${m.eventsHeld ? ` · ${m.eventsHeld} événement(s) tenu(s)` : ''}`),
+      );
+      row.append(text, el('span', `role-tag ${m.role}`, m.title));
+      row.append(button('Fiche', () => openPlayer(m.id)));
+      view.append(row);
+    }
+
+    view.append(el('h3', undefined, 'Ce que chaque rôle peut faire'));
+    const table = el('table', 'role-matrix');
+    const head = el('tr');
+    head.append(el('th'), ...roles.map((r) => el('th', undefined, r.title)));
+    table.append(head);
+    for (const [permission, label] of PERMISSION_LABELS) {
+      const line = el('tr');
+      line.append(el('td', undefined, label));
+      for (const r of roles) line.append(el('td', r.permissions.includes(permission) ? 'yes' : 'no', r.permissions.includes(permission) ? '✓' : '·'));
+      table.append(line);
+    }
+    const limits = el('tr');
+    limits.append(el('td', undefined, 'Sourdine / suspension la plus longue'));
+    for (const r of roles) {
+      const fmt = (m: number | null, can: boolean) => (!can ? '·' : m === null ? 'sans limite' : m >= 1440 ? `${m / 1440} j` : `${m / 60} h`);
+      limits.append(el('td', undefined, `${fmt(r.maxMuteMinutes, r.permissions.includes('sanction.mute'))} / ${fmt(r.maxSuspensionMinutes, r.permissions.includes('sanction.suspension'))}`));
+    }
+    table.append(limits);
+    const scroll = el('div', 'role-matrix-box');
+    scroll.append(table);
+    view.append(scroll);
+    for (const r of roles) view.append(el('p', 'small', `${r.title} : ${r.summary}`));
+
+    view.append(el('h3', undefined, 'Derniers changements de rôle'));
+    if (!team.data.history.length) view.append(el('p', 'muted small', 'Aucun.'));
+    for (const h of team.data.history) {
+      view.append(el('p', 'small', `${when(h.at)} · ${h.nickname} : ${h.from} → ${h.to}${h.by ? ` (par ${h.by})` : ' (en ligne de commande)'}`));
+    }
+    content.replaceChildren(view);
+  }
+
   // ----- Shell -------------------------------------------------------------
   function openPlayer(id: string) {
     playerId = id;
@@ -626,10 +850,12 @@ export function createStaffPanel(options: { onToggle(open: boolean): void; notif
     else if (tab === 'reports') await renderReports();
     else if (tab === 'chat') await renderChat();
     else if (tab === 'news') await renderNews();
+    else if (tab === 'events') await renderEvents();
+    else if (tab === 'team') await renderTeam();
     else await renderPlayers();
   }
 
-  for (const [key, label] of TABS) {
+  for (const [key, label] of visibleTabs) {
     const b = el('button', undefined, label);
     b.type = 'button';
     b.setAttribute('role', 'tab');

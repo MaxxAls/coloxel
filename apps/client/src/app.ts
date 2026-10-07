@@ -9,7 +9,7 @@ import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
 import { createQuests } from './quests';
 import { createShop } from './shop';
-import { createStaffPanel } from './staff-panel';
+import { createStaffPanel, type StaffPanel } from './staff-panel';
 import { createHud } from './wallet';
 import { createWardrobe } from './wardrobe';
 import { windowBar } from './window';
@@ -149,7 +149,7 @@ export async function startApp(user: User) {
   const closeWindows = (except?: string) => {
     if (except !== 'navigator') navigator.close();
     if (except !== 'friends') friends.close();
-    if (except !== 'staff') staff.close();
+    if (except !== 'staff') staff?.close();
     if (except !== 'quests') quests.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
@@ -167,9 +167,8 @@ export async function startApp(user: User) {
     },
   });
   document.body.append(shop.element);
-  // The staff panel exists for everybody's code but only staff accounts get a button: the server answers nobody else.
-  const staff = createStaffPanel({ onToggle: () => markActive(), notify: (text) => notify(text) });
-  document.body.append(staff.element);
+  // The staff panel is built once the server says this player is staff, and shows what their role allows.
+  let staff: StaffPanel | null = null;
   const quests = createQuests({ onToggle: () => markActive() });
   document.body.append(quests.element);
   const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
@@ -252,13 +251,16 @@ export async function startApp(user: User) {
   for (const item of items) addButton(item);
   api.staffMe().then((res) => {
     if (!res.ok) return;
+    const panel = createStaffPanel({ me: res.data, onToggle: () => markActive(), notify: (text) => notify(text) });
+    staff = panel;
+    document.body.append(panel.element);
     const item: Item = {
       key: 'staff',
       label: 'Staff',
-      active: () => staff.isOpen(),
+      active: () => panel.isOpen(),
       run: () => {
         closeWindows('staff');
-        staff.toggle();
+        panel.toggle();
       },
     };
     items.push(item);

@@ -20,6 +20,8 @@
 | Déplacements et animations | Commandes de chat : `/danse` (animation vue par tous), `/suivre <ami>` (le joueur reste à côté de l'ami qui marche), `/stop`, `/aide`. Elles ne sont ni du chat, ni journalisées. |
 | Site web (pages PHP de l'émulateur) | **Site public** servi par le serveur sous `/site` : accueil avec compteurs et nouveautés, actualités, classement (inventeurs, apparts visités), équipe, état du jeu, profils de joueurs, sprites des créations visibles. Aucune donnée privée, rien de masqué, tout est échappé. |
 | Annonces de l'équipe | Écrites depuis l'onglet « Annonces » du panel staff (brouillon, épinglée, modification, suppression). La plus récente s'affiche une fois dans le jeu. |
+| Rangs du personnel (l'émulateur donne à chaque droit et chaque commande un rang minimum, et interdit d'agir sur un rang égal ou supérieur) | **Rôles du personnel** : animateur, modérateur, super-modérateur, gérant, administrateur (`apps/server/src/staff/roles.ts`). Chaque rôle a ses permissions et ses limites (durée maximale des sourdines et suspensions). Personne n'agit sur un rôle égal ou supérieur, on ne nomme que des rôles strictement inférieurs au sien, tout changement de rôle est journalisé, et le rôle est relu en base à chaque requête (une rétrogradation compte tout de suite). Seuls gérants et administrateurs jouent pendant la maintenance. |
+| Classement des animateurs et événements du site | **Événements** organisés par les animateurs, annoncés sur le site (`/site/evenements`) et sur l'accueil, avec le classement des animateurs par événements tenus. |
 | Mode maintenance | Interrupteur dans le panel staff : l'API et les salles refusent les joueurs (503), le staff, la connexion et le site restent accessibles. |
 
 ## À faire, dans l'ordre conseillé

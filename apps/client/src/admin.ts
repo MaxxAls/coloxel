@@ -22,7 +22,7 @@ async function main() {
   const bar = document.createElement('div');
   bar.className = 'admin-bar';
   const title = document.createElement('h1');
-  title.textContent = 'Administration';
+  title.textContent = `Administration · ${staff.data.title}`;
   const links = document.createElement('p');
   links.className = 'small';
   const site = document.createElement('a');
@@ -50,6 +50,7 @@ async function main() {
   };
 
   const panel = createStaffPanel({
+    me: staff.data,
     notify,
     // It is the whole page: closing it makes no sense.
     onToggle: (open) => {
