@@ -8,6 +8,7 @@ import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
 import { createMarket } from './market';
+import { createTrade } from './trade';
 import { createQuests } from './quests';
 import { createShop } from './shop';
 import type { StaffPanel } from './staff-panel';
@@ -203,6 +204,8 @@ export async function startApp(user: User) {
   document.body.append(quests.element);
   const market = createMarket({ onToggle: () => markActive(), onChanged: () => void scene?.refresh?.(), notify: (text) => notify(text) });
   document.body.append(market.element);
+  const trade = createTrade({ notify: (text) => notify(text), onChanged: () => void scene?.refresh?.(), closeOthers: () => closeWindows('trade') });
+  document.body.append(trade.element);
   const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
   document.body.append(wardrobe.element);
   // Whatever the player saves, the room tells the others.

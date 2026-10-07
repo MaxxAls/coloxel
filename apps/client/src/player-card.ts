@@ -54,6 +54,16 @@ export function showPlayerCard(options: PlayerCardOptions) {
   close.type = 'button';
   close.addEventListener('click', closePlayerCard);
   card.append(friend);
+  const trade = el('button', undefined, 'Échanger');
+  trade.type = 'button';
+  trade.addEventListener('click', async () => {
+    trade.disabled = true;
+    const res = await api.startTrade(options.nickname);
+    closePlayerCard();
+    if (!res.ok) options.notify(res.error);
+    else dispatchEvent(new CustomEvent('coloxel:trade'));
+  });
+  card.append(trade);
   const onReport = options.onReport;
   if (onReport) {
     const report = el('button', undefined, 'Signaler');

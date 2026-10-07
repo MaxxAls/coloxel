@@ -23,6 +23,7 @@ import { registerShopRoutes } from './shop/routes';
 import { registerWalletRoutes } from './wallet/routes';
 import { registerInventoryRoutes } from './inventory/routes';
 import { registerMarketRoutes } from './market/routes';
+import { registerTradeRoutes } from './market/trades';
 import type { Locate } from './realtime/where';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
@@ -100,6 +101,7 @@ export function buildServer({
       registerCreationRoutes(scope, pool, model, guards, quest);
       registerInventoryRoutes(scope, pool, notifyApartment, quest);
       registerMarketRoutes(scope, pool, notifyApartment, guards);
+      registerTradeRoutes(scope, pool, locate, notifyApartment, guards);
       registerFurnitureRoutes(scope, pool, guards, notifyApartment);
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
       registerFriendRoutes(scope, pool, locate, notifyApartment, guards, quest);

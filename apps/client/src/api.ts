@@ -390,6 +390,21 @@ export interface OwnerLine {
   at: string;
 }
 
+export interface TradeSide {
+  accepted: boolean;
+  confirmed: boolean;
+  items: { id: string; serial: number; name: string; editionNumber: number; editionSize: number; creator: string }[];
+}
+
+export interface TradeData {
+  id: string;
+  version: number;
+  partner: string;
+  stage: 'offer' | 'confirm';
+  mine: TradeSide;
+  theirs: TradeSide;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -501,6 +516,12 @@ export const api = {
   withdraw: (listingId: string) => call<void>('DELETE', `/api/market/listings/${listingId}`),
   buyListing: (listingId: string) => call<{ itemId: string; price: number; coloxs: number }>('POST', `/api/market/listings/${listingId}/buy`),
   itemHistory: (itemId: string) => call<{ history: OwnerLine[] }>('GET', `/api/items/${itemId}/history`),
+  currentTrade: () => call<{ trade: TradeData | null }>('GET', '/api/trades/current'),
+  startTrade: (nickname: string) => call<{ trade: TradeData }>('POST', '/api/trades', { nickname }),
+  offerTrade: (id: string, itemIds: string[]) => call<{ trade: TradeData }>('PUT', `/api/trades/${id}/offer`, { itemIds }),
+  acceptTrade: (id: string, version: number) => call<{ trade: TradeData | null; done: boolean }>('POST', `/api/trades/${id}/accept`, { version }),
+  confirmTrade: (id: string, version: number) => call<{ trade: TradeData | null; done: boolean }>('POST', `/api/trades/${id}/confirm`, { version }),
+  cancelTrade: (id: string) => call<void>('DELETE', `/api/trades/${id}`),
   wallet: () => call<WalletData>('GET', '/api/wallet'),
   daily: () => call<{ pixels: number; gained: number }>('POST', '/api/wallet/daily'),
   redeem: (code: string) => call<{ pixels: number; gained: number }>('POST', '/api/wallet/redeem', { code }),

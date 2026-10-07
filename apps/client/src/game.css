@@ -2551,3 +2551,42 @@ body.admin .staff .win-bar button.win-close {
 .inventory li .market-confirm {
   flex: 1 1 100%;
 }
+
+/* ---------- Trade ---------- */
+
+.trade-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.trade-side {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.trade-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trade-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.trade-actions p {
+  flex: 1 1 100%;
+  margin: 0;
+}

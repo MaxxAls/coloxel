@@ -146,12 +146,15 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
     const result = await withTransaction(pool, async (client) => {
       await expireListings(client);
       // The row lock orders this against placing, trading or buying the same item.
-      const found = await client.query<{ owner_id: string; masked: boolean }>(
-        `SELECT it.owner_id, ${itemMaskedSql('it')} AS masked FROM items it WHERE it.id = $1 FOR UPDATE`,
+      const found = await client.query<{ owner_id: string; masked: boolean; traded: boolean }>(
+        `SELECT it.owner_id, ${itemMaskedSql('it')} AS masked,
+                EXISTS (SELECT 1 FROM trade_offers o WHERE o.item_id = it.id AND o.live) AS traded
+           FROM items it WHERE it.id = $1 FOR UPDATE`,
         [itemId],
       );
       if (!found.rows[0] || found.rows[0].owner_id !== user.id) return 'missing' as const;
       if (found.rows[0].masked) return 'masked' as const;
+      if (found.rows[0].traded) return 'traded' as const;
       const active = await client.query<{ n: string }>("SELECT count(*) AS n FROM listings WHERE seller_id = $1 AND status = 'active'", [user.id]);
       if (Number(active.rows[0]!.n) >= config.maxActiveListings) return 'full' as const;
       const unplaced = await client.query('DELETE FROM placements WHERE item_id = $1', [itemId]);
@@ -170,6 +173,7 @@ export function registerMarketRoutes(app: FastifyInstance, pool: pg.Pool, notify
     if (result === 'missing') return reply.code(404).send({ error: 'Objet introuvable' });
     if (result === 'masked') return reply.code(409).send({ error: 'Cet objet est en cours de revue, il ne peut pas être vendu' });
     if (result === 'listed') return reply.code(409).send({ error: 'Cet objet est déjà en vente' });
+    if (result === 'traded') return reply.code(409).send({ error: 'Cet objet est dans un échange en cours' });
     if (result === 'full') return reply.code(409).send({ error: `Tu as déjà ${config.maxActiveListings} objets en vente` });
     if (result.unplaced) notify?.(user.id, 'decor');
     return reply.code(201).send({ id: result.listing.id, price, expiresAt: result.listing.expires_at });
