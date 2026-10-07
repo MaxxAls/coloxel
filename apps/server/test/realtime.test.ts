@@ -511,6 +511,141 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     await until(() => roomC.state?.players?.get(alice.id));
     expect(JSON.parse((roomC.state.players.get(alice.id) as { look: string }).look).hat).toBe(6);
   });
+  describe('chat', () => {
+    interface Heard {
+      chat: { id: number; from: string; nickname: string; text: string }[];
+      refused: { reason: string; message: string }[];
+    }
+    const listen = (room: AnyRoom): Heard => {
+      const heard: Heard = { chat: [], refused: [] };
+      room.onMessage('chat', (m: Heard['chat'][number]) => heard.chat.push(m));
+      room.onMessage('chat-refused', (m: Heard['refused'][number]) => heard.refused.push(m));
+      return heard;
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 300));
+    const logOf = async (userId: string) =>
+      (await pool.query('SELECT room, text, blocked, reason FROM chat_log WHERE user_id = $1 ORDER BY id', [userId])).rows;
+
+    it('shows a message to everybody in the room, signed with the session’s identity, and journals it', async () => {
+      const ada = await signUp('chat_ada');
+      const bo = await signUp('chat_bo');
+      const a = await joinHall(ada);
+      const b = await joinHall(bo);
+      const heardA = listen(a);
+      const heardB = listen(b);
+      await until(() => a.state?.players?.size === 2 && b.state?.players?.size === 2);
+
+      a.send('chat', { text: '  Salut   tout le monde !  ' });
+      await until(() => heardA.chat.length === 1 && heardB.chat.length === 1);
+      expect(heardB.chat[0]).toMatchObject({ from: ada.id, nickname: 'chat_ada', text: 'Salut tout le monde !' });
+      expect(await logOf(ada.id)).toEqual([{ room: 'hall', text: 'Salut tout le monde !', blocked: false, reason: null }]);
+      // The id shown to the others is the journal's id: it is what a report points to.
+      const { rows } = await pool.query('SELECT id FROM chat_log WHERE user_id = $1', [ada.id]);
+      expect(Number(rows[0].id)).toBe(heardB.chat[0]!.id);
+    });
+
+    it('refuses a message that names another author, or is not text', async () => {
+      const cy = await signUp('chat_cy');
+      const di = await signUp('chat_di');
+      const a = await joinHall(cy);
+      const b = await joinHall(di);
+      const heardB = listen(b);
+      await until(() => a.state?.players?.size === 2);
+      a.send('chat', { text: 'je suis di', from: di.id });
+      a.send('chat', { text: 'je suis di', id: di.id, nickname: 'chat_di' });
+      for (const bad of [null, 'salut', 42, [1], { text: 12 }, {}]) a.send('chat', bad);
+      await settle();
+      expect(heardB.chat).toEqual([]);
+      expect(await logOf(di.id)).toEqual([]);
+    });
+
+    it('keeps a message inside the room it was said in', async () => {
+      const eli = await signUp('chat_eli');
+      const fab = await signUp('chat_fab');
+      const gus = await signUp('chat_gus');
+      await setAccess(eli.id, 'building');
+      const inFlat = await joinApartment(eli, eli.id);
+      const visitor = await joinApartment(fab, eli.id);
+      const inHall = await joinHall(gus);
+      const heardVisitor = listen(visitor);
+      const heardHall = listen(inHall);
+      await until(() => inFlat.state?.players?.size === 2);
+
+      inFlat.send('chat', { text: 'bienvenue chez moi' });
+      await until(() => heardVisitor.chat.length === 1);
+      await settle();
+      expect(heardHall.chat).toEqual([]);
+      expect((await logOf(eli.id))[0]).toMatchObject({ room: `apartment:${eli.id}` });
+    });
+
+    it('blocks insults, links, emails, phone numbers and social handles: only the author hears of it, and it is journaled', async () => {
+      const hal = await signUp('chat_hal');
+      const ivo = await signUp('chat_ivo');
+      const a = await joinHall(hal);
+      const b = await joinHall(ivo);
+      const heardA = listen(a);
+      const heardB = listen(b);
+      await until(() => a.state?.players?.size === 2);
+
+      const cases: [string, string][] = [
+        ['regarde exemple.com', 'link'],
+        ['https://monsite.fr', 'link'],
+        ['écris-moi à jean@gmail.com', 'email'],
+        ['appelle le 06 12 34 56 78', 'phone'],
+        ['ajoute moi sur insta', 'social'],
+        ['espèce de connard', 'insult'],
+      ];
+      // The limiter lets five through per window: refill it between groups of cases.
+      for (const [k, [text]] of cases.entries()) {
+        a.send('chat', { text });
+        await until(() => heardA.refused.length === k + 1);
+        if (k % 4 === 3) await new Promise((r) => setTimeout(r, 8100));
+      }
+      expect(heardB.chat).toEqual([]);
+      expect(heardA.chat).toEqual([]);
+      expect(heardA.refused.map((r) => r.reason)).toEqual(cases.map(() => 'filtered'));
+      const log = await logOf(hal.id);
+      expect(log.map((l) => [l.text, l.blocked, l.reason])).toEqual(cases.map(([text, reason]) => [text, true, reason]));
+    }, 30000);
+
+    it('refuses empty and over-long messages without journaling them', async () => {
+      const jo = await signUp('chat_jo');
+      const a = await joinHall(jo);
+      const heard = listen(a);
+      await until(() => a.state?.players?.size === 1);
+      a.send('chat', { text: '   ' });
+      a.send('chat', { text: 'x'.repeat(121) });
+      await until(() => heard.refused.length === 2);
+      expect(heard.refused.map((r) => r.reason)).toEqual(['empty', 'too-long']);
+      a.send('chat', { text: 'y'.repeat(120) });
+      await until(() => heard.chat.length === 1);
+      expect(await logOf(jo.id)).toHaveLength(1);
+    });
+
+    it('limits a client that sends messages in a burst, without taking the room down', async () => {
+      const kit = await signUp('chat_kit');
+      const lou = await signUp('chat_lou');
+      const spammer = await joinHall(kit);
+      const calm = await joinHall(lou);
+      const heardCalm = listen(calm);
+      const heardSpammer = listen(spammer);
+      await until(() => calm.state?.players?.size === 2);
+
+      // Twelve in a row: under the connection's own flood limit, over the chat's.
+      for (let k = 0; k < 12; k++) spammer.send('chat', { text: `message ${k}` });
+      await until(() => heardSpammer.chat.length + heardSpammer.refused.length === 12);
+      expect(heardSpammer.chat).toHaveLength(5);
+      expect(heardSpammer.refused.every((r) => r.reason === 'rate')).toBe(true);
+      expect(heardCalm.chat.map((m) => m.text)).toEqual([0, 1, 2, 3, 4].map((k) => `message ${k}`));
+
+      // The room is alive, and the quiet player is not limited by the other's flood.
+      calm.send('chat', { text: 'toujours là' });
+      await until(() => heardCalm.chat.length === 6);
+      calm.send('move', { i: SPAWN.i, j: 2 });
+      await until(() => playerOf(calm, lou.id)!.j === 2, 3000);
+    });
+  });
+
   it('holds 30 connected players in the hall, each seeing all the others move', async () => {
     const accounts = await Promise.all(Array.from({ length: 30 }, (_, k) => signUp(`load${k}`)));
     const rooms = await Promise.all(accounts.map((a) => joinHall(a)));

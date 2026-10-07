@@ -1,4 +1,5 @@
 import { Client, type Room } from '@colyseus/sdk';
+import type { ChatMessage } from './chat-ui';
 
 // The realtime server shares the session cookie with the API: the browser sends
 // it with the join request, the server decides who we are. We only say where we
@@ -33,7 +34,21 @@ export interface BuildingRoom {
   onClosed(callback: (code: number) => void): void;
   /** A message the server broadcasts to the room. */
   onMessage(type: string, callback: () => void): void;
+  /** "I say this": the server filters, journals and shows it to the room. */
+  say(text: string): void;
+  /** A message that was let through (ours included). */
+  onChat(callback: (message: ChatMessage) => void): void;
+  /** The server did not show what we said, and tells us why. */
+  onChatRefused(callback: (refusal: { reason: string; message: string }) => void): void;
+  /** The staff or the server speaks to us (a warning, a mute). */
+  onNotice(callback: (notice: Notice) => void): void;
   leave(): Promise<void>;
+}
+
+/** Something the server tells this player alone. */
+export interface Notice {
+  kind: 'warning' | 'mute';
+  text: string;
 }
 
 export type JoinResult = { ok: true; room: BuildingRoom } | { ok: false; status: number; error: string };
@@ -57,6 +72,18 @@ function wrap(room: Room): BuildingRoom {
     },
     onMessage(type, callback) {
       room.onMessage(type, () => callback());
+    },
+    say(text) {
+      room.send('chat', { text });
+    },
+    onChat(callback) {
+      room.onMessage('chat', (m: ChatMessage) => callback(m));
+    },
+    onChatRefused(callback) {
+      room.onMessage('chat-refused', (m: { reason: string; message: string }) => callback(m));
+    },
+    onNotice(callback) {
+      room.onMessage('notice', (m: Notice) => callback(m));
     },
     leave: async () => {
       await room.leave().catch(() => {});

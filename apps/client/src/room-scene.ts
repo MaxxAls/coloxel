@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
 import { ANCHOR_X, ANCHOR_Y, catalogueEntry, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
+import { createChat, type ChatMessage } from './chat-ui';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
@@ -504,6 +505,72 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     setPresent(players);
   }
 
+  // ----- Chat --------------------------------------------------------------
+  // What the server lets through shows as a bubble over the speaker and as a line in the panel.
+  const chat = createChat({
+    me: user.id,
+    say: (text) => room.say(text),
+  });
+  document.body.append(chat.bar);
+  panelElement.querySelector('.present')?.after(chat.log);
+
+  const overlay = new Container();
+  overlay.zIndex = 8500;
+  world.addChild(overlay);
+  interface Bubble {
+    box: Container;
+    until: number;
+    width: number;
+    height: number;
+  }
+  const bubbles = new Map<string, Bubble>();
+  const BUBBLE_MAX_WIDTH = 150;
+
+  function showBubble(message: ChatMessage) {
+    bubbles.get(message.from)?.box.destroy({ children: true });
+    bubbles.delete(message.from);
+    const text = new Text({
+      text: message.text,
+      style: { fontFamily: 'system-ui, sans-serif', fontSize: 11, fontWeight: '600', fill: 0x1b1530, wordWrap: true, wordWrapWidth: BUBBLE_MAX_WIDTH, breakWords: true },
+      resolution: 2,
+    });
+    const width = Math.ceil(text.width) + 12;
+    const height = Math.ceil(text.height) + 8;
+    const box = new Container();
+    const back = new Graphics();
+    back.roundRect(-width / 2, -height - 5, width, height, 5).fill(0xffffff).stroke({ color: 0x1b1530, width: 1.5 });
+    back.poly([-4, -5, 4, -5, 0, 0]).fill(0xffffff);
+    text.position.set(-width / 2 + 6, -height - 1);
+    box.addChild(back, text);
+    overlay.addChild(box);
+    bubbles.set(message.from, { box, until: performance.now() + Math.min(9000, 3500 + message.text.length * 60), width, height: height + 5 });
+  }
+
+  function layoutBubbles(now: number) {
+    for (const [id, bubble] of bubbles) {
+      const view = views.get(id);
+      if (!view || now > bubble.until) {
+        bubble.box.destroy({ children: true });
+        bubbles.delete(id);
+        continue;
+      }
+      // Above the name tag, and never out of the room's picture.
+      const x = Math.min(ROOM_W - bubble.width / 2 - 4, Math.max(bubble.width / 2 + 4, Math.round(view.box.x)));
+      const y = Math.max(bubble.height + 4, Math.round(view.box.y + view.label.y - 12));
+      bubble.box.position.set(x, y);
+      bubble.box.alpha = Math.min(1, (bubble.until - now) / 500);
+    }
+  }
+
+  room.onChat((message) => {
+    chat.add(message);
+    showBubble(message);
+  });
+  room.onChatRefused((refusal) => {
+    chat.refused(refusal.message);
+    host.notify(refusal.message);
+  });
+
   // ----- Input -------------------------------------------------------------
   let hover: { i: number; j: number } | null = null;
   let goal: { i: number; j: number } | null = null;
@@ -591,6 +658,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const tick = (ticker: Ticker) => {
     const now = performance.now();
     syncPlayers(ticker.deltaMS, now);
+    layoutBubbles(now);
 
     if (!reduceMotion) {
       for (const prop of props.values()) {
@@ -664,6 +732,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     refreshAppearance: () => room.refreshAppearance(),
     destroy() {
       closing = true;
+      chat.destroy();
       abort.abort();
       app.ticker.remove(tick);
       void room.leave();

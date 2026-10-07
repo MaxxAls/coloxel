@@ -7,7 +7,9 @@ import { N, findPath, inGrid, type Cell } from '@coloxel/world';
 import { canEnterApartment } from '../apartments/access';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
+import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
 import { authenticateConnection } from './auth';
+import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
 
 /** One cell per step: a calm, continuous walk, about half a second per cell. */
 export const STEP_MS = 480;
@@ -56,6 +58,7 @@ const needDeps = () => {
 };
 
 const moveSchema = z.object({ i: z.number().int(), j: z.number().int() }).strict();
+const chatSchema = z.object({ text: z.string() }).strict();
 
 type AuthedClient = Client<{ auth: SessionUser }>;
 
@@ -80,8 +83,13 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private paths = new Map<string, Cell[]>();
   private clientsByUser = new Map<string, AuthedClient>();
   private lastRefresh = new Map<string, number>();
+  private chatLimiter = new ChatLimiter();
+  private chatChain: Promise<void> = Promise.resolve();
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
+
+  /** Where this room is: the hall, or the apartment of its owner. */
+  protected abstract location(): Location;
 
   /** Room-specific entry check (the hall is open to every signed-in player). */
   protected async authorize(_user: SessionUser): Promise<void> {}
@@ -135,6 +143,15 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       player.pet = appearance.pet;
     });
 
+    // Chat. The author is the session's player, the text is checked, journaled and only then shown to the room.
+    // A blocked message is told to its author alone; nobody else sees anything.
+    this.onMessage('chat', (client, message) => {
+      const parsed = chatSchema.safeParse(message);
+      if (!parsed.success) return;
+      // One at a time, in order of arrival: messages are shown in the order they were written.
+      this.chatChain = this.chatChain.then(() => this.handleChat(client, parsed.data.text)).catch(() => {});
+    });
+
     this.onMessage('move', async (client, message) => {
       const parsed = moveSchema.safeParse(message);
       if (!parsed.success || !inGrid(parsed.data.i, parsed.data.j)) return;
@@ -160,6 +177,27 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.pending.delete(id);
       }
     });
+  }
+
+  private async handleChat(client: AuthedClient, rawText: string) {
+    const { id } = userOf(client);
+    const player = this.state.players.get(id);
+    if (!player) return;
+    const refuse = (reason: string, text: string) => client.send('chat-refused', { reason, message: text });
+    if (!this.chatLimiter.allow(id)) return refuse('rate', REFUSAL_MESSAGES.rate);
+    const verdict = judgeChatText(rawText);
+    const room = roomLabel(this.location());
+    try {
+      if (!verdict.ok) {
+        if (verdict.reason === 'filtered') await logChat(needDeps().pool, { userId: id, room, text: verdict.text, blocked: true, reason: verdict.detail });
+        return refuse(verdict.reason, verdict.message);
+      }
+      const messageId = await logChat(needDeps().pool, { userId: id, room, text: verdict.text, blocked: false });
+      this.broadcast('chat', { id: messageId, from: id, nickname: player.nickname, text: verdict.text });
+    } catch {
+      // Not journaled, not shown: every message shown is a message the staff can find.
+      refuse('error', 'Ton message n’a pas pu être envoyé, réessaie.');
+    }
   }
 
   /** The free cell closest to the door: not under an object, not under another player. */
@@ -203,17 +241,28 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     this.paths.delete(user.id);
     this.pending.delete(user.id);
     this.state.players.set(user.id, player);
+    // Friends can see where we are.
+    const entry: WhereEntry = { room: roomLabel(this.location()), roomId: this.roomId };
+    await this.presence.hset(WHERE_KEY, user.id, JSON.stringify(entry)).catch(() => {});
   }
 
-  override onLeave(client: AuthedClient) {
+  override async onLeave(client: AuthedClient) {
     const id = userOf(client).id;
     // A replaced connection leaving must not remove the player of the new one.
     if (this.clientsByUser.get(id) !== client) return;
     this.clientsByUser.delete(id);
     this.lastRefresh.delete(id);
+    this.chatLimiter.forget(id);
     this.paths.delete(id);
     this.pending.delete(id);
     this.state.players.delete(id);
+    // Forget our place, unless the player already is somewhere else (they joined another room before this one noticed).
+    try {
+      const raw = await this.presence.hget(WHERE_KEY, id);
+      if (raw && (JSON.parse(raw) as WhereEntry).roomId === this.roomId) await this.presence.hdel(WHERE_KEY, id);
+    } catch {
+      // The presence store is a convenience for friends lists: a failure here must not break leaving.
+    }
   }
 
   private step() {
@@ -238,7 +287,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 }
 
 /** The common area on the ground floor. */
-export class HallRoom extends BuildingRoom {}
+export class HallRoom extends BuildingRoom {
+  protected override location(): Location {
+    return { kind: 'hall' };
+  }
+}
 
 /** One room per open apartment, keyed by its owner. */
 export class ApartmentRoom extends BuildingRoom {
@@ -261,6 +314,10 @@ export class ApartmentRoom extends BuildingRoom {
 
   override onDispose() {
     void this.presence.unsubscribe(apartmentTopic(this.ownerId), this.onChange);
+  }
+
+  protected override location(): Location {
+    return { kind: 'apartment', ownerId: this.ownerId };
   }
 
   private onChange = (kind: unknown) => {
