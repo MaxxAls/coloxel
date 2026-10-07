@@ -14,6 +14,14 @@ La phase 1 a été relue le 7 octobre 2026 : 52 tests passent contre PostgreSQL,
 - [x] **Limite de débit** sur `/api/auth/login`, `/api/auth/register` et `/api/creations` (`@fastify/rate-limit`, par IP et par compte). Indispensable dès que le jeu est en ligne : aujourd'hui un mot de passe peut être deviné sans limite et le générateur peut être spammé.
 - [ ] **Générateur testé en vrai** : créer au moins 20 objets variés avec une vraie clé `ANTHROPIC_API_KEY` et noter ceux qui ratent dans `docs/tests-generateur.md` (description, résultat, problème). Les tests automatiques utilisent un modèle simulé.
 
+## Avancement
+
+Les 9 étapes sont construites (étapes 6 à 9 : chat, amis, signalements, panel staff). Voir `git log` pour le détail.
+
+- Staff : le rôle se donne à la main, `npm run staff:grant -- <pseudo>` (et `staff:revoke`). Le bouton « Staff » n'apparaît dans la barre que pour ces comptes.
+- Un objet signalé par 3 joueurs différents est masqué (`REPORT_HIDE_THRESHOLD`, `apps/server/src/moderation/masking.ts`). Il garde sa case, qui reste occupée pour les visiteurs, mais sans sprite.
+- Restent à faire avec de vrais testeurs : l'interface n'a été vérifiée que par `typecheck` et les tests serveur, pas dans un navigateur ; le test du générateur avec une vraie clé ; la revue de la modération « en conditions réelles » demandée par la porte de sortie.
+
 ## Périmètre à construire
 
 Dans cet ordre, une étape par session de travail.
@@ -69,14 +77,14 @@ Marché, monnaies (Pixels, Coloxs), prix du catalogue, VIP, paiement, messages p
 
 - [ ] Deux navigateurs connectés avec deux comptes se voient bouger et se parlent dans le hall et dans un appart.
 - [ ] Depuis n'importe où, un joueur rejoint l'appart d'un ami en ligne en deux clics, et revient chez lui en un clic.
-- [ ] Un nouveau compte arrive dans un appart déjà meublé par le kit de départ.
-- [ ] Prendre 50 objets de base ne change ni la séquence des numéros ni le nombre d'items numérotés (test).
-- [ ] Un objet de base ne peut être ni transféré, ni numéroté, ni confondu avec une création dans l'API (tests).
-- [ ] Un client modifié qui envoie une position, un placement ou un message au nom d'un autre joueur est refusé par le serveur (tests).
-- [ ] Un client modifié qui envoie des messages en rafale est limité, sans faire tomber la salle.
-- [ ] Un visiteur ne peut ni placer ni ranger d'objet chez quelqu'un d'autre (test).
-- [ ] Un appart fermé est inaccessible, même en forçant l'URL ou le message de connexion.
-- [ ] Les messages et noms d'appart contenant un lien, un email ou un numéro sont bloqués (tests sur une liste de cas).
-- [ ] Une sanction posée dans le panel s'applique en moins de quelques secondes à un joueur connecté.
-- [ ] Le serveur supporte au moins 30 joueurs connectés en même temps dans l'immeuble (test de charge simple avec des clients simulés).
-- [ ] `npm run typecheck` et `npm test` passent.
+- [x] Un nouveau compte arrive dans un appart déjà meublé par le kit de départ.
+- [x] Prendre 50 objets de base ne change ni la séquence des numéros ni le nombre d'items numérotés (test).
+- [x] Un objet de base ne peut être ni transféré, ni numéroté, ni confondu avec une création dans l'API (tests).
+- [x] Un client modifié qui envoie une position, un placement ou un message au nom d'un autre joueur est refusé par le serveur (tests).
+- [x] Un client modifié qui envoie des messages en rafale est limité, sans faire tomber la salle.
+- [x] Un visiteur ne peut ni placer ni ranger d'objet chez quelqu'un d'autre (test).
+- [x] Un appart fermé est inaccessible, même en forçant l'URL ou le message de connexion.
+- [x] Les messages et noms d'appart contenant un lien, un email ou un numéro sont bloqués (tests sur une liste de cas).
+- [x] Une sanction posée dans le panel s'applique en moins de quelques secondes à un joueur connecté.
+- [x] Le serveur supporte au moins 30 joueurs connectés en même temps dans l'immeuble (test de charge simple avec des clients simulés).
+- [x] `npm run typecheck` et `npm test` passent.

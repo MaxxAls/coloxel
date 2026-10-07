@@ -5,6 +5,7 @@ import type pg from 'pg';
 import { assignApartment } from '../building/routes';
 import { giveStarterKit } from '../furniture/routes';
 import { withTransaction } from '../db/pool';
+import { blockedUserSql, liveSanction, sanctionText } from '../moderation/sanctions';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { ageOn, containsBannedWord, loginSchema, MIN_AGE, parseBirthDate, registerSchema } from './rules';
 
@@ -29,8 +30,9 @@ const sha256 = (token: string) => createHash('sha256').update(token).digest();
 /** The user behind a session cookie value, or null (unknown or expired). Shared by HTTP and WebSocket auth. */
 export async function findSessionUser(pool: pg.Pool, token: string): Promise<SessionUser | null> {
   const { rows } = await pool.query<SessionUser>(
+    // A suspended or banned player has no session while the sanction lasts: it works from the very next request.
     `SELECT u.id, u.nickname FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > now()`,
+     WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT ${blockedUserSql('u')}`,
     [sha256(token)],
   );
   return rows[0] ?? null;
@@ -128,6 +130,10 @@ export function registerAuthRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
     const found = rows[0];
     const ok = await verify(found?.password_hash ?? (await dummyHashPromise), parsed.data.password).catch(() => false);
     if (!found || !ok) return invalid();
+
+    // The right password, but the account is suspended or banned: say so, with the reason.
+    const blocked = await liveSanction(pool, found.id, ['suspension', 'ban']);
+    if (blocked) return reply.code(403).send({ error: sanctionText(blocked.kind, blocked.reason, blocked.expiresAt) });
 
     await openSession(pool, found.id, reply);
     return { user: { id: found.id, nickname: found.nickname } };

@@ -3,12 +3,13 @@ import { ANCHOR_X, ANCHOR_Y, catalogueEntry, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createChat, type ChatMessage } from './chat-ui';
+import { showNotice } from './notice-dialog';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createPanel } from './panel';
 import { showPlayerCard } from './player-card';
 import { openReportDialog } from './report-dialog';
-import { CLOSED_BY_OWNER, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
+import { CLOSED_BY_OWNER, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
 import { OY, ROOM_H, ROOM_W, TH, TW, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
@@ -760,8 +761,19 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onMessage('decor', () => void reloadVisit());
 
   let closing = false;
+  // The staff speaks to us (a warning, a mute) while we are here.
+  room.onNotice((notice) => {
+    showNotice(notice.text, notice.id !== undefined && notice.kind === 'warning' ? () => void api.noticesSeen([notice.id!]) : undefined);
+  });
+
   room.onClosed((code) => {
     if (closing) return;
+    if (code === SUSPENDED) {
+      // The account was just suspended or banned: the session is gone, signing in again says why.
+      host.notify('Ton compte a été suspendu.');
+      setTimeout(() => location.reload(), 1200);
+      return;
+    }
     host.notify(code === CLOSED_BY_OWNER ? 'Le propriétaire vient de fermer son appart.' : 'Tu as été déconnecté de la salle.');
     host.go({ kind: 'building' });
   });

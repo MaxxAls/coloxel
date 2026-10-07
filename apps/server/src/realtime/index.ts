@@ -5,6 +5,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import type pg from 'pg';
 import type { Presence } from '../building/routes';
 import { ApartmentRoom, HallRoom, apartmentTopic, configureRooms } from './rooms';
+import { USER_TOPIC, type NotifyUser } from '../moderation/sanctions';
 import { WHERE_KEY, locationOf, type Location, type WhereEntry } from './where';
 
 export interface RealtimeOptions {
@@ -24,6 +25,8 @@ export interface Realtime {
   occupancy(): Promise<Presence>;
   /** Tell the room of an apartment, wherever it runs, that its access or decor changed. */
   notifyApartment(ownerId: string, kind: 'access' | 'decor'): void;
+  /** Tell the rooms, wherever they run, that a player was sanctioned: it takes effect on their open connection. */
+  notifyUser: NotifyUser;
   /** Where each of these players is, among those connected right now. */
   locate(userIds: string[]): Promise<Map<string, Location>>;
   close(): Promise<void>;
@@ -57,6 +60,9 @@ export async function startRealtime({
     port: actualPort,
     notifyApartment(ownerId, kind) {
       void matchMaker.presence.publish(apartmentTopic(ownerId), kind);
+    },
+    notifyUser(event) {
+      void matchMaker.presence.publish(USER_TOPIC, event);
     },
     async locate(userIds) {
       const found = new Map<string, Location>();

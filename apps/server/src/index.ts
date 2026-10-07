@@ -9,6 +9,8 @@ import { registerCreationRoutes } from './creations/routes';
 import { registerAvatarRoutes } from './avatar/routes';
 import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
+import { registerNoticeRoutes } from './moderation/notices';
+import type { NotifyUser } from './moderation/sanctions';
 import { registerPetRoutes } from './pets/routes';
 import { registerReportRoutes } from './reports/routes';
 import { registerShopRoutes } from './shop/routes';
@@ -17,6 +19,7 @@ import { registerInventoryRoutes } from './inventory/routes';
 import type { Locate } from './realtime/where';
 import { DEFAULT_LIMITS, buildRateGuards, type RateLimits } from './rate-limit';
 import { spriteToPng } from './sprite-png';
+import { registerStaffRoutes } from './staff/routes';
 
 export { spriteToPng };
 
@@ -35,6 +38,8 @@ export interface ServerDeps {
   notifyApartment?: NotifyApartment;
   /** Where each connected player is (from the realtime server): friends see each other's place. */
   locate?: Locate;
+  /** Lets a sanction reach a player who is connected (from the realtime server). */
+  notifyUser?: NotifyUser;
 }
 
 export function buildServer({
@@ -45,6 +50,7 @@ export function buildServer({
   occupancy,
   notifyApartment,
   locate,
+  notifyUser,
 }: ServerDeps = {}) {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -73,6 +79,8 @@ export function buildServer({
       registerBuildingRoutes(scope, pool, occupancy, notifyApartment, locate);
       registerFriendRoutes(scope, pool, locate, notifyApartment, guards);
       registerReportRoutes(scope, pool, guards);
+      registerNoticeRoutes(scope, pool);
+      registerStaffRoutes(scope, pool, notifyUser, notifyApartment);
       registerWalletRoutes(scope, pool, guards);
       registerAvatarRoutes(scope, pool, guards);
       registerShopRoutes(scope, pool, guards);

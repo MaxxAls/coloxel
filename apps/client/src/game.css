@@ -1631,3 +1631,140 @@ body.in-game {
 .modal p {
   margin: 0;
 }
+
+/* ---------- Staff panel ---------- */
+
+.staff.window {
+  position: fixed;
+  left: 50%;
+  top: 24px;
+  transform: translateX(-50%);
+  --wx: -50%;
+  z-index: 13;
+  width: min(900px, calc(100vw - 16px));
+  height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
+}
+.staff .win-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.staff-content {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.staff-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.staff-bar input {
+  flex: 1;
+  min-width: 120px;
+  width: auto;
+}
+.staff select {
+  font: inherit;
+  color: var(--text);
+  background: #120f22;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px;
+}
+.staff-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.staff-list h3 {
+  margin: 8px 0 0;
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  color: #8d82c4;
+}
+.staff-list p,
+.staff-card p {
+  margin: 0;
+}
+.staff-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: #2c2552;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.staff-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.staff-card-main {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.staff-card-main img {
+  flex: none;
+  image-rendering: auto;
+  background: #120f22;
+  border-radius: 6px;
+}
+.staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sanction-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.sanction-form input {
+  flex: 1;
+  min-width: 160px;
+  width: auto;
+}
+.chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #3b3366;
+}
+.chip.bad {
+  background: #7a2a2a;
+  color: #ffd6d0;
+}
+.chip.good {
+  background: #1f5a33;
+  color: #c9f5d5;
+}
+.chat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #1b1530;
+  overflow-wrap: anywhere;
+}
+.chat-row.blocked {
+  background: #3a1c28;
+}
+.notice-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

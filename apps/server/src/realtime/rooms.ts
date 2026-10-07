@@ -8,6 +8,7 @@ import { canEnterApartment } from '../apartments/access';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
 import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
+import { SUSPENDED, USER_TOPIC, liveSanction, sanctionText, type UserEvent } from '../moderation/sanctions';
 import { authenticateConnection } from './auth';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
 
@@ -126,8 +127,19 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     return user;
   }
 
+  /** The staff sanctioned a player: if they are here, they are told, or shown out. Wherever the room runs. */
+  private onUserEvent = (event: UserEvent) => {
+    if (!event || typeof event.userId !== 'string') return;
+    for (const client of [...this.clients]) {
+      if ((client.auth as SessionUser | undefined)?.id !== event.userId) continue;
+      if (event.kind === 'suspension' || event.kind === 'ban') client.leave(SUSPENDED, event.text);
+      else client.send('notice', { id: event.id, kind: event.kind, text: event.text });
+    }
+  };
+
   override onCreate(_options?: unknown) {
     this.setState(new RoomState());
+    void this.presence.subscribe(USER_TOPIC, this.onUserEvent);
     this.setSimulationInterval(() => this.step(), STEP_MS);
 
     // The player changed what they wear or which companion follows them: read it again from the database.
@@ -186,13 +198,21 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const refuse = (reason: string, text: string) => client.send('chat-refused', { reason, message: text });
     if (!this.chatLimiter.allow(id)) return refuse('rate', REFUSAL_MESSAGES.rate);
     const verdict = judgeChatText(rawText);
+    if (!verdict.ok && verdict.reason !== 'filtered') return refuse(verdict.reason, verdict.message);
     const room = roomLabel(this.location());
+    const { pool } = needDeps();
     try {
+      // A muted player is told so; what they write is journaled, and shown to nobody.
+      const mute = await liveSanction(pool, id, ['mute']);
+      if (mute) {
+        await logChat(pool, { userId: id, room, text: verdict.text, blocked: true, reason: 'muted' });
+        return refuse('muted', sanctionText('mute', mute.reason, mute.expiresAt));
+      }
       if (!verdict.ok) {
-        if (verdict.reason === 'filtered') await logChat(needDeps().pool, { userId: id, room, text: verdict.text, blocked: true, reason: verdict.detail });
+        await logChat(pool, { userId: id, room, text: verdict.text, blocked: true, reason: verdict.detail });
         return refuse(verdict.reason, verdict.message);
       }
-      const messageId = await logChat(needDeps().pool, { userId: id, room, text: verdict.text, blocked: false });
+      const messageId = await logChat(pool, { userId: id, room, text: verdict.text, blocked: false });
       this.broadcast('chat', { id: messageId, from: id, nickname: player.nickname, text: verdict.text });
     } catch {
       // Not journaled, not shown: every message shown is a message the staff can find.
@@ -244,6 +264,10 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     // Friends can see where we are.
     const entry: WhereEntry = { room: roomLabel(this.location()), roomId: this.roomId };
     await this.presence.hset(WHERE_KEY, user.id, JSON.stringify(entry)).catch(() => {});
+  }
+
+  override onDispose() {
+    void this.presence.unsubscribe(USER_TOPIC, this.onUserEvent);
   }
 
   override async onLeave(client: AuthedClient) {
@@ -313,6 +337,7 @@ export class ApartmentRoom extends BuildingRoom {
   }
 
   override onDispose() {
+    super.onDispose();
     void this.presence.unsubscribe(apartmentTopic(this.ownerId), this.onChange);
   }
 

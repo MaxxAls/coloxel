@@ -8,7 +8,9 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit -p .",
     "db:migrate": "tsx src/db/migrate.ts up",
-    "db:rollback": "tsx src/db/migrate.ts down"
+    "db:rollback": "tsx src/db/migrate.ts down",
+    "staff:grant": "tsx src/db/staff.ts grant",
+    "staff:revoke": "tsx src/db/staff.ts revoke"
   },
   "dependencies": {
     "@coloxel/generator": "*",

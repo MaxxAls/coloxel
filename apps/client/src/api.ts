@@ -140,6 +140,90 @@ export interface PurchaseResult {
 export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment';
 export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
 
+/** What the staff panel reads from the server (see apps/server/src/staff/routes.ts). */
+export type SanctionKind = 'warning' | 'mute' | 'suspension' | 'ban';
+
+export interface StaffReportGroup {
+  kind: ReportKind;
+  targetKey: string;
+  targetUser: { id: string; nickname: string } | null;
+  snapshot: string;
+  count: number;
+  firstAt: string;
+  lastAt: string;
+  reasons: Record<string, number>;
+  reports: { id: number; reporter: string; reason: ReportReason; details: string | null; at: string }[];
+  itemState: 'hidden' | 'cleared' | null;
+  masked: boolean;
+}
+
+export interface StaffHandledReport {
+  id: number;
+  kind: ReportKind;
+  reason: ReportReason;
+  snapshot: string;
+  status: 'dismissed' | 'confirmed';
+  note: string | null;
+  handledAt: string;
+  handler: string | null;
+  reporter: string;
+  target: string | null;
+}
+
+export interface StaffChatMessage {
+  id: number;
+  userId: string;
+  nickname: string;
+  room: string;
+  text: string;
+  blocked: boolean;
+  reason: string | null;
+  at: string;
+}
+
+export interface StaffPlayerRow {
+  id: string;
+  nickname: string;
+  role: string;
+  createdAt: string;
+  sanctions: SanctionKind[];
+}
+
+export interface StaffSanction {
+  id: number;
+  kind: SanctionKind;
+  reason: string;
+  issuer: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  revoker: string | null;
+  live: boolean;
+}
+
+export interface StaffPlayerSheet {
+  player: { id: string; nickname: string; role: string; createdAt: string; apartment: { id: number; name: string | null; access: string } | null };
+  creations: { id: string; serial: number; name: string; createdAt: string; masked: boolean; state: 'hidden' | 'cleared' | null }[];
+  sanctions: StaffSanction[];
+  reports: { againstOpen: number; againstTotal: number; made: number };
+  chat: { id: number; room: string; text: string; blocked: boolean; reason: string | null; at: string }[];
+}
+
+export interface SanctionOrder {
+  kind: SanctionKind;
+  minutes?: number;
+  reason: string;
+}
+
+export interface ChatQuery {
+  nickname?: string;
+  owner?: string;
+  room?: string;
+  q?: string;
+  blocked?: 'true' | 'false';
+  before?: number;
+}
+
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -185,6 +269,23 @@ export const api = {
   askFriend: (nickname: string) => call<{ status: 'pending' | 'accepted' }>('POST', '/api/friends/requests', { nickname }),
   acceptFriend: (id: string) => call<unknown>('POST', `/api/friends/requests/${id}/accept`),
   removeFriend: (id: string) => call<unknown>('DELETE', `/api/friends/${id}`),
+  notices: () => call<{ notices: { id: number; kind: 'warning' | 'mute'; text: string }[] }>('GET', '/api/notices'),
+  noticesSeen: (ids: number[]) => call<unknown>('POST', '/api/notices/seen', { ids }),
+  staffMe: () => call<{ staff: true }>('GET', '/api/staff/me'),
+  staffReports: () => call<{ groups: StaffReportGroup[] }>('GET', '/api/staff/reports'),
+  staffHandled: () => call<{ handled: StaffHandledReport[] }>('GET', '/api/staff/reports?status=handled'),
+  staffResolve: (body: { kind: ReportKind; targetKey: string; decision: 'dismiss' | 'confirm'; note?: string; sanction?: SanctionOrder }) =>
+    call<{ resolved: number }>('POST', '/api/staff/reports/resolve', body),
+  staffChat: (query: ChatQuery) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== '') params.set(k, String(v));
+    return call<{ messages: StaffChatMessage[]; next: number | null }>('GET', `/api/staff/chat?${params}`);
+  },
+  staffPlayers: (q: string) => call<{ players: StaffPlayerRow[] }>('GET', `/api/staff/players?q=${encodeURIComponent(q)}`),
+  staffPlayer: (id: string) => call<StaffPlayerSheet>('GET', `/api/staff/players/${id}`),
+  staffSanction: (playerId: string, order: SanctionOrder) => call<{ id: number }>('POST', `/api/staff/players/${playerId}/sanctions`, order),
+  staffRevoke: (sanctionId: number) => call<unknown>('POST', `/api/staff/sanctions/${sanctionId}/revoke`),
+  staffItem: (itemId: string, state: 'hidden' | 'cleared' | 'none') => call<unknown>('POST', `/api/staff/items/${itemId}/moderation`, { state }),
   report: (body: { kind: ReportKind; targetId: string | number; reason: ReportReason; details?: string }) =>
     call<{ ok: true; already: boolean }>('POST', '/api/reports', body),
   pickUp: (itemId: string) => call<unknown>('DELETE', `/api/placements/${itemId}`),

@@ -9,7 +9,7 @@ export interface ReportTarget {
   label: string;
 }
 
-const REASONS: [ReportReason, string][] = [
+export const REASONS: [ReportReason, string][] = [
   ['insult', 'Insultes ou propos injurieux'],
   ['harassment', 'Harcèlement ou menaces'],
   ['inappropriate', 'Contenu inapproprié'],

@@ -1,11 +1,14 @@
 import { Application, Container } from 'pixi.js';
 import type { User } from './api';
+import { api } from './api';
 import { createBuildingScene } from './building-scene';
 import { appearance } from './appearance';
 import { createFriends } from './friends';
 import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
+import { showNotice } from './notice-dialog';
 import { createShop } from './shop';
+import { createStaffPanel } from './staff-panel';
 import { createHud } from './wallet';
 import { createWardrobe } from './wardrobe';
 import { windowBar } from './window';
@@ -145,6 +148,7 @@ export async function startApp(user: User) {
   const closeWindows = (except?: string) => {
     if (except !== 'navigator') navigator.close();
     if (except !== 'friends') friends.close();
+    if (except !== 'staff') staff.close();
     if (except !== 'shop') shop.close();
     if (except !== 'wardrobe') wardrobe.close();
   };
@@ -161,6 +165,9 @@ export async function startApp(user: User) {
     },
   });
   document.body.append(shop.element);
+  // The staff panel exists for everybody's code but only staff accounts get a button: the server answers nobody else.
+  const staff = createStaffPanel({ onToggle: () => markActive(), notify: (text) => notify(text) });
+  document.body.append(staff.element);
   const wardrobe = createWardrobe({ onToggle: () => markActive(), notify: (text) => notify(text) });
   document.body.append(wardrobe.element);
   // Whatever the player saves, the room tells the others.
@@ -213,12 +220,12 @@ export async function startApp(user: User) {
     },
   ];
   const buttons = new Map<string, HTMLButtonElement>();
-  for (const item of items) {
+  function addButton(item: Item) {
     const b = document.createElement('button');
     b.type = 'button';
     const label = document.createElement('span');
     label.textContent = item.label;
-    b.append(pixelIcon(item.key), label);
+    b.append(pixelIcon(item.key === 'staff' ? 'lock' : item.key), label);
     if (item.key === 'navigator') b.dataset.navigatorToggle = '';
     if (item.key === 'friends') b.dataset.friendsToggle = '';
     if (item.key === 'catalogue') b.dataset.shopToggle = '';
@@ -232,6 +239,22 @@ export async function startApp(user: User) {
     buttons.set(item.key, b);
     nav.append(b);
   }
+  for (const item of items) addButton(item);
+  api.staffMe().then((res) => {
+    if (!res.ok) return;
+    const item: Item = {
+      key: 'staff',
+      label: 'Staff',
+      active: () => staff.isOpen(),
+      run: () => {
+        closeWindows('staff');
+        staff.toggle();
+      },
+    };
+    items.push(item);
+    addButton(item);
+  });
+
   /** A small red number on a bar button, for what waits for the player. */
   function setBadge(key: string, count: number) {
     const b = buttons.get(key);
@@ -289,4 +312,10 @@ export async function startApp(user: User) {
 
   syncPanel();
   await go(home);
+
+  // What the staff told the player and they have not read yet (warnings), or what still applies (a mute).
+  const notices = await api.notices();
+  if (notices.ok) {
+    for (const n of notices.data.notices) showNotice(n.text, n.kind === 'warning' ? () => void api.noticesSeen([n.id]) : undefined);
+  }
 }

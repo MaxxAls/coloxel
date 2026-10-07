@@ -44,6 +44,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       model,
       notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind),
       locate: (ids) => realtime.locate(ids),
+      notifyUser: (event) => realtime.notifyUser(event),
     });
     // Redis is optional here: without it presence stays in memory.
     realtime = await startRealtime({ pool, port: 0, redisUrl, allowedOrigins: [ORIGIN] });
@@ -586,6 +587,109 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => code === 4003, 4000);
       await until(() => host.state?.players?.size === 1);
       await expect(joinApartment(di, cy.id)).rejects.toThrow(/fermé/);
+    });
+  });
+
+  describe('sanctions on connected players', () => {
+    const staffMember = async (nickname: string) => {
+      const a = await signUp(nickname);
+      await pool.query("UPDATE users SET role = 'staff' WHERE id = $1", [a.id]);
+      return a;
+    };
+    const sanction = (staff: Account, target: Account, payload: object) =>
+      app.inject({ method: 'POST', url: `/api/staff/players/${target.id}/sanctions`, payload, cookies: { coloxel_sid: staff.sid } });
+    const listen = (room: AnyRoom) => {
+      const heard = { chat: [] as string[], refused: [] as { reason: string }[], notices: [] as { kind: string; text: string }[], code: 0 };
+      room.onMessage('chat', (m: { text: string }) => heard.chat.push(m.text));
+      room.onMessage('chat-refused', (m: { reason: string }) => heard.refused.push(m));
+      room.onMessage('notice', (m: { kind: string; text: string }) => heard.notices.push(m));
+      room.onLeave((code: number) => (heard.code = code));
+      return heard;
+    };
+
+    it('mutes a player who is connected, within the second: they are told, the others hear nothing, and it is journaled', async () => {
+      const staff = await staffMember('sx_staff1');
+      const loud = await signUp('sx_loud');
+      const listener = await signUp('sx_listener');
+      const a = await joinHall(loud);
+      const b = await joinHall(listener);
+      const heardA = listen(a);
+      const heardB = listen(b);
+      await until(() => a.state?.players?.size === 3 || a.state?.players?.size === 2);
+
+      a.send('chat', { text: 'avant la sourdine' });
+      await until(() => heardB.chat.length === 1);
+
+      const res = await sanction(staff, loud, { kind: 'mute', minutes: 10, reason: 'Trop de bruit' });
+      expect(res.statusCode).toBe(201);
+      await until(() => heardA.notices.length === 1, 3000);
+      expect(heardA.notices[0]).toMatchObject({ kind: 'mute' });
+      expect(heardA.notices[0]!.text).toMatch(/sourdine.*Trop de bruit/);
+
+      a.send('chat', { text: 'après la sourdine' });
+      await until(() => heardA.refused.length === 1);
+      expect(heardA.refused[0]!.reason).toBe('muted');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(heardB.chat).toEqual(['avant la sourdine']);
+      expect(heardA.chat).toEqual(['avant la sourdine']);
+      const log = (await pool.query('SELECT text, blocked, reason FROM chat_log WHERE user_id = $1 ORDER BY id', [loud.id])).rows;
+      expect(log).toEqual([
+        { text: 'avant la sourdine', blocked: false, reason: null },
+        { text: 'après la sourdine', blocked: true, reason: 'muted' },
+      ]);
+
+      // Lifted, the player speaks again.
+      const id = (await pool.query('SELECT id FROM sanctions WHERE user_id = $1', [loud.id])).rows[0].id;
+      await app.inject({ method: 'POST', url: `/api/staff/sanctions/${id}/revoke`, cookies: { coloxel_sid: staff.sid } });
+      a.send('chat', { text: 'je peux parler' });
+      await until(() => heardB.chat.length === 2);
+    });
+
+    it('shows a suspended player out of the room they are in, at once, and keeps them out', async () => {
+      const staff = await staffMember('sx_staff2');
+      const target = await signUp('sx_target');
+      const bystander = await signUp('sx_bystander');
+      const room = await joinHall(target);
+      const other = await joinHall(bystander);
+      const heard = listen(room);
+      await until(() => other.state?.players?.size === 2);
+
+      expect((await sanction(staff, target, { kind: 'suspension', minutes: 60, reason: 'Harcèlement' })).statusCode).toBe(201);
+      await until(() => heard.code === 4004, 3000);
+      await until(() => !playerOf(other, target.id), 3000);
+      expect(playerOf(other, bystander.id)).toBeDefined();
+      // The session no longer works, for the API and for the rooms.
+      await expect(joinHall(target)).rejects.toThrow(/Non connecté/);
+      expect((await app.inject({ method: 'GET', url: '/api/auth/me', cookies: { coloxel_sid: target.sid } })).statusCode).toBe(401);
+    });
+
+    it('shows a banned player who is inside an apartment out too', async () => {
+      const staff = await staffMember('sx_staff3');
+      const host = await signUp('sx_host');
+      const guest = await signUp('sx_guest');
+      await setAccess(host.id, 'building');
+      const inFlat = await joinApartment(host, host.id);
+      const visitor = await joinApartment(guest, host.id);
+      const heard = listen(visitor);
+      await until(() => inFlat.state?.players?.size === 2);
+      await sanction(staff, guest, { kind: 'ban', reason: 'Comportement inacceptable' });
+      await until(() => heard.code === 4004, 3000);
+      await until(() => inFlat.state?.players?.size === 1, 3000);
+    });
+
+    it('delivers a warning to a connected player without any other effect', async () => {
+      const staff = await staffMember('sx_staff4');
+      const target = await signUp('sx_warned');
+      const room = await joinHall(target);
+      const heard = listen(room);
+      await until(() => room.state?.players?.size === 1);
+      await sanction(staff, target, { kind: 'warning', reason: 'Reste poli avec les autres.' });
+      await until(() => heard.notices.length === 1, 3000);
+      expect(heard.notices[0]).toMatchObject({ kind: 'warning' });
+      expect(heard.notices[0]!.text).toMatch(/Reste poli/);
+      room.send('chat', { text: 'merci, compris' });
+      await until(() => heard.chat.length === 1);
+      expect(heard.code).toBe(0);
     });
   });
 

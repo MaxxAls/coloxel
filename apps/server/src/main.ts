@@ -17,6 +17,7 @@ async function main() {
     occupancy: () => realtime.occupancy(),
     notifyApartment: (ownerId, kind) => realtime.notifyApartment(ownerId, kind),
     locate: (userIds) => realtime.locate(userIds),
+    notifyUser: (event) => realtime.notifyUser(event),
   }).listen({ port, host: '0.0.0.0' });
   console.log(`realtime (Colyseus) on port ${realtime.port}`);
 }

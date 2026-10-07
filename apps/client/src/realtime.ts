@@ -9,6 +9,8 @@ const client = new Client(url);
 
 /** The server sent us out because the owner closed the apartment. */
 export const CLOSED_BY_OWNER = 4003;
+/** The server sent us out because the account was suspended or banned. */
+export const SUSPENDED = 4004;
 
 export interface PlayerState {
   id: string;
@@ -47,6 +49,8 @@ export interface BuildingRoom {
 
 /** Something the server tells this player alone. */
 export interface Notice {
+  /** Warnings only: tell the server once it has been read. */
+  id?: number;
   kind: 'warning' | 'mute';
   text: string;
 }
