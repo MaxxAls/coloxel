@@ -106,6 +106,27 @@ describe.skipIf(!available)('apartment settings and navigator (PostgreSQL)', () 
     expect((await mine(kim.sid)).name).toBeNull();
   });
 
+  it('lets a player announce an event in their open apartment, lists it in the navigator, and ends it', async () => {
+    const host = await signUp('evt_host');
+    const guest = await signUp('evt_guest');
+    const announce = (title: string) => app.inject({ method: 'PUT', url: '/api/apartment/event', payload: { title }, cookies: as(host.sid) });
+    // A closed apartment invites nobody.
+    expect((await announce('Soirée karaoké')).statusCode).toBe(409);
+    await pool.query("UPDATE users SET apartment_access = 'building' WHERE id = $1", [host.id]);
+    expect((await announce('écris moi sur exemple.com')).statusCode).toBe(400);
+    expect((await announce('ok')).statusCode).toBe(400);
+    const res = await announce('  Soirée   karaoké  ');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().event.title).toBe('Soirée karaoké');
+    const nav = (await app.inject({ method: 'GET', url: '/api/navigator', cookies: as(guest.sid) })).json();
+    expect(nav.events).toEqual([expect.objectContaining({ ownerId: host.id, nickname: 'evt_host', title: 'Soirée karaoké' })]);
+    // Closed again, the apartment's event is not listed; ended, it is gone.
+    await pool.query("UPDATE users SET apartment_access = 'friends' WHERE id = $1", [host.id]);
+    expect((await app.inject({ method: 'GET', url: '/api/navigator', cookies: as(guest.sid) })).json().events).toEqual([]);
+    expect((await app.inject({ method: 'DELETE', url: '/api/apartment/event', cookies: as(host.sid) })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: '/api/apartment/event', cookies: as(host.sid) })).json().event).toBeNull();
+  });
+
   it('lists the hall and the open apartments, busiest first, never closed ones', async () => {
     const [mia, noa, omar, pia] = await Promise.all(['mia', 'noa', 'omar', 'pia'].map(signUp)) as [
       Awaited<ReturnType<typeof signUp>>,

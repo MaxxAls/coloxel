@@ -12,10 +12,11 @@ export type Command =
   | { name: 'moonwalk' }
   | { name: 'push'; who: string }
   | { name: 'pull'; who: string }
+  | { name: 'poll'; question: string }
   | { name: 'unknown'; typed: string };
 
 export const HELP_TEXT =
-  'Commandes : /danse (danser), /assis (t’asseoir par terre), /allonge (t’allonger), /debout (te relever), /reculons (marcher à reculons, ou plus), /pousser <pseudo> et /tirer <pseudo> (un joueur tout près), /suivre <pseudo> (suivre un ami de la salle), /stop (arrêter de suivre ou de danser), /poser (reposer ce que tu tiens en main), /compagnon <tour> (assis, viens, saute, tourne), /aide.';
+  'Commandes : /danse (danser), /assis (t’asseoir par terre), /allonge (t’allonger), /debout (te relever), /reculons (marcher à reculons, ou plus), /pousser <pseudo> et /tirer <pseudo> (un joueur tout près), /sondage <question> (chez toi : oui ou non, 60 secondes), /suivre <pseudo> (suivre un ami de la salle), /stop (arrêter de suivre ou de danser), /poser (reposer ce que tu tiens en main), /compagnon <tour> (assis, viens, saute, tourne), /aide.';
 
 /** A command, or null when the text is plain chat. */
 export function parseCommand(text: string): Command | null {
@@ -35,6 +36,7 @@ export function parseCommand(text: string): Command | null {
   if (name === 'reculons' || name === 'moonwalk') return { name: 'moonwalk' };
   if (name === 'pousser' || name === 'pousse') return { name: 'push', who: rest.join(' ').trim() };
   if (name === 'tirer' || name === 'tire') return { name: 'pull', who: rest.join(' ').trim() };
+  if (name === 'sondage') return { name: 'poll', question: rest.join(' ').trim() };
   return { name: 'unknown', typed: word.slice(0, 20) };
 }
 

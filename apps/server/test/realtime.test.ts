@@ -873,6 +873,28 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => playerOf(a, jul.id)!.j === start.j + 1, 3000);
     }, 40000);
 
+    it('lets the owner ask the room a question, everybody vote once, and shows the result', async () => {
+      const host = await signUp('poll_host');
+      const guest = await signUp('poll_guest');
+      await setAccess(host.id, 'building');
+      const a = await joinApartment(host, host.id);
+      const b = await joinApartment(guest, host.id);
+      await until(() => a.state?.players?.size === 2 && b.state?.players?.size === 2);
+      const polls: { question: string; yes: number; no: number; open: boolean }[] = [];
+      const said: string[] = [];
+      b.onMessage('poll', (m: (typeof polls)[number]) => polls.push(m));
+      b.onMessage('system', (m: { text: string }) => said.push(m.text));
+      // A visitor may not ask; the owner may.
+      b.send('chat', { text: '/sondage On danse ?' });
+      await until(() => said.some((t) => /que chez toi/.test(t)));
+      a.send('chat', { text: '/sondage On danse ?' });
+      await until(() => polls.at(-1)?.question === 'On danse ?');
+      a.send('vote', { yes: true });
+      b.send('vote', { yes: false });
+      b.send('vote', { yes: true });
+      await until(() => polls.at(-1)?.yes === 2 && polls.at(-1)?.no === 0);
+    }, 20000);
+
     it('lets a player follow a friend of the room, a step behind, and refuses strangers', async () => {
       const eve = await named('cm_eve');
       const fay = await named('cm_fay');

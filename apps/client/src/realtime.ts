@@ -87,6 +87,10 @@ export interface BuildingRoom {
   onFx(callback: (fx: { i: number; j: number; color: number }) => void): void;
   /** A burst of confetti, thrown by a host. */
   onConfetti(callback: () => void): void;
+  /** A question of the room: yes or no, until a time; called again at each vote, and when it ends (open false). */
+  onPoll(callback: (poll: { question: string; until: number; yes: number; no: number; open: boolean }) => void): void;
+  /** My answer to the question of the room. */
+  vote(yes: boolean): void;
   /** A toy of chance shows its result over its cell (a die's number, the wheel's colour, who the bottle points at). */
   onToy(callback: (toy: { i: number; j: number; text: string }) => void): void;
   /** Are the party lights on? Part of the room's state, so that whoever comes in later sees them. */
@@ -173,6 +177,12 @@ function wrap(room: Room): BuildingRoom {
       room.onMessage('fx', (m: { kind?: string }) => {
         if (m.kind === 'confetti') callback();
       });
+    },
+    onPoll(callback) {
+      room.onMessage('poll', (m: { question: string; until: number; yes: number; no: number; open: boolean }) => callback(m));
+    },
+    vote(yes) {
+      room.send('vote', { yes });
     },
     onToy(callback) {
       room.onMessage('fx', (m: { kind?: string; i: number; j: number; text?: string }) => {

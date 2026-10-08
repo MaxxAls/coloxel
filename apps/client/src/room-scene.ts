@@ -3,6 +3,7 @@ import { RES, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, 
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createShapeEditor } from './room-shape';
+import { createEventEditor } from './room-event';
 import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
 import { showAlert, showSummon } from './alerts';
@@ -442,7 +443,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       },
       notify: (text) => host.notify(text),
     });
-    apartmentElement.append(createApartmentSettings(), createShapeEditor(), rulesEditor.element);
+    apartmentElement.append(createApartmentSettings(), createEventEditor(), createShapeEditor(), rulesEditor.element);
     onFurniture = () => rulesEditor.rerender();
     info = createInfoCard({
       title: 'Mon appart',
@@ -1207,6 +1208,51 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onFx((fx) => {
     if (flashes.length < 24) flashes.push({ ...fx, at: performance.now() });
   });
+  // The question of the room: a card at the top, two buttons, the count, the time left.
+  const pollCard = document.createElement('section');
+  pollCard.className = 'poll-card';
+  pollCard.hidden = true;
+  pollCard.setAttribute('aria-live', 'polite');
+  document.body.append(pollCard);
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let myVote: boolean | null = null;
+  room.onPoll((poll) => {
+    clearTimeout(pollTimer);
+    pollCard.hidden = false;
+    pollCard.replaceChildren();
+    const q = document.createElement('strong');
+    q.textContent = poll.question;
+    const counts = document.createElement('span');
+    counts.className = 'poll-counts';
+    counts.textContent = `${poll.yes} oui · ${poll.no} non`;
+    pollCard.append(q);
+    if (poll.open) {
+      const left = Math.max(0, Math.round((poll.until - Date.now()) / 1000));
+      const buttons = document.createElement('div');
+      buttons.className = 'poll-buttons';
+      for (const [yes, label] of [[true, 'Oui'], [false, 'Non']] as const) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        if (myVote === yes) b.classList.add('primary');
+        b.addEventListener('click', () => {
+          myVote = yes;
+          room.vote(yes);
+        });
+        buttons.append(b);
+      }
+      const time = document.createElement('span');
+      time.className = 'muted small';
+      time.textContent = `encore ${left} s`;
+      pollCard.append(buttons, counts, time);
+    } else {
+      myVote = null;
+      counts.textContent = `Résultat : ${poll.yes} oui, ${poll.no} non`;
+      pollCard.append(counts);
+      pollTimer = setTimeout(() => (pollCard.hidden = true), 8000);
+    }
+  });
+
   // A toy's result rises over it for a moment, in a little bubble.
   const toyTexts: { box: Container; at: number }[] = [];
   const TOY_MS = 2600;
@@ -1706,6 +1752,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       app.ticker.remove(tick);
       void room.leave();
       world.destroy({ children: true });
+      clearTimeout(pollTimer);
+      pollCard.remove();
     },
   };
 }

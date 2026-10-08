@@ -500,3 +500,37 @@ button,
 .toast {
   font-weight: 700;
 }
+
+/* The question of the room (/sondage): a card at the top of the screen. */
+.poll-card {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 10px 14px;
+  text-align: center;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+.poll-card[hidden] {
+  display: none;
+}
+.poll-buttons {
+  display: flex;
+  gap: 8px;
+}
+.poll-buttons button {
+  min-width: 70px;
+}
+.poll-counts {
+  font-weight: 700;
+  color: var(--gold);
+}

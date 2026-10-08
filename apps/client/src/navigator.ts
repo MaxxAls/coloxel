@@ -2,9 +2,10 @@ import { api, apartmentTitle, type NavigatorData } from './api';
 import { windowBar } from './window';
 import type { Target } from './scene';
 
-type Tab = 'friends' | 'open' | 'places';
+type Tab = 'events' | 'friends' | 'open' | 'places';
 
 const TABS: [Tab, string][] = [
+  ['events', 'Événements'],
   ['friends', 'Mes amis'],
   ['open', 'Apparts ouverts'],
   ['places', 'Lieux'],
@@ -74,7 +75,13 @@ export function createNavigator(options: { go(target: Target): void; onToggle(op
       status.textContent = 'Chargement…';
       return;
     }
-    if (tab === 'friends') {
+    if (tab === 'events') {
+      if (!data.events.length) status.textContent = 'Aucun événement en ce moment. Annonce le tien depuis les réglages de ton appart !';
+      for (const e of data.events) {
+        const until = new Date(e.endsAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        list.append(row(e.title, `chez ${e.nickname}, jusqu’à ${until}`, e.visitors > 0 ? people(e.visitors) : '', { kind: 'apartment', ownerId: e.ownerId }));
+      }
+    } else if (tab === 'friends') {
       if (!data.friends.length) status.textContent = 'Aucun ami en ligne pour l’instant. Ajoute des amis depuis le bouton Amis.';
       for (const f of data.friends) list.append(row(f.nickname, f.where, '', f.target));
     } else if (tab === 'open') {
@@ -125,8 +132,8 @@ export function createNavigator(options: { go(target: Target): void; onToggle(op
   }
   const open = () => {
     root.hidden = false;
-    // Opens on the most useful tab: friends when there are some, otherwise open apartments.
-    tab = data?.friends.length ? 'friends' : 'open';
+    // Opens on the most useful tab: events when there are some, then friends, otherwise open apartments.
+    tab = data?.events.length ? 'events' : data?.friends.length ? 'friends' : 'open';
     render();
     void refresh();
     timer = setInterval(() => void refresh(), REFRESH_MS);

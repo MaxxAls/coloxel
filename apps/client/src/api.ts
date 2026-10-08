@@ -87,8 +87,18 @@ export interface MyApartment {
   putAway?: number;
 }
 
+export interface RoomEvent {
+  ownerId: string;
+  nickname: string;
+  title: string;
+  endsAt: string;
+  visitors: number;
+}
+
 export interface NavigatorData {
   places: { kind: 'hall'; name: string; visitors: number }[];
+  /** What players announce in their apartments, while it lasts. */
+  events: RoomEvent[];
   open: { apartmentId: number; ownerId: string; nickname: string; name: string | null; mine: boolean; visitors: number }[];
   /** Friends one click away: where they are, and the room that takes the player there. */
   friends: { id: string; nickname: string; where: string; target: FriendTarget }[];
@@ -516,6 +526,9 @@ export const api = {
   }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
+  myEvent: () => call<{ event: { title: string; endsAt: string } | null }>('GET', '/api/apartment/event'),
+  announceEvent: (title: string) => call<{ event: { title: string; endsAt: string } }>('PUT', '/api/apartment/event', { title }),
+  endEvent: () => call<unknown>('DELETE', '/api/apartment/event'),
   quests: () => call<{ quests: Quest[] }>('GET', '/api/quests'),
   ring: (ownerId: string) => call<{ status: 'open' | 'ringing' }>('POST', `/api/apartments/${ownerId}/ring`),
   answerBell: (visitorId: string, accept: boolean) => call<unknown>('POST', '/api/apartment/bell/answer', { visitorId, accept }),

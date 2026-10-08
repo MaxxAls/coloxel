@@ -22,6 +22,7 @@ import { HOTEL_TOPIC, parseStaffCommand, runStaffCommand, usageOf, type CommandE
 import { can, loadStaff } from '../staff/roles';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
 import { withTransaction } from '../db/pool';
+import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
 
 /** One cell per step: a calm, continuous walk, about half a second per cell. */
 export const STEP_MS = 480;
@@ -56,6 +57,8 @@ function oneWayAllows(oneWay: Map<number, Cell> | undefined, a: Cell, b: Cell): 
 const ROLL: readonly Cell[] = [{ i: 1, j: 0 }, { i: 0, j: 1 }, { i: -1, j: 0 }, { i: 0, j: -1 }];
 /** The colours of the wheel, as the room reads them. */
 const WHEEL_NAMES = ['rouge', 'jaune', 'vert', 'bleu', 'violet', 'rose', 'orange', 'blanc'];
+/** How long people may vote in a poll. */
+const POLL_MS = 60_000;
 /** Knocks it takes for an egg to hatch. */
 const EGG_KNOCKS = 8;
 /** A belt carries every this many steps of the clock (about a second). */
@@ -171,6 +174,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private moonwalkers = new Set<string>();
   private lastShove = new Map<string, number>();
   private ticks = 0;
+  /** The question of the room, while people vote: yes or no, for a minute. */
+  private poll: { question: string; until: number; yes: Set<string>; no: Set<string> } | null = null;
   /** The room had belts the last time its layout was read: only then does the clock look at them. */
   private hasRollers = false;
 
@@ -384,6 +389,15 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       this.chatChain = this.chatChain.then(() => this.handleChat(client, parsed.data.text)).catch(() => {});
     });
 
+    this.onMessage('vote', (client, message) => {
+      const { id } = userOf(client);
+      const yes = (message as { yes?: unknown } | null)?.yes;
+      if (!this.poll || typeof yes !== 'boolean' || !this.state.players.has(id)) return;
+      // One voice each, and one may change one's mind until the end.
+      (yes ? this.poll.no : this.poll.yes).delete(id);
+      (yes ? this.poll.yes : this.poll.no).add(id);
+      this.broadcast('poll', this.pollMessage(true));
+    });
     this.onMessage('use', (client, message) => {
       const parsed = moveSchema.safeParse(message);
       if (!parsed.success || !inGrid(parsed.data.i, parsed.data.j)) return;
@@ -579,6 +593,17 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.broadcast('system', { text: `${player.nickname} ${command.name === 'push' ? 'pousse' : 'tire'} ${target.nickname}.` });
         return;
       }
+      case 'poll': {
+        if (!(await this.mayHostPoll(id))) return say('Tu ne peux lancer un sondage que chez toi.');
+        if (this.poll) return say('Un sondage est déjà en cours.');
+        const question = command.question.replace(/\s+/g, ' ').trim();
+        if (question.length < 3 || question.length > 80) return say('Écris /sondage suivi d’une question (80 caractères au plus).');
+        const verdict = filterText(question);
+        if (!verdict.ok) return say(FILTER_MESSAGES[verdict.reason]);
+        this.poll = { question, until: Date.now() + POLL_MS, yes: new Set(), no: new Set() };
+        this.broadcast('poll', this.pollMessage(true));
+        return;
+      }
       case 'follow': {
         if (!command.who) return say('Qui veux-tu suivre ? Écris /suivre <pseudo>.');
         let target: Player | undefined;
@@ -736,6 +761,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const at = this.location();
     if (at.kind === 'apartment' && at.ownerId.toLowerCase() !== user.id.toLowerCase()) needDeps().quest(user.id, 'visit', at.ownerId.toLowerCase());
     this.onPlayerJoined(client, user.id);
+    if (this.poll) client.send('poll', this.pollMessage(true));
     this.onGameEvent({ type: 'enter', who: user.id });
     if (this.roomMuted) client.send('system', { text: 'La salle est en sourdine : seule l’équipe peut parler.' });
   }
@@ -824,7 +850,24 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       }
     }
     if (++this.ticks % ROLL_EVERY === 0) void this.roll().catch(() => {});
+    if (this.poll && now > this.poll.until) {
+      const { yes, no, question } = this.poll;
+      this.broadcast('poll', this.pollMessage(false));
+      this.broadcast('system', { text: `Sondage « ${question} » : ${yes.size} oui, ${no.size} non.` });
+      this.poll = null;
+    }
     this.onClock(now);
+  }
+
+  private pollMessage(open: boolean) {
+    const p = this.poll!;
+    return { question: p.question, until: p.until, yes: p.yes.size, no: p.no.size, open };
+  }
+
+  /** Who may ask the room a question: the staff anywhere (more in an apartment: see ApartmentRoom). */
+  protected async mayHostPoll(id: string): Promise<boolean> {
+    const staff = await loadStaff(needDeps().pool, id);
+    return !!staff && can(staff.role, 'admin.access');
   }
 
   /** Belts carry whoever stands still on them one cell along, if there is room (never onto someone, or off the floor). */
@@ -1366,6 +1409,11 @@ export class ApartmentRoom extends BuildingRoom {
     if (!(await canEnterApartment(needDeps().pool, this.ownerId, user.id))) {
       throw new ServerError(403, 'Cet appartement est fermé');
     }
+  }
+
+  /** In an apartment, its owner may ask a question too. */
+  protected override async mayHostPoll(id: string): Promise<boolean> {
+    return id.toLowerCase() === this.ownerId || super.mayHostPoll(id);
   }
 
   /** The layout is asked at every click: it is remembered for a moment, and forgotten as soon as the decor changes. */

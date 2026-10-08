@@ -242,11 +242,45 @@ export function registerBuildingRoutes(
     return { ...(await mineOf(pool, req.user.id)), putAway };
   });
 
+  // ----- Events: a player announces what happens in their apartment, for two hours -----------------
+  const EVENT_MS = 2 * 60 * 60 * 1000;
+  const eventSchema = z.object({ title: z.string('Titre invalide').transform((s) => s.replace(/\s+/g, ' ').trim()).pipe(z.string().min(3, 'Le titre est trop court').max(60, 'Le titre est trop long (60 caractères max)')) }).strict();
+
+  app.get('/api/apartment/event', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const { rows } = await pool.query<{ title: string; ends_at: Date }>('SELECT title, ends_at FROM room_events WHERE owner_id = $1 AND ends_at > now()', [req.user.id]);
+    return { event: rows[0] ? { title: rows[0].title, endsAt: rows[0].ends_at.toISOString() } : null };
+  });
+
+  app.put('/api/apartment/event', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const parsed = eventSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Événement invalide' });
+    const verdict = filterText(parsed.data.title);
+    if (!verdict.ok) return reply.code(400).send({ error: FILTER_MESSAGES[verdict.reason] });
+    // Only an apartment everybody may enter can invite everybody.
+    const { rows } = await pool.query<{ access: string }>('SELECT apartment_access AS access FROM users WHERE id = $1', [req.user.id]);
+    if (rows[0]?.access !== 'building') return reply.code(409).send({ error: 'Ouvre ton appart à tout l’immeuble pour annoncer un événement.' });
+    const endsAt = new Date(Date.now() + EVENT_MS);
+    await pool.query(
+      `INSERT INTO room_events (owner_id, title, ends_at) VALUES ($1, $2, $3)
+       ON CONFLICT (owner_id) DO UPDATE SET title = EXCLUDED.title, started_at = now(), ends_at = EXCLUDED.ends_at`,
+      [req.user.id, parsed.data.title, endsAt],
+    );
+    return { event: { title: parsed.data.title, endsAt: endsAt.toISOString() } };
+  });
+
+  app.delete('/api/apartment/event', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    await pool.query('DELETE FROM room_events WHERE owner_id = $1', [req.user.id]);
+    return reply.code(204).send();
+  });
+
   // Where to go: the hall, the apartments open to everyone (busiest first) and
   // where the friends are, when they are somewhere the player may follow them.
   app.get('/api/navigator', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
-    const [{ rows }, present, friends] = await Promise.all([
+    const [{ rows }, present, friends, events] = await Promise.all([
       pool.query<{ id: number; name: string | null; owner_id: string; nickname: string }>(
         `SELECT a.id, a.name, a.owner_id, host.nickname
            FROM apartments a JOIN users host ON host.id = a.owner_id
@@ -254,6 +288,13 @@ export function registerBuildingRoutes(
       ),
       occupancy ? occupancy() : Promise.resolve(nobody()),
       listFriends(pool, req.user.id, locate),
+      // Events of apartments still open to everybody, soonest to end last.
+      pool.query<{ owner_id: string; nickname: string; title: string; ends_at: Date }>(
+        `SELECT e.owner_id, host.nickname, e.title, e.ends_at
+           FROM room_events e JOIN users host ON host.id = e.owner_id
+          WHERE e.ends_at > now() AND host.apartment_access = 'building'
+          ORDER BY e.started_at DESC LIMIT 30`,
+      ),
     ]);
     const open = rows
       .map((r) => ({
@@ -268,6 +309,13 @@ export function registerBuildingRoutes(
       .slice(0, 50);
     return {
       places: [{ kind: 'hall', name: 'Le hall', visitors: present.hall }],
+      events: events.rows.map((e) => ({
+        ownerId: e.owner_id,
+        nickname: e.nickname,
+        title: e.title,
+        endsAt: e.ends_at.toISOString(),
+        visitors: present.apartments.get(e.owner_id) ?? 0,
+      })),
       open,
       friends: friends
         .filter((f) => f.online && f.target)
