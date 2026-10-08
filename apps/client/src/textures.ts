@@ -29,7 +29,7 @@ const loadTexture = (cacheKey: string, url: string): Promise<Texture> => {
 };
 
 export const itemTexture = (id: string, rot = 0) => loadTexture(`item:${id}:${rot}`, itemSpriteUrl(id, rot));
-export const furnitureTexture = (key: string, rot = 0) => loadTexture(`furniture:${key}:${rot}`, furnitureSpriteUrl(key, rot));
+export const furnitureTexture = (key: string, rot = 0, alt = false) => loadTexture(`furniture:${key}:${rot}${alt ? ':alt' : ''}`, furnitureSpriteUrl(key, rot, alt));
 
 const avatarCache = new Map<string, Texture>();
 export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = false, pose: Pose = 'stand'): Texture {

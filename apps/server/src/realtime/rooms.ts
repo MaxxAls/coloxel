@@ -457,6 +457,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     return false;
   }
 
+  /** What a click on a pressable piece does besides setting off the rules (a gate, a cannon). */
+  protected async useAt(_cell: Cell, _who: string): Promise<void> {}
+
   protected playerCount(): number {
     return this.state.players.size;
   }
@@ -515,6 +518,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (now - (this.lastUse.get(id) ?? 0) < 500) return;
     this.lastUse.set(id, now);
     if (!this.state.players.has(id) || !(await this.pressableAt(cell))) return;
+    await this.useAt(cell, id);
     this.onGameEvent({ type: 'use', who: id, cell });
   }
 
@@ -738,6 +742,55 @@ export class ApartmentRoom extends BuildingRoom {
     return !!rows[0] && !!catalogueEntry(rows[0].key)?.pressable;
   }
 
+  private lastConfetti = 0;
+
+  /** The piece under a click, if it is base furniture: what it is, which placement, and whether it is lit (a gate: open). */
+  private async pieceAt(cell: Cell) {
+    const { rows } = await needDeps().pool.query<{ id: string; key: string; lit: boolean }>(
+      `SELECT f.id, f.catalogue_key AS key, p.lit FROM placements p JOIN furniture f ON f.id = p.furniture_id
+        WHERE p.user_id = $1 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
+      [this.ownerId, cell.i, cell.j],
+    );
+    const row = rows[0];
+    return row ? { ...row, entry: catalogueEntry(row.key) } : undefined;
+  }
+
+  protected override async useAt(cell: Cell, who: string): Promise<void> {
+    const piece = await this.pieceAt(cell);
+    const entry = piece?.entry;
+    if (!piece || !entry) return;
+    if (entry.gate) {
+      // Only the owner decides who gets through.
+      if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire ouvre et ferme ce portillon.' });
+      const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number }>(
+        'SELECT i, j, w, h FROM placements WHERE furniture_id = $1 AND user_id = $2',
+        [piece.id, this.ownerId],
+      );
+      const at = rows[0];
+      if (!at) return;
+      // Nobody is shut in, or crushed: a gate with someone in it stays open.
+      if (piece.lit) {
+        let occupied = false;
+        this.state.players.forEach((p) => {
+          if (p.i >= at.i && p.i < at.i + at.w && p.j >= at.j && p.j < at.j + at.h) occupied = true;
+        });
+        if (occupied) return this.sendTo(who, 'rule-message', { text: 'Quelqu’un est dans le passage.' });
+      }
+      await needDeps().pool.query('UPDATE placements SET lit = NOT lit WHERE furniture_id = $1 AND user_id = $2', [piece.id, this.ownerId]);
+      this.layoutCache = null;
+      this.broadcast('fx', { kind: 'pulse', i: at.i, j: at.j, color: 0xd6b25a });
+      this.broadcast('decor');
+      return;
+    }
+    if (entry.confetti) {
+      const now = Date.now();
+      // One shower at a time: the cannon is not a way to flood the room.
+      if (now - this.lastConfetti < 4000) return;
+      this.lastConfetti = now;
+      this.broadcast('fx', { kind: 'confetti' });
+    }
+  }
+
   private async pieceLit(piece: string): Promise<boolean | undefined> {
     const { rows } = await needDeps().pool.query<{ lit: boolean }>('SELECT lit FROM placements WHERE furniture_id = $1 AND user_id = $2', [piece, this.ownerId]);
     return rows[0]?.lit;
@@ -836,8 +889,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   private async readLayout(): Promise<RoomMap> {
     const shape = await loadLayout(needDeps().pool, this.ownerId);
-    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; key: string | null }>(
-      `SELECT p.i, p.j, p.w, p.h, f.catalogue_key AS key
+    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; lit: boolean; key: string | null }>(
+      `SELECT p.i, p.j, p.w, p.h, p.lit, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1`,
       [this.ownerId],
@@ -852,7 +905,8 @@ export class ApartmentRoom extends BuildingRoom {
       for (let a = 0; a < r.w; a++) {
         for (let b = 0; b < r.h; b++) {
           const cell = (r.i + a) * N + (r.j + b);
-          if (!entry?.walkable) blocked.add(cell);
+          // An open gate lets players through; a closed one is a wall.
+          if (!entry?.walkable && !(entry?.gate && r.lit)) blocked.add(cell);
           // Only base furniture can be used: a creation is whatever its maker invented.
           if (entry?.interaction) seats.set(cell, entry.interaction);
         }

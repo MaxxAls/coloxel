@@ -1,4 +1,5 @@
 import { bigPieces } from './catalog-big';
+import { mechanismPieces } from './catalog-mechanisms';
 import type { Part, Recipe } from './types';
 
 // The base catalogue: free, unlimited furniture drawn by hand, in the same
@@ -26,6 +27,13 @@ export interface CatalogueEntry {
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
   pressable?: boolean;
+  /**
+   * A gate: the owner opens and closes it with a click. Closed (the recipe) it blocks the way; open (`open`)
+   * players walk through. The state is the placement's `lit` flag.
+   */
+  gate?: { open: Recipe };
+  /** A click throws confetti for the whole room. */
+  confetti?: boolean;
 }
 
 /** A piece that gives light can be switched on and off by whoever owns the apartment. */
@@ -425,7 +433,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -777,6 +785,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('coffre', 'storage', chest),
   ...newEntries(),
   ...bigPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
+  ...mechanismPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
 ];
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));

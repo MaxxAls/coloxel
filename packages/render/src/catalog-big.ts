@@ -5,7 +5,7 @@ import type { Part, Recipe, Texture } from './types';
 // with a `size` and the new materials. The origin (0, 0) is the centre of the first
 // tile; the next tile along x (or y) is 16 further.
 
-type Extras = Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable'>>;
+type Extras = Partial<Omit<CatalogueEntry, 'key' | 'name' | 'category' | 'recipe'>>;
 export interface BigPiece {
   key: string;
   category: FurnitureCategory;

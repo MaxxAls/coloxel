@@ -423,10 +423,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
     ...items.flatMap((it) =>
-      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: (rot: number) => itemTexture(it.id, rot) }] : [],
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: (rot: number, _alt: boolean) => itemTexture(it.id, rot) }] : [],
     ),
     ...furniture.flatMap((f) =>
-      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: (rot: number) => furnitureTexture(f.key, rot) }] : [],
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: (rot: number, alt: boolean) => furnitureTexture(f.key, rot, alt) }] : [],
     ),
   ];
 
@@ -437,6 +437,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     phase: number;
     /** Quarter turns of the texture on screen; -1 until the first one has loaded. */
     rot: number;
+    /** The second look of a piece that has two (a gate standing open). */
+    alt: boolean;
   }
   const props = new Map<string, Prop>();
   const lights = new Map<string, { sprite: Sprite; flicker: boolean; base: number; phase: number }>();
@@ -449,7 +451,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       placed.add(thing.id);
       const entry = thing.key ? catalogueEntry(thing.key) : undefined;
       // A rug, a pressure plate, a portal lies on the floor: one walks over it.
-      if (!entry?.walkable) {
+      // A rug lies on the floor, and an open gate lets players through.
+      if (!entry?.walkable && !(entry?.gate && thing.on)) {
         for (let a = 0; a < (thing.placement.w ?? 1); a++) for (let b = 0; b < (thing.placement.h ?? 1); b++) occupied.add(cellKey(i + a, j + b));
       }
       let prop = props.get(thing.id);
@@ -457,7 +460,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         const s = new Sprite();
         itemSprites.set(thing.id, s);
         world.addChild(s);
-        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6, rot: -1 };
+        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6, rot: -1, alt: false };
         props.set(thing.id, prop);
         if (entry?.glow) {
           const halo = new Sprite(glowTexture());
@@ -472,13 +475,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       // Turned: the server draws the piece again from the other side.
       const rot = thing.placement.rot;
-      if (prop.rot !== rot) {
+      const alt = !!entry?.gate && thing.on;
+      if (prop.rot !== rot || prop.alt !== alt) {
         const first = prop.rot < 0;
         prop.rot = rot;
+        prop.alt = alt;
         const s = prop.sprite;
-        thing.texture(rot).then(
+        thing.texture(rot, alt).then(
           (t) => {
-            if (!s.destroyed && prop!.rot === rot) s.texture = t;
+            if (!s.destroyed && prop!.rot === rot && prop!.alt === alt) s.texture = t;
           },
           () => {
             if (first) s.destroy();
@@ -487,7 +492,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       // A switched-off lamp is dim and gives no light.
       prop.on = thing.on;
-      prop.sprite.tint = thing.on ? 0xffffff : 0x8c8ca6;
+      prop.sprite.tint = thing.on || !isSwitchable(entry) ? 0xffffff : 0x8c8ca6;
       const halo = lights.get(thing.id);
       if (halo) halo.sprite.visible = thing.on;
       // The pivot is the first tile's centre: swaying rocks the object around its base, and a big piece's frame is bigger.

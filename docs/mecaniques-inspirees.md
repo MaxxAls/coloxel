@@ -30,6 +30,27 @@
 | Modèles de salle (grille de cases, porte, hauteurs de sol) | **Forme de l'appart** : 11 modèles prêts (carré, studio, couloir, L, croix, anneau, deux pièces, triangle, estrade, escalier, corniche) et un éditeur libre (retirer des cases, 4 niveaux de sol, porte) dans les réglages de l'appart. Forme stockée dans `apartments.layout`, jugée par le serveur (`layoutProblem`, `packages/world/src/layout.ts` : au moins 12 cases, porte au bord, tout accessible depuis la porte, une marche fait un niveau). Le serveur fait marcher par niveaux, fait apparaître à la porte, refuse de poser hors du sol et range les meubles qui perdent leur sol. Le rendu (`paintRoom(look, layout)`) dessine murs, sol et marches case par case. Les niveaux de sol ne sont pas ceux des meubles : un meuble suit le niveau de sa case. |
 | Mode maintenance | Interrupteur dans le panel staff : l'API et les salles refusent les joueurs (503), le staff, la connexion et le site restent accessibles. |
 
+## Inventaire des interactions de meubles de l'émulateur (relu le 8 octobre 2026)
+
+L'émulateur a 35 « interacteurs » de meubles. Verdict pour Coloxel, sans rien reprendre de ses assets ni de son code :
+
+| Interaction de l'émulateur | Verdict |
+| --- | --- |
+| Interrupteur, alerte au clic | Déjà fait (lumières, bouton rouge, mécanismes). |
+| Téléporteur, téléporteur rapide, trémie | Déjà fait (portail, effet « téléporter »). |
+| Porte (ouverte/fermée) | **Fait : portillon.** Le propriétaire l'ouvre et le ferme d'un clic, fermé il bloque le passage, jamais fermé sur quelqu'un. État dans `placements.lit`, deuxième apparence demandée au serveur avec `?s=1`. |
+| Feux d'artifice, canon | **Fait : canon à confettis.** Un clic, une pluie pour toute la salle, une seule à la fois. |
+| Mannequin (habillé avec le look du joueur) | À faire : s'appuie sur le rendu des avatars. |
+| Distributeur (objet en main) | À faire : demande des objets tenus à la main dans le rendu des avatars. |
+| Juke-box, tableau de score, vidéos | À faire, après les jeux d'équipe et si on ajoute des sons. |
+| Jeux d'équipe (banzai, gel, football) et compteurs | À faire (idée 4 ci-dessus), construits sur les mécanismes. |
+| Panneau avec texte | À faire : texte du propriétaire, filtré. |
+| Portes à sens unique, portes de groupe, portes VIP | Portes de groupe : hors périmètre (groupes). Le reste : à faire si le besoin se confirme. |
+| Dés, roue, bouteille, œuf à casser, boîte de puzzle à gains, mélangeur d'amour | **Non retenu** : jeux d'argent et loot boxes (règle 6). |
+| Terminal de forum de groupe | Non retenu : groupes hors périmètre. |
+
+Les centaines de meubles décoratifs du jeu d'origine sont des créations protégées : on ne les reproduit pas. Le catalogue de Coloxel s'enrichit avec des pièces à nous (7 grandes pièces multi-cases, portillon, canon).
+
 ## À faire, dans l'ordre conseillé
 
 ### 1. Mécanismes (déclencheurs programmables) : fait

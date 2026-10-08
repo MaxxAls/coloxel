@@ -965,6 +965,61 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(await isLit(owner)).toBe(false);
     });
 
+    it('lets the owner shut a gate, which then blocks the way, and open it again', async () => {
+      const owner = await signUp('mx_gate');
+      await place(owner, 'portillon', 6, 6);
+      const room = await joinApartment(owner, owner.id);
+      const heard = listen(room);
+      await until(() => playerOf(room, owner.id));
+      const gateLit = async () => (await pool.query<{ lit: boolean }>("SELECT p.lit FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND f.catalogue_key = 'portillon'", [owner.id])).rows[0]!.lit;
+      // Placed, it stands open: a player may walk onto it.
+      expect(await gateLit()).toBe(true);
+      room.send('move', { i: 6, j: 6 });
+      await until(() => at(room, owner.id, 6, 6), walk);
+      room.send('move', { i: 6, j: 5 });
+      await until(() => at(room, owner.id, 6, 5), walk);
+      // Closed, it is a wall.
+      room.send('use', { i: 6, j: 6 });
+      await until(() => heard.decor > 0, 3000);
+      expect(await gateLit()).toBe(false);
+      room.send('move', { i: 6, j: 6 });
+      await new Promise((r) => setTimeout(r, STEP_MS * 4));
+      expect(at(room, owner.id, 6, 6)).toBe(false);
+      // Open again.
+      room.send('use', { i: 6, j: 6 });
+      await until(() => heard.decor > 1, 3000);
+      expect(await gateLit()).toBe(true);
+    }, 40000);
+
+    it('does not shut a gate on somebody standing in it', async () => {
+      const owner = await signUp('mx_gate2');
+      await place(owner, 'portillon', 6, 6);
+      const room = await joinApartment(owner, owner.id);
+      const heard = listen(room);
+      await until(() => playerOf(room, owner.id));
+      room.send('move', { i: 6, j: 6 });
+      await until(() => at(room, owner.id, 6, 6), walk);
+      room.send('use', { i: 6, j: 6 });
+      await until(() => heard.messages.length > 0, 3000);
+      expect(heard.messages[0]).toMatch(/passage/);
+      expect((await pool.query<{ lit: boolean }>("SELECT p.lit FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND f.catalogue_key = 'portillon'", [owner.id])).rows[0]!.lit).toBe(true);
+    });
+
+    it('throws confetti for the whole room when the cannon is clicked, one shower at a time', async () => {
+      const owner = await signUp('mx_cannon');
+      await place(owner, 'canonconfettis', 6, 6);
+      const room = await joinApartment(owner, owner.id);
+      let showers = 0;
+      room.onMessage('fx', (m: { kind: string }) => { if (m.kind === 'confetti') showers++; });
+      await until(() => playerOf(room, owner.id));
+      room.send('use', { i: 6, j: 6 });
+      await until(() => showers === 1, 3000);
+      await new Promise((r) => setTimeout(r, 600));
+      room.send('use', { i: 6, j: 6 });
+      await new Promise((r) => setTimeout(r, 800));
+      expect(showers).toBe(1);
+    });
+
     it('lets players walk over a pressure plate, and notices when they do', async () => {
       const owner = await signUp('mx_plate');
       await place(owner, 'plaque', 2, 5);
