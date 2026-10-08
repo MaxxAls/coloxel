@@ -28,7 +28,8 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 ## Échelle
 
 - Les objets sont dessinés en double résolution : une unité de recette vaut 2 pixels. Une case de sol : 64 x 32 px dans la salle (de -8 à 8 en x et en y). Sprite d'objet : 192 x 224 px, ancre au pixel (96, 176).
-- Avatar : 30 x 58 px, proportions de petit personnage (tête ronde d'environ 15 px, cou, torse, bras et jambes, yeux simples, joues roses). Le joueur compose son apparence dans une garde-robe (coiffures, hauts, bas, chaussures, chapeaux, lunettes, extras, couleurs) ; voir docs/personnage-boutique.md. Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
+- Avatar : une personne aux proportions d'adulte, 30 x 70 unités de dessin (environ 105 px de haut dans la salle) : la tête fait à peu près un quart de la hauteur, épaules presque aussi larges que la tête, longues jambes, bras jusqu'aux hanches. Le code le dessine sur une esquisse compacte de 30 x 58 qu'une déformation verticale étire (`BODY_WARP` dans `packages/render/src/avatar.ts`) : la tête et les chaussures gardent leur taille, le torse grandit d'un quart, les jambes presque du double. Le joueur compose son apparence dans une garde-robe (coiffures, hauts, bas, chaussures, chapeaux, lunettes, extras, couleurs) ; voir docs/personnage-boutique.md. Un objet à taille humaine (chaise, lit, porte) se dimensionne par rapport à lui.
+- Appartements : grille de 16 x 16 cases ; une pièce en occupe une partie (un nouvel appart : 10 x 10 dans le coin du fond, meublé par le kit de départ). Le jeu montre la salle à la taille réelle de ses pixels (zoom x2 à la molette), centrée sur la pièce, et on la déplace en la faisant glisser.
 - Hauteurs : table ou chaise 9 à 16, armoire ou plante haute 30 à 45, maximum 60.
 - Un objet standard tient dans une case (x et y entre -8 et 8). Seuls les objets longs dépassent, jusqu'à 12.
 
@@ -38,6 +39,10 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 - 10 à 40 parties : assez pour du charme (coutures, boutons, reflets), pas de bruit.
 - Les objets absurdes ou humoristiques gardent leur idée centrale bien visible.
 - Ordre de dessin : de l'arrière et du bas vers l'avant et le haut.
+
+## Interface
+
+Interface en pixel art, jamais floutée ni translucide : panneaux en relief (bord clair en haut à gauche, sombre en bas à droite), contour net de 2 px `#0b0815`, barres de titre violettes, onglets en dossiers, boutons qui s'enfoncent au clic. Police pixel lisible (Pixelify Sans) pour les titres, onglets et boutons, Ubuntu pour le texte courant. Barre de navigation pleine largeur en bas, porte-monnaie en haut à gauche. Feuille : `apps/client/src/theme.css`.
 
 ## Matières et lumière (niveau de détail)
 
