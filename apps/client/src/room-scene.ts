@@ -1,5 +1,5 @@
-import { Container, Graphics, Sprite, Text, type Texture, type Ticker } from 'pixi.js';
-import { RES, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, rotatedSize } from '@coloxel/render';
+import { Container, Graphics, Rectangle, Sprite, Text, Texture, type Ticker } from 'pixi.js';
+import { RES, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, rotatedSize, stackable } from '@coloxel/render';
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createShapeEditor } from './room-shape';
@@ -516,6 +516,38 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const props = new Map<string, Prop>();
   const lights = new Map<string, { sprite: Sprite; flicker: boolean; base: number; phase: number }>();
 
+  type Placed = ReturnType<typeof placedThings>[number];
+  /** The piece on the floor under a piece standing on a surface. */
+  const baseOf = (thing: Placed, all: Placed[]): Placed | undefined =>
+    all.find((b) => b !== thing && !(b.placement.z ?? 0) && covers(b.placement, thing.placement));
+  /**
+   * Drawing order: in front of what stands behind its far corner, behind what stands in front of its near corner.
+   * What stands on a surface is drawn just after the surface.
+   */
+  function depthOf(thing: Placed, all: Placed[] = placedThings()): number {
+    const { i, j } = thing.placement;
+    const entry = thing.key ? catalogueEntry(thing.key) : undefined;
+    if (thing.placement.z) {
+      const base = baseOf(thing, all);
+      if (base) return depthOf(base, all) + 0.1;
+    }
+    return entry?.wall ? i + j - 0.9 : i + j + (thing.placement.w ?? 1) - 1 + (thing.placement.h ?? 1) - 1 - (entry?.walkable ? 0.6 : 0);
+  }
+  /** The pieces on this cell, the highest first (wall pieces last): a click goes to what is on top. */
+  const piecesAt = (cell: { i: number; j: number }) =>
+    placedThings()
+      .filter((t) => covers(t.placement, cell))
+      .sort((a, b) => {
+        const wa = a.key && catalogueEntry(a.key)?.wall ? 1 : 0, wb = b.key && catalogueEntry(b.key)?.wall ? 1 : 0;
+        return wa - wb || (b.placement.z ?? 0) - (a.placement.z ?? 0);
+      });
+  /** A surface with nothing on it under every one of these cells (the selected piece itself aside): it may go on top. */
+  const bareSurfaceUnder = (cells: { i: number; j: number }[]) => {
+    const things = placedThings().filter((t) => t.id !== selected);
+    const base = things.find((t) => !(t.placement.z ?? 0) && t.key && catalogueEntry(t.key)?.surface !== undefined && cells.every((c) => covers(t.placement, c)));
+    return !!base && !things.some((t) => (t.placement.z ?? 0) > 0 && cells.some((c) => covers(t.placement, c)));
+  };
+
   function syncItems() {
     occupied.clear();
     const placed = new Set<string>();
@@ -583,8 +615,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       // The pivot is the first tile's centre: swaying rocks the object around its base, and a big piece's frame is bigger.
       const frame = frameFor([thing.placement.w ?? 1, thing.placement.h ?? 1]);
       prop.sprite.pivot.set(frame.ax, frame.ay);
+      // On a surface, the piece is drawn as high as the surface's top (two pixels per recipe unit).
+      const lift = (thing.placement.z ?? 0) * 2;
       const { x, y } = tileCenter(i, j);
-      prop.sprite.position.set(x, y);
+      prop.sprite.position.set(x, y - lift);
       if (entry?.mannequin) {
         const raw = thing.data ?? '';
         if (prop.dummyRaw !== raw) {
@@ -605,10 +639,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         }
       }
       // Drawn in front of what stands behind its far corner, behind what stands in front of its near corner.
-      prop.sprite.zIndex = entry?.wall ? i + j - 0.9 : i + j + (thing.placement.w ?? 1) - 1 + (thing.placement.h ?? 1) - 1 - (entry?.walkable ? 0.6 : 0);
+      prop.sprite.zIndex = depthOf(thing);
       const light = lights.get(thing.id);
       if (light && entry?.glow) {
-        light.sprite.position.set(x, y - entry.glow.z * 2);
+        light.sprite.position.set(x, y - lift - entry.glow.z * 2);
         light.sprite.zIndex = i + j + (thing.placement.w ?? 1) + (thing.placement.h ?? 1) - 2 + 0.2;
       }
     }
@@ -891,75 +925,95 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   const overlay = new Container();
   overlay.zIndex = 8500;
   world.addChild(overlay);
+  // The bubbles of the classic isometric games: one line each, the speaker's face at the start, on a line at the top of
+  // the room right above whoever speaks. Each new message pushes every bubble one row up, and the conversation also
+  // climbs by itself now and then; a bubble goes once it has climbed out of sight.
   interface Bubble {
     box: Container;
-    from: string;
-    until: number;
-    width: number;
-    height: number;
-    /** How far above the speaker the bubble is going, and how far it has got. */
-    lift: number;
+    /** Rows climbed so far, and how far it has got on screen (it slides). */
+    row: number;
     shown: number;
-    /** Where the speaker was last seen: the bubble stays there if they leave. */
     x: number;
-    y: number;
+    width: number;
   }
   const bubbles: Bubble[] = [];
-  const BUBBLE_MAX_WIDTH = 150;
+  const BUBBLE_MAX_WIDTH = 260;
+  const ROW = 26;
+  const MAX_ROWS = 9;
+  /** With no new message, the conversation climbs one row this often. */
+  const CLIMB_MS = 7000;
+  let lastClimb = performance.now();
   const NAME_COLORS = [0xd6405f, 0x2f7fd6, 0x238a5a, 0xb8741a, 0x7a52c9, 0xc2306f, 0x1f8a9d];
   const colorOf = (id: string) => NAME_COLORS[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % NAME_COLORS.length]!;
   const anchorOf = (from: string, fallback: { x: number; y: number }) => {
     const view = views.get(from);
     return view ? { x: Math.round(view.box.x), y: Math.round(view.box.y + view.label.y - 12) } : fallback;
   };
+  /** The line the newest bubble sits on: a little above the top of the room's walls. */
+  const bubbleLine = () => Math.max(ROW, roomBounds(shape).y + 18);
+  const climb = () => {
+    for (const bubble of bubbles) bubble.row++;
+    lastClimb = performance.now();
+  };
+
+  /** The speaker's face, cut out of their avatar: the head of the front view, made small. */
+  function faceOf(from: string): Sprite | null {
+    const view = views.get(from);
+    if (!view) return null;
+    const tex = avatarTexture(view.look, 'front', 0);
+    const face = new Sprite(new Texture({ source: tex.source, frame: new Rectangle(4, 1, Math.min(38, tex.width - 4), 38) }));
+    face.scale.set(0.5);
+    return face;
+  }
 
   function showBubble(message: ChatMessage) {
-    const name = new Text({ text: message.nickname, style: { fontFamily: 'system-ui, sans-serif', fontSize: 10, fontWeight: '800', fill: colorOf(message.from) }, resolution: 2 });
+    const face = faceOf(message.from);
+    const name = new Text({ text: `${message.nickname} : `, style: { fontFamily: FONT, fontSize: 12, fontWeight: '700', fill: colorOf(message.from) }, resolution: 2 });
     const text = new Text({
       text: message.text,
-      style: { fontFamily: 'system-ui, sans-serif', fontSize: 11, fontWeight: '600', fill: 0x1b1530, wordWrap: true, wordWrapWidth: BUBBLE_MAX_WIDTH, breakWords: true },
+      style: { fontFamily: FONT, fontSize: 12, fill: 0x1b1530, wordWrap: true, wordWrapWidth: BUBBLE_MAX_WIDTH - name.width, breakWords: true },
       resolution: 2,
     });
-    const width = Math.ceil(Math.max(text.width, name.width)) + 14;
-    const height = Math.ceil(name.height + text.height) + 8;
+    const faceW = face ? 20 : 0;
+    const width = Math.ceil(faceW + name.width + text.width) + 14;
+    const height = Math.max(22, Math.ceil(text.height) + 8);
     const box = new Container();
     const back = new Graphics();
-    back.roundRect(-width / 2, -height - 5, width, height, 5).fill(0xffffff).stroke({ color: 0x1b1530, width: 1.5 });
-    back.poly([-4, -5, 4, -5, 0, 0]).fill(0xffffff);
-    name.position.set(-width / 2 + 7, -height - 1);
-    text.position.set(-width / 2 + 7, -height - 1 + Math.ceil(name.height));
-    box.addChild(back, name, text);
+    back.roundRect(-width / 2, -height, width, height, 6).fill(0xffffff).stroke({ color: 0x1b1530, width: 1 });
+    back.poly([-4, 0, 4, 0, 0, 5]).fill(0xffffff);
+    box.addChild(back);
+    if (face) {
+      face.position.set(-width / 2 + 3, -height + 2);
+      box.addChild(face);
+    }
+    name.position.set(-width / 2 + 7 + faceW, -height + 4);
+    text.position.set(-width / 2 + 7 + faceW + Math.floor(name.width), -height + 4);
+    box.addChild(name, text);
     overlay.addChild(box);
 
-    const anchor = anchorOf(message.from, { x: ROOM_W / 2, y: ROOM_H / 2 });
-    const bubble: Bubble = { box, from: message.from, until: performance.now() + Math.min(13000, 6000 + message.text.length * 70), width, height: height + 5, lift: 0, shown: 0, x: anchor.x, y: anchor.y };
-    // Whoever speaks at about the same place pushes the older bubbles up.
-    for (const other of bubbles) {
-      const there = anchorOf(other.from, other);
-      if (Math.abs(there.x - anchor.x) < (other.width + width) / 2 + 4) other.lift += bubble.height + 3;
-    }
-    bubbles.push(bubble);
+    // A taller bubble (a long message) climbs as many rows as it is tall.
+    climb();
+    for (let k = 1; k < Math.ceil(height / ROW); k++) climb();
+    const at = anchorOf(message.from, { x: ROOM_W / 2, y: 0 });
+    bubbles.push({ box, row: 0, shown: 0, x: at.x, width });
   }
 
   function layoutBubbles(now: number, deltaMs: number) {
+    if (bubbles.length && now - lastClimb > CLIMB_MS) climb();
+    const line = bubbleLine();
     for (let k = bubbles.length - 1; k >= 0; k--) {
       const bubble = bubbles[k]!;
-      if (now > bubble.until || bubble.lift > 320) {
+      if (bubble.row >= MAX_ROWS) {
         bubble.box.destroy({ children: true });
         bubbles.splice(k, 1);
         continue;
       }
-      const anchor = anchorOf(bubble.from, bubble);
-      bubble.x = anchor.x;
-      bubble.y = anchor.y;
-      // Slide up to the place it was pushed to.
-      bubble.shown += (bubble.lift - bubble.shown) * Math.min(1, (deltaMs / 1000) * 12);
-      // Never out of the room's picture.
+      // Slide up to its row; it stays where its speaker was when they spoke.
+      bubble.shown += (bubble.row - bubble.shown) * Math.min(1, (deltaMs / 1000) * 10);
       const x = Math.min(ROOM_W - bubble.width / 2 - 4, Math.max(bubble.width / 2 + 4, bubble.x));
-      const y = Math.max(bubble.height + 4, bubble.y - Math.round(bubble.shown));
-      bubble.box.position.set(x, y);
-      // Fading out at the end, and as it climbs away from its speaker.
-      bubble.box.alpha = Math.min(1, (bubble.until - now) / 700) * Math.max(0.35, 1 - bubble.lift / 420);
+      bubble.box.position.set(Math.round(x), Math.round(line - bubble.shown * ROW));
+      // The top rows fade away.
+      bubble.box.alpha = Math.min(1, (MAX_ROWS - bubble.shown) / 2);
     }
   }
 
@@ -1002,9 +1056,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const cell = tileAt(x, y);
       if (!cell) return;
       const here =
-        items.find((it) => it.placement && covers(it.placement, cell)) ??
-        furniture.find((f) => f.placement && covers(f.placement, cell) && !catalogueEntry(f.key)?.wall) ??
-        furniture.find((f) => f.placement && covers(f.placement, cell));
+        [...items, ...furniture].find((t) => t.id === piecesAt(cell)[0]?.id);
       if (here) inspect(here);
     },
     { signal: abort.signal },
@@ -1088,9 +1140,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (!selected) {
         // Clicking an item opens its card instead of walking onto it.
         const here =
-          items.find((it) => it.placement && covers(it.placement, cell)) ??
-          furniture.find((f) => f.placement && covers(f.placement, cell) && !catalogueEntry(f.key)?.walkable && !catalogueEntry(f.key)?.wall) ??
-          furniture.find((f) => f.placement && covers(f.placement, cell) && catalogueEntry(f.key)?.wall);
+          [...items, ...furniture].find((t) => t.id === piecesAt(cell).filter((p) => !(p.key && catalogueEntry(p.key)?.walkable))[0]?.id) ??
+          [...items, ...furniture].find((t) => t.id === piecesAt(cell)[0]?.id);
         if (here) {
           inspect(here);
           return;
@@ -1496,7 +1547,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (selectedEntry()?.wall) {
         free = wallFor(hover, furniture.find((x) => x.id === selected)?.placement?.rot ?? 0) !== null;
       } else {
-        for (let a = 0; a < w; a++) for (let b = 0; b < h; b++) if (blocked(hover.i + a, hover.j + b) || hover.i + a >= N || hover.j + b >= N) free = false;
+        const cells: { i: number; j: number }[] = [];
+        for (let a = 0; a < w; a++) for (let b = 0; b < h; b++) cells.push({ i: hover.i + a, j: hover.j + b });
+        const outside = cells.some((c) => c.i >= N || c.j >= N || !hasFloor(shape, c.i, c.j));
+        // Taken cells are fine for a small piece if they are the top of one bare surface.
+        const onTop = stackable(selectedEntry()) && bareSurfaceUnder(cells);
+        free = !outside && (onTop || !cells.some((c) => blocked(c.i, c.j)));
       }
       for (let a = 0; a < w; a++) {
         for (let b = 0; b < h; b++) {
