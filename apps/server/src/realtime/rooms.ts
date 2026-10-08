@@ -5,13 +5,13 @@ import { z } from 'zod';
 import { CATALOGUE, CHICKS, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
 import { HALL_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
-import { loadLayout } from '../apartments/layout';
+import { dropOrphanStacks, loadLayout } from '../apartments/layout';
 import { loadAppearance } from '../avatar/routes';
 import type { SessionUser } from '../auth/routes';
 import type { QuestRecorder } from '../quests/engine';
 import { ChatLimiter, REFUSAL_MESSAGES, judgeChatText, logChat } from '../chat/chat';
 import { SUSPENDED, USER_TOPIC, liveSanction, sanctionText, type UserEvent } from '../moderation/sanctions';
-import { EffectBudget, conditionsHold, triggerMatches, type GameEvent } from '../rules/engine';
+import { EffectBudget, conditionsHold, hourInFrance, triggerMatches, type GameEvent } from '../rules/engine';
 import { loadRules } from '../rules/routes';
 import type { Effect, Rule } from '../rules/schema';
 import { authenticateConnection } from './auth';
@@ -803,6 +803,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.paths.delete(id);
         continue;
       }
+      this.onGameEvent({ type: 'leave', who: id, cell: { i: player.i, j: player.j } });
       // The body faces the step (against it, walking backwards).
       const back = this.moonwalkers.has(id) ? -1 : 1;
       player.dir = dirCode(Math.sign(next.i - player.i) * back, Math.sign(next.j - player.j) * back);
@@ -842,6 +843,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       if (!inGrid(to.i, to.j) || blocked.has(key) || taken.has(key) || !canStep(shape, { i: p.i, j: p.j }, to)) return;
       taken.delete(p.i * N + p.j);
       taken.add(key);
+      this.onGameEvent({ type: 'leave', who: id, cell: { i: p.i, j: p.j } });
       // Carried, not walking: the body keeps the way it faces.
       p.i = to.i;
       p.j = to.j;
@@ -1044,15 +1046,17 @@ export class ApartmentRoom extends BuildingRoom {
   private lastToy = new Map<string, number>();
 
   /** Adds to a score counter (back to 0 after 99), and tells the room to show the new number. */
-  protected async addToCounter(pieceId: string, points: number) {
-    const moved = await needDeps().pool.query(
-      `UPDATE placements SET data = (((COALESCE(NULLIF(data, '')::int, 0) + $3) % 100 + 100) % 100)::text
-        WHERE furniture_id = $1 AND user_id = $2 AND COALESCE(data, '') ~ '^[0-9]{0,2}$'`,
-      [pieceId, this.ownerId, points],
+  protected async addToCounter(pieceId: string, points: number, reset = false): Promise<number | null> {
+    const moved = await needDeps().pool.query<{ data: string }>(
+      `UPDATE placements SET data = (CASE WHEN $4 THEN 0 ELSE ((COALESCE(NULLIF(data, '')::int, 0) + $3) % 100 + 100) % 100 END)::text
+        WHERE furniture_id = $1 AND user_id = $2 AND COALESCE(data, '') ~ '^[0-9]{0,2}$'
+        RETURNING data`,
+      [pieceId, this.ownerId, points, reset],
     );
-    if (!moved.rowCount) return;
+    if (!moved.rows[0]) return null;
     this.layoutCache = null;
     this.broadcast('decor');
+    return Number(moved.rows[0].data);
   }
 
   /**
@@ -1166,7 +1170,8 @@ export class ApartmentRoom extends BuildingRoom {
     if (entry.counter) {
       // The owner keeps the score; the room sees it change at once.
       if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire compte les points.' });
-      await this.addToCounter(piece.id, 1);
+      const value = await this.addToCounter(piece.id, 1);
+      if (value !== null) this.onGameEvent({ type: 'score', who, piece: piece.id.toLowerCase(), value });
       return;
     }
     if (entry.gate) {
@@ -1258,6 +1263,8 @@ export class ApartmentRoom extends BuildingRoom {
         playerCount: this.playerCount(),
         whoCell: who ? { i: who.i, j: who.j } : null,
         isLit: (piece) => this.pieceLit(piece),
+        occupied: (cell) => [...this.state.players.values()].some((p) => p.i === cell.i && p.j === cell.j),
+        hour: hourInFrance(),
       });
       if (!holds) continue;
       // A busy room does not do more: the rest waits for the next time.
@@ -1303,6 +1310,43 @@ export class ApartmentRoom extends BuildingRoom {
       case 'dance':
         if (who) this.startDance(who);
         return;
+      case 'score':
+        // A rule changes the score but never sets off another rule: no 'score' event from here.
+        await this.addToCounter(effect.piece, effect.points, effect.mode === 'reset');
+        return;
+      case 'rotate': {
+        // A piece of one cell, on the floor, nothing standing on it: a quarter turn.
+        const { rows } = await pool.query<{ i: number; j: number }>(
+          `UPDATE placements SET rot = (rot + 1) % 4
+            WHERE furniture_id = $1 AND user_id = $2 AND layer = 0 AND z = 0 AND w = 1 AND h = 1
+        RETURNING i, j`,
+          [effect.piece, this.ownerId],
+        );
+        if (!rows[0]) return;
+        this.layoutCache = null;
+        this.broadcast('fx', { kind: 'pulse', i: rows[0].i, j: rows[0].j, color: 0xb78cff });
+        this.broadcast('decor');
+        return;
+      }
+      case 'move': {
+        // Onto free floor only: nobody there, nothing placed there; what stood on it goes back to the inventory.
+        const { shape } = await this.layout();
+        const to = effect.cell;
+        if (!hasFloor(shape, to.i, to.j) || [...this.state.players.values()].some((p) => p.i === to.i && p.j === to.j)) return;
+        const moved = await pool.query(
+          `UPDATE placements SET i = $3, j = $4
+            WHERE furniture_id = $1 AND user_id = $2 AND layer = 0 AND z = 0 AND w = 1 AND h = 1
+              AND NOT EXISTS (SELECT 1 FROM placements o WHERE o.user_id = $2 AND o.layer = 0
+                                AND $3 >= o.i AND $3 < o.i + o.w AND $4 >= o.j AND $4 < o.j + o.h)`,
+          [effect.piece, this.ownerId, to.i, to.j],
+        );
+        if (!moved.rowCount) return;
+        await dropOrphanStacks(pool, this.ownerId);
+        this.layoutCache = null;
+        this.broadcast('fx', { kind: 'pulse', i: to.i, j: to.j, color: 0xb78cff });
+        this.broadcast('decor');
+        return;
+      }
     }
   }
 

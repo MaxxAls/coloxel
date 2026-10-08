@@ -1078,6 +1078,39 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(await score()).toBe('1');
     }, 30000);
 
+    it('runs the richer mechanisms: leaving a cell, a score that sets off a rule, turning and moving a piece', async () => {
+      const owner = await signUp('mx_rich');
+      await pool.query('DELETE FROM placements WHERE user_id = $1', [owner.id]);
+      const counter = await place(owner, 'compteur', 8, 8);
+      const chair = await place(owner, 'chaise', 2, 2);
+      await saveRules(owner, [
+        // Walking off (5, 5) scores a point; at 2 points the chair turns and moves to (2, 6).
+        rule({ type: 'leave', cell: { i: 5, j: 5 } }, [{ type: 'score', piece: counter, mode: 'add', points: 2 }]),
+        rule({ type: 'score', piece: counter, n: 3 }, [{ type: 'rotate', piece: chair }, { type: 'move', piece: chair, cell: { i: 2, j: 6 } }]),
+      ]);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      room.send('move', { i: 5, j: 5 });
+      await until(() => at(room, owner.id, 5, 5), walk);
+      room.send('move', { i: 6, j: 5 });
+      await until(() => at(room, owner.id, 6, 5), walk);
+      const piece = async (id: string) => (await pool.query<{ i: number; j: number; rot: number; data: string | null }>('SELECT i, j, rot, data FROM placements WHERE furniture_id = $1', [id])).rows[0]!;
+      for (let tries = 0; (await piece(counter)).data !== '2'; tries++) {
+        if (tries > 60) throw new Error('the rule did not score');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      // A rule's score never sets off a rule; the owner's click does (2 + 1 = 3).
+      expect((await piece(chair)).rot).toBe(0);
+      room.send('move', { i: 7, j: 8 });
+      await until(() => at(room, owner.id, 7, 8), walk);
+      room.send('use', { i: 8, j: 8 });
+      for (let tries = 0; (await piece(chair)).j !== 6; tries++) {
+        if (tries > 60) throw new Error('the chair did not move');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(await piece(chair)).toMatchObject({ i: 2, j: 6, rot: 1, data: null });
+    }, 40000);
+
     it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
       const owner = await signUp('mx_step');
       await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);

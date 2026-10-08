@@ -29,6 +29,8 @@ const trigger = z.discriminatedUnion('type', [
         .pipe(z.string().min(2, 'Le mot doit faire 2 caractères au moins').max(20, 'Le mot est trop long (20 caractères max)')),
     })
     .strict(),
+  z.object({ type: z.literal('leave'), cell }).strict(),
+  z.object({ type: z.literal('score'), piece, n: z.number('Score invalide').int().min(0).max(99) }).strict(),
   z
     .object({
       type: z.literal('every'),
@@ -41,6 +43,14 @@ const condition = z.discriminatedUnion('type', [
   z.object({ type: z.literal('players'), op: z.enum(['>=', '<='], 'Comparaison invalide'), n: z.number().int().min(0).max(50) }).strict(),
   z.object({ type: z.literal('lit'), piece, on: z.boolean() }).strict(),
   z.object({ type: z.literal('on-cell'), cell }).strict(),
+  z.object({ type: z.literal('someone-on'), cell }).strict(),
+  z
+    .object({
+      type: z.literal('hours'),
+      from: z.number('Heure invalide').int().min(0).max(23),
+      to: z.number('Heure invalide').int().min(0).max(23),
+    })
+    .strict(),
 ]);
 
 const effect = z.discriminatedUnion('type', [
@@ -57,6 +67,9 @@ const effect = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('dance') }).strict(),
+  z.object({ type: z.literal('score'), piece, mode: z.enum(['add', 'reset'], 'Action invalide'), points: z.number().int().min(1).max(10) }).strict(),
+  z.object({ type: z.literal('rotate'), piece }).strict(),
+  z.object({ type: z.literal('move'), piece, cell }).strict(),
 ]);
 
 export const ruleSchema = z
@@ -75,10 +88,18 @@ export type Trigger = Rule['trigger'];
 export type Condition = Rule['conditions'][number];
 export type Effect = Rule['effects'][number];
 
+/** What a rule needs of a piece it points at: a light, a score counter, or any piece standing on the floor. */
+export type PieceNeed = 'light' | 'counter' | 'floor';
+
 /** Every furniture a rule points at, for the checks done when saving. */
-export function piecesOf(rule: Rule): { id: string; needsLight: boolean }[] {
-  return [
-    ...rule.conditions.flatMap((c) => (c.type === 'lit' ? [{ id: c.piece, needsLight: true }] : [])),
-    ...rule.effects.flatMap((e) => (e.type === 'light' ? [{ id: e.piece, needsLight: true }] : [])),
-  ];
+export function piecesOf(rule: Rule): { id: string; needs: PieceNeed }[] {
+  const out: { id: string; needs: PieceNeed }[] = [];
+  if (rule.trigger.type === 'score') out.push({ id: rule.trigger.piece, needs: 'counter' });
+  for (const c of rule.conditions) if (c.type === 'lit') out.push({ id: c.piece, needs: 'light' });
+  for (const e of rule.effects) {
+    if (e.type === 'light') out.push({ id: e.piece, needs: 'light' });
+    else if (e.type === 'score') out.push({ id: e.piece, needs: 'counter' });
+    else if (e.type === 'rotate' || e.type === 'move') out.push({ id: e.piece, needs: 'floor' });
+  }
+  return out;
 }

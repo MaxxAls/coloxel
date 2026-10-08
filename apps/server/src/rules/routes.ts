@@ -4,7 +4,7 @@ import { catalogueEntry, isSwitchable } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
 import { withTransaction } from '../db/pool';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
-import { MAX_CONDITIONS, MAX_EFFECTS, MAX_RULES, MIN_EVERY_SECONDS, piecesOf, ruleSchema, rulesBodySchema, type Rule } from './schema';
+import { MAX_CONDITIONS, MAX_EFFECTS, MAX_RULES, MIN_EVERY_SECONDS, piecesOf, ruleSchema, rulesBodySchema, type PieceNeed, type Rule } from './schema';
 
 /** The rules of an apartment, in order. Whatever in the table does not pass the schema (it should not happen) is left out. */
 export async function loadRules(pool: pg.Pool, ownerId: string): Promise<Rule[]> {
@@ -33,18 +33,21 @@ export function registerRuleRoutes(app: FastifyInstance, pool: pg.Pool, notify?:
     const { rules } = parsed.data;
 
     // Every piece a rule points at is one of this player's own, and switchable when the rule lights or puts it out.
-    const wanted = new Map<string, boolean>();
-    for (const rule of rules) for (const p of piecesOf(rule)) wanted.set(p.id, (wanted.get(p.id) ?? false) || p.needsLight);
+    const wanted = new Map<string, Set<PieceNeed>>();
+    for (const rule of rules) for (const p of piecesOf(rule)) wanted.set(p.id, (wanted.get(p.id) ?? new Set()).add(p.needs));
     if (wanted.size) {
       const owned = await pool.query<{ id: string; catalogue_key: string }>('SELECT id, catalogue_key FROM furniture WHERE owner_id = $1 AND id = ANY($2::uuid[])', [
         user.id,
         [...wanted.keys()],
       ]);
       const byId = new Map(owned.rows.map((r) => [r.id, r.catalogue_key]));
-      for (const [id, needsLight] of wanted) {
+      for (const [id, needs] of wanted) {
         const key = byId.get(id);
         if (!key) return reply.code(400).send({ error: 'Un des meubles choisis n’est pas à toi.' });
-        if (needsLight && !isSwitchable(catalogueEntry(key))) return reply.code(400).send({ error: 'Ce meuble ne s’allume pas : choisis une lampe, la cheminée, la télé…' });
+        const entry = catalogueEntry(key);
+        if (needs.has('light') && !isSwitchable(entry)) return reply.code(400).send({ error: 'Ce meuble ne s’allume pas : choisis une lampe, la cheminée, la télé…' });
+        if (needs.has('counter') && !entry?.counter) return reply.code(400).send({ error: 'Choisis un compteur de points.' });
+        if (needs.has('floor') && entry?.wall) return reply.code(400).send({ error: 'Un meuble accroché au mur ne se tourne ni ne se déplace.' });
       }
     }
 

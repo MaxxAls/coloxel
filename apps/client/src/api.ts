@@ -191,16 +191,23 @@ export type RuleTrigger =
   | { type: 'step'; cell: RuleCell }
   | { type: 'use'; cell: RuleCell }
   | { type: 'say'; word: string }
-  | { type: 'every'; seconds: number };
+  | { type: 'every'; seconds: number }
+  | { type: 'leave'; cell: RuleCell }
+  | { type: 'score'; piece: string; n: number };
 export type RuleCondition =
   | { type: 'players'; op: '>=' | '<='; n: number }
   | { type: 'lit'; piece: string; on: boolean }
-  | { type: 'on-cell'; cell: RuleCell };
+  | { type: 'on-cell'; cell: RuleCell }
+  | { type: 'someone-on'; cell: RuleCell }
+  | { type: 'hours'; from: number; to: number };
 export type RuleEffect =
   | { type: 'light'; piece: string; mode: 'on' | 'off' | 'toggle' }
   | { type: 'teleport'; cell: RuleCell }
   | { type: 'message'; text: string }
-  | { type: 'dance' };
+  | { type: 'dance' }
+  | { type: 'score'; piece: string; mode: 'add' | 'reset'; points: number }
+  | { type: 'rotate'; piece: string }
+  | { type: 'move'; piece: string; cell: RuleCell };
 export interface Rule {
   enabled: boolean;
   trigger: RuleTrigger;

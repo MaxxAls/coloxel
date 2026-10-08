@@ -40,6 +40,10 @@ export function describeTrigger(t: RuleTrigger): string {
       return `Quand quelqu’un dit « ${t.word} »`;
     case 'every':
       return `Toutes les ${t.seconds} secondes`;
+    case 'leave':
+      return `Quand quelqu’un quitte la case ${cellText(t.cell)}`;
+    case 'score':
+      return `Quand le compteur arrive à ${t.n}`;
   }
 }
 
@@ -51,6 +55,10 @@ export function describeCondition(c: RuleCondition, nameOf: (id: string) => stri
       return `si ${nameOf(c.piece)} est ${c.on ? 'allumé' : 'éteint'}`;
     case 'on-cell':
       return `si le joueur est sur la case ${cellText(c.cell)}`;
+    case 'someone-on':
+      return `si quelqu’un est sur la case ${cellText(c.cell)}`;
+    case 'hours':
+      return `entre ${c.from} h et ${c.to} h`;
   }
 }
 
@@ -64,6 +72,12 @@ export function describeEffect(e: RuleEffect, nameOf: (id: string) => string): s
       return `lui dire « ${e.text} »`;
     case 'dance':
       return 'le faire danser';
+    case 'score':
+      return e.mode === 'reset' ? `remettre ${nameOf(e.piece)} à zéro` : `ajouter ${e.points} point(s) à ${nameOf(e.piece)}`;
+    case 'rotate':
+      return `tourner ${nameOf(e.piece)}`;
+    case 'move':
+      return `déplacer ${nameOf(e.piece)} en ${cellText(e.cell)}`;
   }
 }
 
@@ -169,9 +183,14 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
     return { element: box, get: () => ({ i: Number(i.value), j: Number(j.value) }) };
   }
 
-  function pieceField(): { element: HTMLSelectElement; get(): string } {
-    const lights = pieces().filter((f) => isSwitchable(catalogueEntry(f.key)));
-    const s = select(lights.length ? lights.map((f) => [f.id, `${f.name}${f.placement ? ` ${cellText(f.placement)}` : ' (rangé)'}`] as [string, string]) : [['', 'Aucun meuble lumineux']]);
+  /** A piece of the apartment to point at: the lights, the score counters, or any piece on the floor. */
+  function pieceField(kind: 'light' | 'counter' | 'floor' = 'light'): { element: HTMLSelectElement; get(): string } {
+    const fits = pieces().filter((f) => {
+      const entry = catalogueEntry(f.key);
+      return kind === 'light' ? isSwitchable(entry) : kind === 'counter' ? !!entry?.counter : !!f.placement && !entry?.wall;
+    });
+    const none = kind === 'light' ? 'Aucun meuble lumineux' : kind === 'counter' ? 'Aucun compteur de points' : 'Aucun meuble posé';
+    const s = select(fits.length ? fits.map((f) => [f.id, `${f.name}${f.placement ? ` ${cellText(f.placement)}` : ' (rangé)'}`] as [string, string]) : [['', none]]);
     return { element: s, get: () => s.value };
   }
 
@@ -181,17 +200,24 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
     ['use', 'Quand on clique sur un bouton'],
     ['say', 'Quand quelqu’un dit un mot'],
     ['every', 'Toutes les N secondes'],
+    ['leave', 'Quand quelqu’un quitte une case'],
+    ['score', 'Quand un compteur arrive à un nombre'],
   ];
   const CONDITIONS: [RuleCondition['type'], string][] = [
     ['players', 'Nombre de joueurs'],
     ['lit', 'Une lampe est allumée ou éteinte'],
     ['on-cell', 'Le joueur est sur une case'],
+    ['someone-on', 'Quelqu’un est sur une case'],
+    ['hours', 'Entre deux heures'],
   ];
   const EFFECTS: [RuleEffect['type'], string][] = [
     ['light', 'Allumer ou éteindre un meuble'],
     ['teleport', 'Téléporter le joueur'],
     ['message', 'Lui montrer un message'],
     ['dance', 'Le faire danser'],
+    ['score', 'Compter des points'],
+    ['rotate', 'Tourner un meuble'],
+    ['move', 'Déplacer un meuble'],
   ];
 
   function openBuilder() {
@@ -205,10 +231,15 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
     const fillTrigger = () => {
       triggerParams.replaceChildren();
       const type = triggerType.value as RuleTrigger['type'];
-      if (type === 'step' || type === 'use') {
+      if (type === 'step' || type === 'use' || type === 'leave') {
         const c = cellField('Case');
         triggerParams.append(c.element);
         triggerGet = () => ({ type, cell: c.get() });
+      } else if (type === 'score') {
+        const piece = pieceField('counter');
+        const n = number(0, 99, 10, 'Le nombre');
+        triggerParams.append(piece.element, el('span', 'muted small', 'arrive à'), n);
+        triggerGet = () => ({ type, piece: piece.get(), n: Number(n.value) });
       } else if (type === 'say') {
         const word = el('input');
         word.placeholder = 'abracadabra';
@@ -257,10 +288,15 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
           const on = select([['true', 'allumé'], ['false', 'éteint']]);
           params.append(piece.element, on);
           get = () => ({ type: 'lit', piece: piece.get(), on: on.value === 'true' });
+        } else if (t === 'hours') {
+          const from = number(0, 23, 18, 'De');
+          const to = number(0, 23, 23, 'À');
+          params.append(el('span', 'muted small', 'de'), from, el('span', 'muted small', 'h à'), to, el('span', 'muted small', 'h'));
+          get = () => ({ type: 'hours', from: Number(from.value), to: Number(to.value) });
         } else {
           const c = cellField('Case');
           params.append(c.element);
-          get = () => ({ type: 'on-cell', cell: c.get() });
+          get = () => ({ type: t === 'someone-on' ? 'someone-on' : 'on-cell', cell: c.get() });
         }
       };
       type.addEventListener('change', fill);
@@ -303,6 +339,21 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
           text.setAttribute('aria-label', 'Le message');
           params.append(text);
           get = () => ({ type: 'message', text: text.value });
+        } else if (t === 'score') {
+          const piece = pieceField('counter');
+          const mode = select([['add', 'ajouter'], ['reset', 'remettre à zéro']]);
+          const points = number(1, 10, 1, 'Points');
+          params.append(mode, points, piece.element);
+          get = () => ({ type: 'score', piece: piece.get(), mode: mode.value as 'add' | 'reset', points: Number(points.value) });
+        } else if (t === 'rotate') {
+          const piece = pieceField('floor');
+          params.append(piece.element);
+          get = () => ({ type: 'rotate', piece: piece.get() });
+        } else if (t === 'move') {
+          const piece = pieceField('floor');
+          const c = cellField('Vers');
+          params.append(piece.element, c.element);
+          get = () => ({ type: 'move', piece: piece.get(), cell: c.get() });
         } else {
           get = () => ({ type: 'dance' });
         }

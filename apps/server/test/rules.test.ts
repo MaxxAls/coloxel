@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
-import { EffectBudget, conditionsHold, triggerMatches } from '../src/rules/engine';
+import { EffectBudget, conditionsHold, hourInFrance, triggerMatches, withinHours } from '../src/rules/engine';
 import { MAX_CONDITIONS, MAX_EFFECTS, MAX_RULES, rulesBodySchema, type Rule } from '../src/rules/schema';
 
 const url = process.env.DATABASE_URL ?? 'postgres://coloxel:coloxel@localhost:5432/coloxel';
@@ -95,9 +95,30 @@ describe('mechanisms: what sets a rule off', () => {
     expect(say('bonjour', 'salut')).toBe(false);
   });
 
+  it('reads the new triggers and conditions: leaving a cell, a score, someone on a cell, hours over midnight', async () => {
+    expect(triggerMatches({ type: 'leave', cell: { i: 2, j: 3 } }, { type: 'leave', who: 'x', cell: { i: 2, j: 3 } })).toBe(true);
+    expect(triggerMatches({ type: 'leave', cell: { i: 2, j: 3 } }, { type: 'step', who: 'x', cell: { i: 2, j: 3 } })).toBe(false);
+    expect(triggerMatches({ type: 'score', piece: PIECE, n: 5 }, { type: 'score', who: 'x', piece: PIECE, value: 5 })).toBe(true);
+    expect(triggerMatches({ type: 'score', piece: PIECE, n: 5 }, { type: 'score', who: 'x', piece: PIECE, value: 4 })).toBe(false);
+    const situation = { playerCount: 1, whoCell: null, isLit: async () => undefined, occupied: (c: { i: number; j: number }) => c.i === 4 && c.j === 4, hour: 23 };
+    expect(await conditionsHold([{ type: 'someone-on', cell: { i: 4, j: 4 } }], situation)).toBe(true);
+    expect(await conditionsHold([{ type: 'someone-on', cell: { i: 5, j: 4 } }], situation)).toBe(false);
+    expect(await conditionsHold([{ type: 'hours', from: 22, to: 6 }], situation)).toBe(true);
+    expect(await conditionsHold([{ type: 'hours', from: 8, to: 20 }], situation)).toBe(false);
+    expect(withinHours(3, 22, 6)).toBe(true);
+    expect(withinHours(12, 12, 12)).toBe(true);
+    expect(hourInFrance(new Date('2026-07-01T10:30:00Z'))).toBe(12);
+  });
+
   it('checks conditions on what the room says, and reads a lamp only when asked', async () => {
     let reads = 0;
-    const situation = { playerCount: 2, whoCell: { i: 1, j: 1 }, isLit: async (p: string) => (reads++, p === PIECE ? true : undefined) };
+    const situation = {
+      playerCount: 2,
+      whoCell: { i: 1, j: 1 },
+      isLit: async (p: string) => (reads++, p === PIECE ? true : undefined),
+      occupied: (c: { i: number; j: number }) => c.i === 4 && c.j === 4,
+      hour: 21,
+    };
     expect(await conditionsHold([], situation)).toBe(true);
     expect(await conditionsHold([{ type: 'players', op: '>=', n: 2 }], situation)).toBe(true);
     expect(await conditionsHold([{ type: 'players', op: '>=', n: 3 }], situation)).toBe(false);
