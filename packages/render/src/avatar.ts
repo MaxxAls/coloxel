@@ -274,14 +274,42 @@ const insideHead = (x: number, y: number, grow = 0.4) => {
 };
 
 /** Fills the hair where `inside` says so: a light top, a darker right side, a few strands. */
-function cap(p: Painter, hair: RGB, inside: (x: number, y: number) => boolean): void {
+function cap(p: Painter, hair: RGB, inside: (x: number, y: number) => boolean, skin?: RGB): void {
   for (let y = 2; y < 27; y++) {
     for (let x = 2; x < 28; x++) {
       if (!inside(x, y)) continue;
+      // A glossy arc follows the round of the skull; strands run down from the crown; the lower right is in shade.
+      const arc = Math.hypot((x + 0.5 - HX) * 0.95, y + 0.5 - 13.4);
       let f = 0;
-      if (y < 8 && x < 20) f += 0.13;
-      if (x >= 23) f -= 0.14;
-      if ((x * 5 + y * 3) % 13 === 0) f -= 0.07;
+      if (arc > 8.6 && arc < 10.2 && x < 19 && y < 13) f += 0.2;
+      else if (arc > 7 && arc <= 8.6 && x < 19 && y < 13) f += 0.07;
+      if (x >= 22 || (y > 14 && x + y > 36)) f -= 0.14;
+      if ((x * 7 + (y >> 1) * 3) % 11 === 0 && y > 8) f -= 0.09;
+      // The hair just above the edge of the fringe is a little darker: it is thicker there.
+      if (!inside(x, y + 1) && y > 9) f -= 0.12;
+      p.set(x, y, tone(hair, f));
+    }
+  }
+  // The fringe casts a thin shadow on the forehead.
+  if (skin) {
+    for (let x = HL; x < HR; x++) {
+      for (let y = HT; y < 22; y++) {
+        if (inside(x, y - 1) && !inside(x, y) && insideHead(x, y, 0)) p.set(x, y, tone(skin, -0.16));
+      }
+    }
+  }
+}
+
+/** A lock of hair hanging from y0 to y1, swaying a little: the pieces of long hair, braids and bobs are made of these. */
+function lock(p: Painter, hair: RGB, x0: number, w: number, y0: number, y1: number, wave: number, edge = 1): void {
+  for (let y = y0; y <= y1; y++) {
+    const sx = x0 + Math.sin(y * 0.55 + x0) * wave;
+    for (let k = 0; k < w; k++) {
+      const x = Math.round(sx + k);
+      let f = k === 0 ? 0.12 : k >= w - 1 ? -0.17 : 0;
+      if ((y + k * 2) % 6 === 0) f -= 0.07;
+      // The ends of the lock taper into a point.
+      if (y > y1 - 1 - edge && (k === 0 || k >= w - 1)) continue;
       p.set(x, y, tone(hair, f));
     }
   }
@@ -318,10 +346,18 @@ function drawHair(p: Painter, look: Look, facing: Facing, pal: Palette): void {
   const bangs = (x: number): number => {
     if (style === 5) return 15.8 - (x - 4) * 0.3;
     if (style === 2) return 11 + jag(x) * 0.6;
+    if (style === 11) return 11.4 + Math.sin(x * 0.9) * 1.3;
+    if (style === 12) return 11.6 + jag(x) * 1.6;
+    if (style === 13) return 10.4 + jag(x);
+    if (style === 14) return 9.4;
+    if (style === 15 || style === 16) return 11 + Math.min(3, Math.abs(x + 0.5 - HX) * 0.6);
+    if (style === 17) return 12.8;
+    if (style === 18) return 9.2;
     return 12.2 + jag(x);
   };
+  const narrow = (x: number) => style !== 14 || Math.abs(x + 0.5 - HX) < 8.2;
   const limit = (x: number) => bangs(x) + (Math.abs(x + 0.5 - HX) > 8.6 ? 5 : 0);
-  cap(p, hair, (x, y) => insideHead(x, y, 1.4) && (front ? y < limit(x) || (facing === 'side' && x < HX - 2.4 && y < 21) : y < 22.5));
+  cap(p, hair, (x, y) => insideHead(x, y, 1.4) && narrow(x) && (front ? y < limit(x) || (facing === 'side' && x < HX - 2.4 && y < 21) : y < 22.5), pal.skin);
 
   const ribbon = tone(hair, 0.45);
   if (style === 1 || style === 4) {
@@ -357,6 +393,48 @@ function drawHair(p: Painter, look: Look, facing: Facing, pal: Palette): void {
     } else {
       p.block(12.8, 9, 17.2, 32, hair, 1.8);
       p.block(12.4, 9, 17.6, 10.8, ribbon, 0.6);
+    }
+  }
+  else if (style === 11) {
+    // Long wavy hair: two heavy locks in front of the shoulders, a curtain behind.
+    if (front) {
+      lock(p, hair, 2.8, 4.4, 11, 37, 1.1);
+      lock(p, hair, 22.8, 4.4, 11, 37, 1.1);
+    } else {
+      lock(p, hair, 4.4, 21, 13, 36, 0.9, 2);
+    }
+  } else if (style === 12) {
+    // Shaggy, messy mid-length hair, longer on one side.
+    if (front) {
+      lock(p, hair, 3.4, 3.6, 11, 26, 0.7);
+      lock(p, hair, 23, 3.6, 11, 22, 0.7);
+    } else {
+      lock(p, hair, 4.6, 21, 13, 25, 0.5, 2);
+    }
+  } else if (style === 13) {
+    // Curls: a cloud of little balls around the head.
+    const curls: [number, number, number][] = [[6.6, 10.4, 3.6], [10, 6.6, 3.8], [15, 5.4, 4.2], [20, 6.6, 3.8], [23.4, 10.4, 3.6], [5.6, 15.4, 2.8], [24.4, 15.4, 2.8]];
+    for (const [cx, cy, r] of curls) p.ball(cx, cy, r, r, hair);
+    if (!front) for (const [cx, cy, r] of [[9, 17, 3.6], [15, 19, 4.2], [21, 17, 3.6], [6.6, 20, 2.8], [23.4, 20, 2.8]] as const) p.ball(cx, cy, r, r, hair);
+  } else if (style === 14) {
+    // A quiff swept up and back, with the sides shaved close.
+    p.ball(17, 6.6, 8.8, 5.4, hair, { clip: (_x, y) => y < 10.6 });
+    for (const [qx, qy] of [[11.4, 6.2], [12.4, 5.2], [13.8, 4.4], [15.4, 3.8], [17.2, 3.6]] as const) p.set(qx, qy, tone(hair, 0.35));
+    for (let y = 5; y < 10; y++) p.set(20.6, y, tone(hair, -0.2));
+    for (const sx of [5.4, 24.6]) for (let y = 8; y < 15; y++) p.set(sx, y, tone(hair, -0.3));
+  } else if (style === 15) {
+    // Two braids over the shoulders, tied with ribbons.
+    for (const cx of [4.8, 25.2]) {
+      for (let k = 0; k < 10; k++) p.ball(cx + (k % 2 ? 0.6 : -0.6), 15 + k * 2, 2.3, 1.7, k % 2 ? hair : tone(hair, -0.16), { flat: true });
+      p.block(cx - 2.4, 35, cx + 2.4, 37, ribbon, 0.6);
+    }
+  } else if (style === 16) {
+    // Two buns, high on each side of the head.
+    for (const cx of [8, 22]) {
+      p.ball(cx, 5.8, 3.8, 3.6, hair);
+      p.set(cx - 1.4, 4.4, tone(hair, 0.32));
+      p.set(cx - 0.4, 3.8, tone(hair, 0.32));
+      p.block(cx - 2.2, 8.6, cx + 2.2, 9.8, ribbon, 0.4);
     }
   }
   // A strand of light on top of the head.
@@ -451,6 +529,81 @@ function drawHat(p: Painter, look: Look, facing: Facing, pal: Palette): void {
       });
       break;
     }
+    case 9: {
+      // Headphones: a band over the head, a cushion over each ear.
+      for (let t = 0; t <= 1; t += 0.02) {
+        const a = Math.PI * (1 - t);
+        const hx = HX + Math.cos(a) * 10.8;
+        const hy = 17 - Math.sin(a) * 13.4;
+        p.set(hx, hy, c);
+        p.set(hx, hy + 1, tone(c, -0.2));
+      }
+      for (const side of [-1, 1]) {
+        const x0 = side < 0 ? 2.4 : 23.8;
+        p.block(x0, 14.4, x0 + 3.8, 22.4, tone(c, side < 0 ? -0.05 : -0.25), 1.6, side > 0);
+        p.block(x0 + (side < 0 ? 0.6 : 0.8), 15.6, x0 + 2.8 + (side < 0 ? 0.4 : 0.6), 21, tone(c, 0.25), 1);
+      }
+      break;
+    }
+    case 10: {
+      // A beret, tilted to one side, with a little stalk.
+      p.ball(13.4, 8.6, 11, 5.2, c, { clip: (x, y) => y < 11.4 && insideHead(x, y, 2.4) });
+      p.block(5, 9.4, 24, 11.2, tone(c, -0.2), 0.8);
+      p.set(17.4, 3.4, tone(c, -0.3));
+      p.set(17.4, 2.6, tone(c, -0.3));
+      p.set(9, 6, tone(c, 0.3));
+      p.set(10, 5.4, tone(c, 0.3));
+      break;
+    }
+    case 11: {
+      // A hood: it wraps the head, and leaves the face open.
+      const opening = (x: number, y: number) => front && y >= 11.2 && insideHead(x, y, -0.2);
+      p.ball(HX, 13.2, 12.6, 11.8, c, { clip: (x, y) => !opening(x, y) });
+      const hood = (x: number, y: number) => ((x + 0.5 - HX) / 12.6) ** 2 + ((y + 0.5 - 13.2) / 11.8) ** 2 <= 1 && !opening(x, y);
+      if (front) {
+        // The edge of the hood around the face is in shadow, and a drawstring hangs on each side.
+        for (let y = 2; y < 27; y++) {
+          for (let x = 2; x < 28; x++) {
+            if (hood(x, y) && (opening(x - 1, y) || opening(x + 1, y) || opening(x, y + 1))) p.set(x, y, tone(c, -0.3));
+          }
+        }
+        for (const x of [11.6, 18.4]) for (let y = 26; y < 31; y++) p.set(x, y, WHITE);
+      }
+      for (let y = 4; y < 12; y++) p.set(HX, y, tone(c, -0.18));
+      break;
+    }
+    case 12: {
+      // A bandana knotted at the side, with white dots.
+      p.block(4.2, 8.6, 25.8, 12, c, 0.8);
+      for (let x = 6; x < 25; x += 3) p.set(x, 10.2, WHITE);
+      p.set(26.4, 10, c);
+      p.set(27.4, 10.8, c);
+      p.set(26.6, 11.8, tone(c, -0.2));
+      p.set(27.6, 12.8, tone(c, -0.2));
+      break;
+    }
+    case 13: {
+      // A cowboy hat: a wide curled brim and a dented crown.
+      p.block(1.8, 9.2, 28.2, 12.2, tone(c, -0.2), 1.4);
+      p.set(2, 8.4, tone(c, -0.2));
+      p.set(28, 8.4, tone(c, -0.2));
+      p.block(8.6, 2.6, 21.4, 10, c, 2.2);
+      p.block(8.6, 7.4, 21.4, 9, tone(c, -0.35), 0.4, false);
+      for (let y = 3.2; y < 6.4; y++) p.set(15, y, tone(c, -0.3));
+      p.set(10.4, 4.4, tone(c, 0.3));
+      p.set(10.4, 5.4, tone(c, 0.3));
+      break;
+    }
+    case 14: {
+      // A straw hat with a ribbon in the colour of the hat.
+      const straw: RGB = [228, 188, 108];
+      p.ball(HX, 10.6, 14, 3.6, tone(straw, -0.08));
+      p.ball(HX, 7, 8.4, 5.4, straw, { clip: (_x, y) => y < 10 });
+      p.block(6.6, 7.6, 23.4, 9.8, c, 0.6);
+      for (let x = 3; x < 28; x += 2) p.set(x, 11 + (x % 4 === 1 ? 0 : -1), tone(straw, -0.2));
+      for (let x = 8; x < 22; x += 2) p.set(x, 5 + (x % 4 === 0 ? 0 : 1), tone(straw, 0.15));
+      break;
+    }
     default:
       break;
   }
@@ -498,6 +651,20 @@ function drawGlasses(p: Painter, look: Look): void {
       );
     }
     for (let x = 14; x <= 16; x++) p.set(x, 17.8, dark);
+  } else if (look.glasses === 5) {
+    // Aviators: big teardrop lenses in a thin golden frame.
+    for (const ex of EYE_X) {
+      p.block(ex - 3.8, 15.6, ex + 3.8, 22, GOLD, 2.4);
+      p.block(ex - 3, 16.4, ex + 3, 21.2, [86, 130, 160], 2);
+      p.set(ex - 1.8, 17.2, [200, 230, 250]);
+      p.set(ex - 0.8, 16.8, [200, 230, 250]);
+    }
+    for (let x = 14; x <= 16; x++) p.set(x, 16.6, GOLD);
+  } else if (look.glasses === 6) {
+    // An eyepatch over one eye, held by a strap across the head.
+    for (let x = 5; x < 25; x++) p.set(x, 14 + (x - 5) * 0.06, [34, 28, 58]);
+    p.block(EYE_X[0] - 3.2, 15.4, EYE_X[0] + 3.2, 21.6, [34, 28, 58], 1.8);
+    p.set(EYE_X[0] - 1.6, 17, [90, 84, 120]);
   }
 }
 
@@ -508,6 +675,15 @@ function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: b
     p.block(23.6, 16, 26.6, 21.8, tone(pal.skin, -0.2), 1.2);
   }
   p.block(HL, HT, HR, HB, pal.skin, 4.6);
+  // The light comes from the upper left: a soft cheek, a shaded jaw and a shaded right side.
+  for (let y = 12; y <= HB; y++) {
+    for (let x = HL; x < HR; x++) {
+      if (!insideHead(x, y, 0)) continue;
+      if (y >= 23.4) p.set(x, y, tone(pal.skin, -0.12));
+      else if (x >= 22.6 && y > 14) p.set(x, y, tone(pal.skin, -0.09));
+      else if (x >= 6 && x < 10 && y >= 19 && y < 23) p.set(x, y, tone(pal.skin, 0.05));
+    }
+  }
   if (facing === 'side') p.block(11.4, 16.4, 14.8, 21.8, tone(pal.skin, -0.14), 1.2);
   if (showsFace(facing)) {
     turnHead(p, facing);
@@ -533,13 +709,13 @@ function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: b
 const SHOE_SOLE: RGB = [244, 239, 230];
 
 function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, seated: boolean): void {
-  const covers = look.bottom === 0 || look.bottom === 2 || look.bottom === 4;
+  const covers = look.bottom === 0 || look.bottom === 2 || look.bottom === 4 || look.bottom === 6 || look.bottom === 7;
   const skirt = look.bottom === 3;
   const bottom = pal.bottom;
   const shoeTop = seated ? 47.4 : 49 + off;
   const shoeBot = seated ? 52.4 : 54.6 + off;
   const segs: [number, number][] = seated ? [[38.5, 44.4], [43.4, 48.6]] : [[39 + off * 0.5, 50 + off]];
-  const clothEnd = covers ? 99 : seated ? 44.4 : 45.6 + off;
+  const clothEnd = covers ? 99 : look.bottom === 5 ? (seated ? 46.4 : 47.8 + off) : seated ? 44.4 : 43.6 + off;
 
   for (const [a, b] of segs) {
     const clothB = Math.min(b, clothEnd);
@@ -562,6 +738,20 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
   } else if (look.bottom === 0) {
     // Jeans: a seam of lighter stitches.
     for (let y = 42; y < shoeTop - 1; y += 2) p.set(x0 + 2.7, y + (seated ? 0 : off * 0.5), tone(bottom, 0.22));
+  } else if (look.bottom === 5) {
+    // Bermuda shorts: a seam and a deep hem.
+    for (let y = 40; y < clothEnd - 2; y += 2) p.set(x0 + 0.9, y, tone(bottom, 0.22));
+    p.block(x0, clothEnd - 2.2, x0 + 5.4, clothEnd, tone(bottom, -0.16), 0.4, false);
+  } else if (look.bottom === 6) {
+    // Ripped jeans: a patch of skin at the knee, frayed edges.
+    const ky = seated ? 40.4 : 43 + off * 0.5;
+    p.block(x0 + 1, ky, x0 + 4.4, ky + 2.4, pal.skin, 0.6);
+    for (const dx of [0.4, 1.6, 2.8, 4.2]) p.set(x0 + dx, ky - 0.4, tone(bottom, 0.4));
+    for (let y = 46; y < shoeTop - 1; y += 2) p.set(x0 + 2.7, y + (seated ? 0 : off * 0.5), tone(bottom, 0.22));
+  } else if (look.bottom === 7) {
+    // Suit trousers: a sharp crease down each leg and a dark cuff.
+    for (let y = 40; y < shoeTop - 1; y++) p.set(x0 + 2.7, y + (seated ? 0 : off * 0.5), tone(bottom, 0.2));
+    p.block(x0, shoeTop - 1.6, x0 + 5.4, shoeTop, tone(bottom, -0.25), 0.4, false);
   }
 
   // Shoes.
@@ -585,6 +775,27 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
     p.block(sx, shoeBot - 1.2, x0 + 6.6, shoeBot, SHOE_SOLE, 0.4, false);
     p.set(x0 + 2.6, shoeTop - 1.2, WHITE);
     p.set(x0 + 2.6, shoeTop + 0.2, WHITE);
+  } else if (look.shoes === 4) {
+    // Sandals: bare feet, a sole and two straps.
+    p.block(sx + 0.4, shoeTop + 0.8, x0 + 6.4, shoeBot - 0.6, pal.skin, 1.4, true);
+    p.block(sx, shoeBot - 1.4, x0 + 6.6, shoeBot, shoe, 0.5, false);
+    for (const dy of [1.6, 3.2]) p.block(x0 - 0.2, shoeTop + dy - 0.4, x0 + 6, shoeTop + dy + 0.8, shoe, 0.3, false);
+  } else if (look.shoes === 5) {
+    // Dress shoes: dark and shiny, with a thin sole and a heel.
+    const dk = tone(shoe, -0.3);
+    p.block(sx, shoeTop + 0.4, x0 + 6.6, shoeBot - 0.6, dk, 1.8, true);
+    p.block(sx, shoeBot - 1.2, x0 + 6.6, shoeBot, tone(dk, -0.4), 0.4, false);
+    p.set(x0 + 3, shoeTop + 1.2, tone(dk, 0.5));
+    p.set(x0 + 4, shoeTop + 1.2, tone(dk, 0.5));
+    p.set(x0 + 5, shoeTop + 2, tone(dk, 0.4));
+    p.block(x0, shoeTop - 1.2, x0 + 4.8, shoeTop + 1, dk, 0.8);
+  } else if (look.shoes === 6) {
+    // Ankle boots: a short shaft, a zip, a chunky heel.
+    p.block(x0 - 0.2, shoeTop - 3.4, x0 + 5.6, shoeTop + 1.4, shoe, 1);
+    p.block(sx, shoeTop, x0 + 6.6, shoeBot, shoe, 1.8, true);
+    p.block(sx, shoeBot - 1.6, x0 + 6.6, shoeBot, tone(shoe, -0.5), 0.4, false);
+    for (let y = shoeTop - 2.6; y < shoeTop + 1; y++) p.set(x0 + 4.6, y, tone(shoe, 0.4));
+    p.set(x0 + 2.6, shoeTop - 3, tone(shoe, 0.3));
   } else {
     // Trainers: a white sole and a hint of laces.
     p.block(sx, shoeTop, x0 + 6.6, shoeBot, shoe, 2, true);
@@ -597,8 +808,8 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
 function drawArms(p: Painter, look: Look, pal: Palette, frame: Frame): void {
   const o = swing(frame);
   const sleeveless = look.top === 7;
-  const short = look.top === 0 || look.top === 1 || look.top === 3 || look.top === 8 || look.top === 9;
-  const sleeve = look.top === 5 ? tone(pal.top, -0.1) : pal.top;
+  const short = look.top === 0 || look.top === 1 || look.top === 3 || look.top === 8 || look.top === 9 || look.top === 13 || look.top === 14;
+  const sleeve = look.top === 5 ? tone(pal.top, -0.1) : look.top === 13 ? tone(WHITE, -0.04) : pal.top;
   for (const [x0, off] of [[4.2, o.armL], [21.6, o.armR]] as const) {
     p.block(x0 + 0.3, 26.6 + off, x0 + 3.9, 38.4 + off, pal.skin, 1.4, x0 > 15);
     if (!sleeveless) {
@@ -606,6 +817,17 @@ function drawArms(p: Painter, look: Look, pal: Palette, frame: Frame): void {
       p.block(x0, 26.2 + off, x0 + 4.2, end + off, sleeve, 1.8, x0 > 15);
       p.block(x0, end - 1.6 + off, x0 + 4.2, end + off, tone(sleeve, short ? -0.12 : 0.14), 0.5, false);
       if (look.top === 1) for (let y = 28; y < end; y += 3) for (let x = x0; x < x0 + 4; x++) p.set(x, y + off, tone(sleeve, 0.24));
+      if (look.top === 11) {
+        // Plaid sleeves.
+        for (let y = 28; y < end; y += 3) for (let x = x0; x < x0 + 4; x++) p.set(x, y + off, tone(sleeve, -0.16));
+        for (let x = x0 + 1; x < x0 + 4; x += 3) for (let y = 27; y < end; y++) p.set(x, y + off, tone(sleeve, -0.12));
+      } else if (look.top === 12) {
+        p.block(x0, end - 2.4 + off, x0 + 4.2, end + off, tone(sleeve, -0.3), 0.4, false);
+      } else if (look.top === 14) {
+        for (let x = x0; x < x0 + 4; x++) p.set(x, end - 1.6 + off, WHITE);
+      } else if (look.top === 10) {
+        for (let y = 28; y < end - 2; y += 4) for (let x = x0 + 0.6; x < x0 + 4; x += 2) p.set(x, y + off, tone(sleeve, 0.4));
+      }
     }
     p.ball(x0 + 2.1, 40.4 + off, 2.4, 2.4, pal.skin);
   }
@@ -634,15 +856,35 @@ function drawTorso(p: Painter, look: Look, pal: Palette, facing: Facing): void {
     p.block(TL + 0.6, T0, TR - 0.6, 28.6, pal.skin, 1);
     p.block(10, T0, 12.6, 29, t, 0.6);
     p.block(17.4, T0, 20, 29, t, 0.6);
+  } else if (style === 15) {
+    // A long coat: it covers the hips and flares a little.
+    p.block(TL - 0.6, T0, TR + 0.6, 47, t, 2.2);
+    p.block(TL - 1, 42, TR + 1, 47.2, t, 1.4);
+    p.block(TL - 1, 45.6, TR + 1, 47.2, tone(t, -0.25), 0.4, false);
+  } else if (style === 13) {
+    // A waistcoat over a white shirt.
+    p.block(TL, T0, TR, T1, tone(WHITE, -0.04), 2.2);
+    p.block(TL + 0.4, T1 - 2.4, TR - 0.4, T1, belt, 0.8, true);
   } else {
     p.block(TL, T0, TR, T1, t, 2.2);
     p.block(TL + 0.4, T1 - 2.4, TR - 0.4, T1, belt, 0.8, true);
   }
 
+  // Folds: a shadow under each arm, and creases at the waist.
+  if (style !== 7) {
+    for (let y = 27; y < 33; y++) {
+      p.set(TL + 0.5, y, tone(t, -0.17));
+      p.set(TR - 1.5, y, tone(t, -0.2));
+    }
+  }
+  for (const [cx, dy] of [[11.4, 0], [18.4, 1]] as const) {
+    for (let k = 0; k < 4; k++) p.set(cx + (cx < 15 ? k * 0.35 : -k * 0.35), 33.4 + dy + k, tone(t, -0.14));
+  }
+
   if (style === 6) {
     p.block(12, 23.4, 18, 27.8, t, 1);
     for (let y = 24; y < 27.6; y += 1.4) for (let x = 12.4; x < 17.8; x++) p.set(x, y, tone(t, -0.14));
-  } else if (front && style !== 4 && style !== 7) {
+  } else if (front && style !== 4 && style !== 7 && style < 10) {
     for (let x = 12; x <= 18; x++) p.set(x, 27.2 - Math.abs(x - 15) * 0.2, tone(t, -0.25));
     if (style === 0 || style === 8) for (let x = 12; x <= 18; x++) p.set(x, 26.2, tone(t, 0.18));
   }
@@ -701,6 +943,89 @@ function drawTorso(p: Painter, look: Look, pal: Palette, facing: Facing): void {
   } else if (style === 6) {
     for (let x = 10; x < 21; x += 2) for (let y = 28; y < 39; y++) if (y % 4 !== 0) p.set(x, y, tone(t, -0.1));
     p.block(TL + 0.2, T1 - 2.4, TR - 0.2, T1 - 0.2, tone(t, -0.2), 0.4, false);
+  } else if (style === 10) {
+    // A knitted jumper: a ribbed collar and hem, a band of zigzags across the chest.
+    p.block(12, 23.8, 18, 27.6, tone(t, -0.14), 1);
+    for (let x = 12.6; x < 18; x += 1.6) for (let y = 24.4; y < 27; y++) p.set(x, y, tone(t, -0.28));
+    p.block(TL, T1 - 2.6, TR, T1, tone(t, -0.16), 0.6, false);
+    for (let x = TL + 1; x < TR; x += 2) for (let y = T1 - 2.4; y < T1; y++) p.set(x, y, tone(t, -0.3));
+    for (let x = TL + 0.6; x < TR - 0.4; x++) {
+      p.set(x, 30.6 + (Math.floor(x) % 4 < 2 ? 0 : 1.4), tone(t, 0.5));
+      p.set(x, 34 + (Math.floor(x) % 4 < 2 ? 1.4 : 0), tone(t, -0.28));
+    }
+    for (let x = TL + 1; x < TR; x += 3) p.set(x, 32.4, WHITE);
+  } else if (style === 11) {
+    // A plaid shirt: crossing lines, a placket with buttons, a pointed collar.
+    for (let x = TL + 1; x < TR; x += 3) for (let y = T0 + 1; y < T1 - 2; y++) p.set(x, y, tone(t, -0.14));
+    for (let y = T0 + 3; y < T1 - 2; y += 3) for (let x = TL + 1; x < TR; x++) p.set(x, y, Math.floor(x - TL - 1) % 3 === 0 ? tone(t, -0.3) : tone(t, -0.16));
+    if (front) {
+      for (let y = 27; y < T1 - 2; y++) p.set(15, y, tone(t, -0.34));
+      for (const y of [29.4, 32.4, 35.4]) p.set(16, y, WHITE);
+      for (let k = 0; k < 4; k++) {
+        p.set(12.8 - k * 0.5, 25.6 + k, tone(t, 0.4));
+        p.set(17.2 + k * 0.5, 25.6 + k, tone(t, 0.4));
+      }
+    } else {
+      p.block(12, 25.4, 18, 27, tone(t, 0.3), 0.4);
+    }
+  } else if (style === 12) {
+    // A bomber jacket: ribbed collar and hem, a zip, slanted pockets.
+    p.block(11, 24.4, 19, 27.6, tone(t, -0.3), 1);
+    for (let x = 11.6; x < 18.6; x += 1.6) p.set(x, 25.6, tone(t, -0.45));
+    p.block(TL, T1 - 3.2, TR, T1, tone(t, -0.3), 0.6, false);
+    for (let x = TL + 1; x < TR; x += 2) for (let y = T1 - 3; y < T1; y++) p.set(x, y, tone(t, -0.45));
+    if (front) {
+      for (let y = 27.4; y < T1 - 3; y++) p.set(15, y, tone(WHITE, -0.1));
+      p.set(15, 28, GOLD);
+      for (const [px, dir] of [[10.6, 1], [19.4, -1]] as const) for (let k = 0; k < 4; k++) p.set(px + dir * k * 0.5, 35 + k * 0.5, tone(t, -0.3));
+    } else {
+      p.block(13.4, 27.6, 16.6, 38, tone(t, -0.12), 0.6);
+    }
+    for (let y = 28; y < 33; y++) p.set(TL + 1.2, y, tone(t, 0.3));
+  } else if (style === 13) {
+    // The two panels of the waistcoat leave a V of white shirt; a few buttons.
+    if (front) {
+      p.block(TL, T0, 12.8, T1, t, 1.6);
+      p.block(17.2, T0, TR, T1, t, 1.6);
+      for (let k = 0; k < 5; k++) {
+        p.set(12.8 + k * 0.4, 25.6 + k, tone(t, -0.3));
+        p.set(17.2 - k * 0.4, 25.6 + k, tone(t, -0.3));
+      }
+      for (const y of [30.6, 33.4, 36.2]) p.set(16.4, y, GOLD);
+      p.block(9.6, 35.6, 12, 36.6, tone(t, -0.25), 0.3);
+    } else {
+      p.block(TL, T0 + 1, TR, T1, t, 2);
+    }
+    for (let x = 13.4; x < 17.6; x++) p.set(x, 25.6, tone(WHITE, -0.2));
+  } else if (style === 14) {
+    // A sports shirt: white stripes down the sides, a V collar, a number.
+    for (const x of [TL + 1.4, TR - 2.4]) for (let y = T0 + 0.4; y < T1 - 1; y++) p.set(x, y, tone(WHITE, -0.05));
+    for (let k = 0; k < 4; k++) {
+      p.set(12.6 + k * 0.6, 26 + k, WHITE);
+      p.set(17.4 - k * 0.6, 26 + k, WHITE);
+    }
+    if (front) {
+      for (const [nx, ny] of [[13, 31], [14, 31], [15, 31], [16, 31], [16, 32], [15.6, 33], [15, 34], [14.6, 35], [14.2, 36]] as const) p.set(nx, ny, WHITE);
+    } else {
+      for (const [nx, ny] of [[13, 29], [14, 29], [15, 29], [16, 29], [16, 30], [15.6, 31], [15, 32], [14.6, 33], [14.2, 34]] as const) p.set(nx, ny, WHITE);
+    }
+  } else if (style === 15) {
+    // Wide lapels, two rows of buttons, a belt with a buckle.
+    p.block(TL - 0.6, 36.2, TR + 0.6, 38.4, tone(t, -0.35), 0.5);
+    p.set(15, 37.2, GOLD);
+    p.set(16, 37.2, GOLD);
+    if (front) {
+      for (let k = 0; k < 8; k++) {
+        p.set(13.2 - k * 0.15, 25.6 + k, tone(t, -0.32));
+        p.set(16.8 + k * 0.15, 25.6 + k, tone(t, -0.32));
+        p.set(12 - k * 0.15, 25.6 + k, tone(t, 0.12));
+        p.set(18 + k * 0.15, 25.6 + k, tone(t, 0.12));
+      }
+      for (const y of [30, 33.4, 40, 43.4]) for (const x of [12.4, 17.6]) p.set(x, y, GOLD);
+      for (let y = 26; y < 47; y++) p.set(15, y, tone(t, -0.3));
+    } else {
+      for (let y = 26; y < 46; y++) p.set(15, y, tone(t, -0.28));
+    }
   } else if (style === 9) {
     // Overalls: a bib and straps in the colour of the trousers, over the T-shirt.
     const bib = pal.bottom;
@@ -727,6 +1052,22 @@ function drawBehind(p: Painter, look: Look, pal: Palette, frame: Frame): void {
       p.ball(cx + side * 0.2, 38 - flap, 2.5, 4.6, tone([244, 242, 250], -0.08));
       for (let k = 0; k < 3; k++) p.set(cx - side * 0.4, 26 + k * 3.4 - flap, tone([244, 242, 250], -0.2));
     }
+  } else if (look.extra === 6) {
+    // Bat wings: a bony arm and a membrane with scalloped edges.
+    const wing = tone(pal.extra, -0.15);
+    for (const side of [-1, 1]) {
+      const cx = 15 + side * 10.2;
+      p.ball(cx, 27 - flap, 3.6, 10.4, wing);
+      for (const [dx, y, r] of [[-2, 37.4, 1.6], [0, 38.6, 2.2], [2, 37.4, 1.6]] as const) p.ball(cx + dx * side, y - flap, r, r, tone(wing, -0.1));
+      for (let y = 18; y < 36; y++) p.set(cx - side * 0.4, y - flap, tone(wing, 0.28));
+      for (const dx of [-1.8, 1.6]) for (let y = 30; y < 38; y++) p.set(cx + dx * side, y - flap, tone(wing, -0.3));
+    }
+  } else if (look.extra === 7) {
+    // A fox tail: bushy, with a white tip, behind the right leg.
+    p.ball(24.4, 43, 3.6, 6, pal.extra);
+    p.ball(25.6, 48.4, 2.4, 2.6, WHITE);
+    p.set(23, 40, tone(pal.extra, 0.3));
+    p.set(23.4, 41, tone(pal.extra, 0.3));
   } else if (look.extra === 4) {
     const cape = pal.extra;
     p.block(6.8, 26, 23.2, 50 - flap, cape, 2);
@@ -757,6 +1098,42 @@ function drawOver(p: Painter, look: Look, pal: Palette, facing: Facing): void {
     } else {
       p.block(13.4, 25.4, 16.6, 27.4, tone(bow, -0.2), 0.4);
     }
+  } else if (look.extra === 8) {
+    // A string of pearls and a small pendant.
+    const pearl = mix2(pal.extra, WHITE, 0.7);
+    for (let t = -1; t <= 1; t += 0.3) p.set(15 + t * 5, 27 + (1 - t * t) * 3.4, t === 0 ? WHITE : pearl);
+    p.ball(15, 32.4, 1.4, 1.4, GOLD);
+    p.set(14.4, 31.8, WHITE);
+  } else if (look.extra === 9) {
+    // A medal on a ribbon.
+    const ribbon = pal.extra;
+    for (let k = 0; k < 8; k++) {
+      p.set(11 + k * 0.5, 25.6 + k * 0.9, ribbon);
+      p.set(12 + k * 0.5, 25.6 + k * 0.9, tone(ribbon, -0.15));
+      if (front) {
+        p.set(19 - k * 0.5, 25.6 + k * 0.9, ribbon);
+        p.set(18 - k * 0.5, 25.6 + k * 0.9, tone(ribbon, -0.15));
+      }
+    }
+    if (front) {
+      p.ball(15, 35, 2.8, 2.8, GOLD);
+      p.set(14.4, 34, WHITE);
+      p.set(15.6, 35.6, tone(GOLD, -0.3));
+    }
+  } else if (look.extra === 10) {
+    // A shoulder bag: a strap across the chest, the bag on the opposite hip.
+    const bag = pal.extra;
+    const m = (x: number) => (front ? x : 30 - x);
+    for (let t = 0; t <= 1; t += 0.025) {
+      const x = 9.8 + t * 11.4, y = 26 + t * 13;
+      p.set(m(x), y, bag);
+      p.set(m(x + 1.2), y, tone(bag, -0.2));
+    }
+    const bx = front ? 18.4 : 5.6;
+    p.block(bx, 36.4, bx + 6.4, 44, tone(bag, -0.12), 1.2, front);
+    p.block(bx, 36.4, bx + 6.4, 39.6, bag, 1.2, front);
+    p.set(bx + 3.2, 39.2, GOLD);
+    p.set(bx + 1, 37, tone(bag, 0.3));
   } else if (look.extra === 2) {
     const bag = pal.extra;
     if (front) {
