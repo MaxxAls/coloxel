@@ -319,10 +319,8 @@ const T1 = 40.5;
 
 /** How a head turns: features are squeezed toward the side the face looks to. */
 function turnHead(p: Painter, facing: Facing): void {
-  if (facing === 'front34') {
-    p.mapX = (x) => HX + (x - HX) * 0.72 + 3;
-    p.keepX = null;
-  } else if (facing === 'side') {
+  // Three quarters: the head is drawn from the front, whole, then turned as a block (see turnHeadBlock).
+  if (facing === 'side') {
     p.mapX = (x) => HX + (x - HX) * 0.55 + 3.6;
     // Only the eye, brow, cheek and glasses lens nearest to us are seen.
     p.keepX = (x) => x >= HX - 0.5;
@@ -1360,10 +1358,11 @@ function drawLying(p: Painter, look: Look, pal: Palette): void {
  * `near`, and the whole moves `shift` units toward the way the player faces: a body seen at three quarters shows
  * its near shoulder broad and its far one narrow, like a person turned along the floor's axis.
  */
-function squeezeBody(p: Painter, from: number, far: number, near = far, shift = 0): void {
+function squeezeBody(p: Painter, from: number, far: number, near = far, shift = 0, until = Infinity): void {
   const mid = (HX + p.ox) * p.k;
   const to = mid + shift * p.k;
-  for (let y = Math.max(0, Math.round((from + p.oy) * p.k)); y < p.h; y++) {
+  const last = Math.min(p.h, Math.round((until + p.oy) * p.k));
+  for (let y = Math.max(0, Math.round((from + p.oy) * p.k)); y < last; y++) {
     const row = p.px.slice(y * p.w, (y + 1) * p.w);
     for (let x = 0; x < p.w; x++) {
       const d = x + 0.5 - to;
@@ -1391,7 +1390,8 @@ function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: bool
     drawBody(p, look, pal, facing, 0, true);
     p.warpY = null;
     p.spreadX = 1;
-    drawHead(p, look, pal, facing, blink);
+    if (isThreeQuarters(facing)) squeezeBody(p, T0 - 0.5, 0.6, 0.94, 1.2);
+    drawTurnedHead(p, look, pal, facing, blink);
   } else {
     p.warpY = BODY_WARP;
     p.spreadX = BODY_SPREAD;
@@ -1399,11 +1399,31 @@ function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: bool
     p.warpY = null;
     p.spreadX = 1;
     if (facing === 'side') squeezeBody(p, T0 - 0.5, 0.55);
-    else if (facing === 'front34' || facing === 'back34') squeezeBody(p, T0 - 0.5, 0.6, 0.94, 1.2);
-    drawHead(p, look, pal, facing, blink);
+    else if (isThreeQuarters(facing)) squeezeBody(p, T0 - 0.5, 0.6, 0.94, 1.2);
+    drawTurnedHead(p, look, pal, facing, blink);
   }
   return p;
 }
+
+/**
+ * Draws the head; at three quarters it is the front view turned as a whole, on a layer of its own (long hair hangs
+ * over the body and turns with the head): its far side (ear, cheek, eye) narrows, its near side keeps its width, and
+ * it moves a little toward the way the player faces. The features keep their proportions.
+ */
+function drawTurnedHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: boolean): void {
+  if (!isThreeQuarters(facing)) {
+    drawHead(p, look, pal, facing, blink);
+    return;
+  }
+  const layer = new Painter(p.w / p.k, p.h / p.k, p.k);
+  layer.ox = p.ox;
+  layer.oy = p.oy;
+  drawHead(layer, look, pal, facing, blink);
+  squeezeBody(layer, -p.oy, 0.74, 1, 1.1);
+  for (let k = 0; k < layer.px.length; k++) if (layer.px[k]) p.px[k] = layer.px[k]!;
+}
+
+const isThreeQuarters = (f: Facing) => f === 'front34' || f === 'back34';
 
 /** RGBA pixels of one frame, outline included. No DOM needed. */
 export function avatarPixels(
