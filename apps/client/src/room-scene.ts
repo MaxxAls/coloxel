@@ -20,7 +20,7 @@ import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, 
 import { hasFloor, levelAt, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
 import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
-import { avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
+import { handTexture, avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 
 /** Same as the server's step: one cell every 480 ms. */
 const STEP_MS = 480;
@@ -78,6 +78,9 @@ interface PlayerView {
   shadow: Graphics;
   /** The little z's floating up from a sleeper. */
   zzz: Text[];
+  /** What the avatar holds, drawn next to its hand. */
+  hand: Sprite;
+  handId: number;
   /** When the avatar next blinks, and a personal phase so that nobody breathes in sync. */
   blinkAt: number;
   phase: number;
@@ -559,7 +562,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       t.visible = false;
       return t;
     });
-    box.addChild(shadow, body, label, ...zzz);
+    const hand = new Sprite();
+    hand.anchor.set(0.5, 1);
+    hand.scale.set(2);
+    hand.visible = false;
+    box.addChild(shadow, body, hand, label, ...zzz);
     world.addChild(box);
     const { x, y } = tileCenter(p.i, p.j);
     const view: PlayerView = {
@@ -580,6 +587,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       label,
       shadow,
       zzz,
+      hand,
+      handId: 0,
       blinkAt: performance.now() + 1500 + Math.random() * 4000,
       phase: Math.random() * 6,
     };
@@ -700,6 +709,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         // Seated, the avatar sits a little forward of the middle of the seat.
         view.body.position.set(pose === 'sit' ? 3 * PX : 0, (pose === 'sit' ? 4 : 10) * PX - Math.round(bob) - (pose === 'stand' ? breath * PX : 0));
       }
+      // What the avatar holds: in front, on the side of the hand that faces the viewer; a sleeper holds nothing.
+      if (view.handId !== p.hand) {
+        view.handId = p.hand;
+        const tex = p.hand ? handTexture(p.hand) : null;
+        if (tex) view.hand.texture = tex;
+      }
+      view.hand.visible = view.handId !== 0 && pose !== 'lie' && !!handTexture(view.handId);
+      if (view.hand.visible) view.hand.position.set(7 * PX * (pose === 'stand' ? turn : 1), (pose === 'sit' ? -9 : -14) * PX - Math.round(bob));
       view.shadow.visible = pose === 'stand';
       view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -71 : -64 - Math.round(bob));
       view.zzz.forEach((zed, k) => {

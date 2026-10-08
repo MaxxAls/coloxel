@@ -1,6 +1,7 @@
 import { Texture } from 'pixi.js';
 import { avatarFrame, type Facing, type Frame, type Look, type Pose } from './avatar';
 import { furnitureSpriteUrl, itemSpriteUrl } from './api';
+import { handItem } from '@coloxel/render';
 import { petCanvas, type PetFrame } from './pets';
 
 const nearest = (tex: Texture) => {
@@ -51,6 +52,31 @@ export function petTexture(species: string, color: number, frame: PetFrame): Tex
   if (!tex) {
     tex = nearest(Texture.from(petCanvas(species, color, frame)));
     petCache.set(key, tex);
+  }
+  return tex;
+}
+
+const handCache = new Map<number, Texture>();
+/** The small icon of what an avatar holds, drawn from the rows and palette shared with the server. */
+export function handTexture(id: number): Texture | null {
+  const item = handItem(id);
+  if (!item) return null;
+  let tex = handCache.get(id);
+  if (!tex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(...item.rows.map((r) => r.length));
+    canvas.height = item.rows.length;
+    const ctx = canvas.getContext('2d')!;
+    item.rows.forEach((row, y) => {
+      [...row].forEach((ch, x) => {
+        const color = item.palette[ch];
+        if (!color) return;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, 1, 1);
+      });
+    });
+    tex = nearest(Texture.from(canvas));
+    handCache.set(id, tex);
   }
   return tex;
 }

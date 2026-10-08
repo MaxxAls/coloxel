@@ -1,6 +1,7 @@
 export * from './types';
 export { renderRecipe, renderSprite, rotateParts, spriteHash, shade, project, isHex } from './render';
 export { SEEDS } from './seeds';
+export { HAND_ITEMS, handItem, type HandItem } from './hand';
 export {
   CATALOGUE,
   DEFAULT_FLOOR,

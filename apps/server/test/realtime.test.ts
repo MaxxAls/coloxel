@@ -1053,6 +1053,28 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(heard.paint.find((p) => p.i === 6 && p.j === 1).team).toBe(mineTeam);
     }, 40000);
 
+    it('serves a drink from a dispenser to a player standing next to it, and lets them put it down', async () => {
+      const owner = await signUp('mx_vend');
+      await place(owner, 'machinecafe', 6, 6);
+      const room = await joinApartment(owner, owner.id);
+      const heard = listen(room);
+      const handOf = () => (room.state?.players?.get(owner.id) as { hand: number } | undefined)?.hand;
+      await until(() => playerOf(room, owner.id));
+      // From across the room: nothing.
+      room.send('use', { i: 6, j: 6 });
+      await until(() => heard.messages.length > 0, 3000);
+      expect(heard.messages[0]).toMatch(/Rapproche-toi/);
+      expect(handOf()).toBe(0);
+      // Next to it: a coffee.
+      room.send('move', { i: 6, j: 5 });
+      await until(() => at(room, owner.id, 6, 5), walk);
+      room.send('use', { i: 6, j: 6 });
+      await until(() => handOf() === 1, 3000);
+      // Put it down.
+      room.send('chat', { text: '/poser' });
+      await until(() => handOf() === 0, 3000);
+    }, 40000);
+
     it('lets players walk over a pressure plate, and notices when they do', async () => {
       const owner = await signUp('mx_plate');
       await place(owner, 'plaque', 2, 5);

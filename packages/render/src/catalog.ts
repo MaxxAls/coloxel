@@ -34,6 +34,8 @@ export interface CatalogueEntry {
   gate?: { open: Recipe };
   /** A click throws confetti for the whole room. */
   confetti?: boolean;
+  /** A click puts this hand item (see hand.ts) in the hand of a player standing next to the piece. */
+  vendor?: number;
   /** A click starts a team game in the room (the colour race): the server runs it. */
   game?: 'paint';
 }
@@ -435,7 +437,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,

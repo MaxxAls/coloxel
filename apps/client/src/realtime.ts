@@ -31,6 +31,8 @@ export interface PlayerState {
   pet: string;
   /** 0 nothing, 1 dancing. */
   emote: number;
+  /** What the player holds (see HAND_ITEMS in packages/render), 0 nothing. */
+  hand: number;
 }
 
 /** What the server says about the team game of the room (the colour race). */
@@ -116,7 +118,7 @@ function wrap(room: Room): BuildingRoom {
     players() {
       const out: PlayerState[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '', emote: p.emote ?? 0 }));
+      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '', emote: p.emote ?? 0, hand: p.hand ?? 0 }));
       return out;
     },
     moveTo(i, j) {

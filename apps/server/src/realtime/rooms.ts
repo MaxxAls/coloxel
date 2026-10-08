@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, catalogueEntry, isSwitchable } from '@coloxel/render';
+import { CATALOGUE, catalogueEntry, handItem, isSwitchable } from '@coloxel/render';
 import { DEFAULT_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadLayout } from '../apartments/layout';
@@ -51,6 +51,8 @@ export const Player = schema(
     pet: t.string(),
     /** What the player is doing for show: 0 nothing, 1 dancing. */
     emote: t.uint8(),
+    /** What the player holds in a hand (see packages/render/src/hand.ts): 0 nothing. */
+    hand: t.uint8(),
   },
   'Player',
 );
@@ -415,6 +417,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.paths.delete(id);
         return say(was ? 'C’est fait.' : 'Rien à arrêter.');
       }
+      case 'drop': {
+        if (!player.hand) return say('Tu ne tiens rien.');
+        player.hand = 0;
+        return say('Tu reposes ce que tu tenais.');
+      }
       case 'dance': {
         if (player.pose !== POSE.stand) return say('Lève-toi d’abord pour danser.');
         if (player.emote !== 0) {
@@ -568,6 +575,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     player.j = spawn.j;
     player.pose = POSE.stand;
     player.emote = 0;
+    player.hand = 0;
     this.paths.delete(user.id);
     this.pending.delete(user.id);
     this.state.players.set(user.id, player);
@@ -805,6 +813,17 @@ export class ApartmentRoom extends BuildingRoom {
       this.layoutCache = null;
       this.broadcast('fx', { kind: 'pulse', i: at.i, j: at.j, color: 0xd6b25a });
       this.broadcast('decor');
+      return;
+    }
+    if (entry.vendor) {
+      const player = this.state.players.get(who);
+      const item = handItem(entry.vendor);
+      if (!player || !item) return;
+      if (player.pose !== POSE.stand) return this.sendTo(who, 'rule-message', { text: 'Lève-toi pour te servir.' });
+      // Next to the machine, not from across the room.
+      if (Math.max(Math.abs(player.i - cell.i), Math.abs(player.j - cell.j)) > 2) return this.sendTo(who, 'rule-message', { text: 'Rapproche-toi pour te servir.' });
+      player.hand = item.id;
+      this.sendTo(who, 'rule-message', { text: `Tu tiens ${item.name}. Écris /poser pour le reposer.` });
       return;
     }
     if (entry.game) {

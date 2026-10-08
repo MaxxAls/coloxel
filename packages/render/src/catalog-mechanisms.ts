@@ -86,10 +86,70 @@ const gameBoard: Recipe = {
   ],
 };
 
+/** Coffee machine: a steel body, a glass window with beans, a nozzle and a lit button. */
+const coffeeMachine: Recipe = {
+  name: 'Machine à café',
+  parts: [
+    box(-6, 6, -5, 5, 0, 30, '#6b3f2a', 'wood'),
+    box(-6.4, 6.4, -5.4, 5.4, 30, 33, '#8a5a3a', 'wood'),
+    box(-4.5, 4.5, 5, 5.6, 14, 28, '#2a2a38', 'metal'),
+    box(-3.5, 3.5, 5.5, 6, 18, 27, '#8fc8e8', 'glass'),
+    ...[0, 1, 2, 3].map((k) => ball(-2.4 + k * 1.6, 5.8, 19 + (k % 2) * 1.8, 0.9, '#4a2a18')),
+    box(-1, 1, 5, 7, 11, 13.5, '#c4c8d0', 'metal'), box(-3, 3, 4, 8, 0.5, 2, '#c4c8d0', 'metal'),
+    cyl(0, 6.4, 1.8, 2, 7, '#f4efe6', '#6a3e22'),
+    cyl(-3.4, 5.6, 0.9, 9, 10, '#e0503a', '#ff8a70'), cyl(3.4, 5.6, 0.9, 9, 10, '#4fa86a', '#8affa0'),
+    pix(-5, 5.2, 22, 1, 1, '#ffffff'),
+  ],
+};
+
+/** A juice stand: a striped awning, a counter, a glass dispenser of orange juice. */
+const juiceStand: Recipe = {
+  name: 'Stand de jus',
+  parts: [
+    box(-7, -5.5, -6, 6, 0, 24, WOOD_DARK, 'wood'), box(5.5, 7, -6, 6, 0, 24, WOOD_DARK, 'wood'),
+    box(-7, 7, -6, 6, 0, 12, WOOD, 'planks'), box(-7.6, 7.6, -6.6, 6.6, 12, 14, '#c98f5e', 'planks'),
+    box(-2.5, 2.5, -2, 2, 14, 24, '#d8f0f4', 'glass'), box(-2.1, 2.1, -1.6, 1.6, 14, 21, '#ff9a2a', 'water'),
+    cyl(0, 0, 0.9, 24, 26, '#c4c8d0', '#e0e4ea'),
+    ...[0, 1, 2].map((k) => ball(-5 + k * 2.6, 3.6, 15.4, 1.1, ['#ff9a2a', '#ffd23a', '#7ac84f'][k]!)),
+    box(-8, 8, -7, 7, 24, 26, '#e0503a', 'stripes'), box(-8.4, 8.4, 4, 8, 22, 24.4, '#fff6e0', 'stripes'),
+  ],
+};
+
+/** An ice cream cart: two wheels, a candy parasol, tubs of colour. */
+const iceCart: Recipe = {
+  name: 'Chariot de glaces',
+  parts: [
+    cyl(-6, 5, 4, 0, 1.4, '#c98f5e', '#e0b080'), cyl(-6, -5, 4, 0, 1.4, '#c98f5e', '#e0b080'),
+    box(-7, 7, -5, 5, 4, 16, '#8ad0e0', 'metal'), box(-7.4, 7.4, -5.4, 5.4, 16, 18, '#fff6f0'),
+    cyl(-3.4, -1.5, 1.8, 18, 19.4, '#ffb6d0', '#ffd0e0'), cyl(0, -1.5, 1.8, 18, 19.4, '#fff0c0', '#fff8e0'), cyl(3.4, -1.5, 1.8, 18, 19.4, '#b6e8c0', '#d0f4d8'),
+    cyl(-3.4, 2, 1.8, 18, 19.4, '#d9a35a', '#e8c080'), cyl(0, 2, 1.8, 18, 19.4, '#c8b0f0', '#e0d0f8'), cyl(3.4, 2, 1.8, 18, 19.4, '#ffd0a0', '#ffe4c8'),
+    cyl(0, 0, 0.5, 18, 36, '#c4c8d0'),
+    box(-8, 8, -8, 8, 36, 37, '#ff7aa8', 'stripes'), box(-5, 5, -5, 5, 37, 39, '#ffb6d0', 'stripes'), ball(0, 0, 40, 1.2, '#fff6f0'),
+  ],
+};
+
+/** A flower box: a wooden planter overflowing with blooms. */
+const flowerBox: Recipe = {
+  name: 'Bac de fleurs',
+  parts: [
+    box(-7, 7, -4, 4, 0, 8, WOOD, 'planks'), box(-7.4, 7.4, -4.4, 4.4, 8, 9, WOOD_DARK),
+    box(-6.6, 6.6, -3.6, 3.6, 8.6, 10, '#4a2f1a', 'grass'),
+    ...[-5, -2.5, 0, 2.5, 5].flatMap((x, k) => [
+      box(x - 0.2, x + 0.2, -0.2, 0.2, 9, 13 + (k % 3), '#3f9a46'),
+      ball(x, 0, 14 + (k % 3), 1.8, ['#ff7aa8', '#ffe05a', '#ff9a5a', '#b78cff', '#ff7aa8'][k]!),
+      pix(x - 0.5, 0, 14.5 + (k % 3), 1, 1, '#fff6f0'),
+    ]),
+  ],
+};
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
     { key: 'tableaucouleurs', category: 'tech', recipe: gameBoard, extras: { price: 90, pressable: true, game: 'paint' } },
+    { key: 'machinecafe', category: 'tech', recipe: coffeeMachine, extras: { price: 50, pressable: true, vendor: 1 } },
+    { key: 'standjus', category: 'tech', recipe: juiceStand, extras: { price: 60, pressable: true, vendor: 2 } },
+    { key: 'chariotglaces', category: 'tech', recipe: iceCart, extras: { price: 60, pressable: true, vendor: 3 } },
+    { key: 'bacfleurs', category: 'decor', recipe: flowerBox, extras: { price: 40, pressable: true, vendor: 6 } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
   ];
 }

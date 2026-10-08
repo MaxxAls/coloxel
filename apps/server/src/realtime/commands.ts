@@ -3,11 +3,12 @@ export type Command =
   | { name: 'dance' }
   | { name: 'follow'; who: string }
   | { name: 'stop' }
+  | { name: 'drop' }
   | { name: 'help' }
   | { name: 'unknown'; typed: string };
 
 export const HELP_TEXT =
-  'Commandes : /danse (danser), /suivre <pseudo> (suivre un ami de la salle), /stop (arrêter de suivre ou de danser), /aide.';
+  'Commandes : /danse (danser), /suivre <pseudo> (suivre un ami de la salle), /stop (arrêter de suivre ou de danser), /poser (reposer ce que tu tiens en main), /aide.';
 
 /** A command, or null when the text is plain chat. */
 export function parseCommand(text: string): Command | null {
@@ -18,6 +19,7 @@ export function parseCommand(text: string): Command | null {
   if (name === 'danse' || name === 'danser') return { name: 'dance' };
   if (name === 'suivre' || name === 'suis') return { name: 'follow', who: rest.join(' ').trim() };
   if (name === 'stop' || name === 'arret' || name === 'arrêt') return { name: 'stop' };
+  if (name === 'poser' || name === 'lacher' || name === 'lâcher') return { name: 'drop' };
   if (name === 'aide' || name === 'help' || name === '?') return { name: 'help' };
   return { name: 'unknown', typed: word.slice(0, 20) };
 }
