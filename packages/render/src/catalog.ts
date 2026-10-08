@@ -47,6 +47,11 @@ export interface CatalogueEntry {
   oneWay?: boolean;
   /** A score counter: a click of the owner adds one (back to 0 after 99); the number is its placement's data. */
   counter?: boolean;
+  /**
+   * A robot: a character standing on the piece, with the look, the name and the lines its owner gave it (the
+   * placement's data, see BotSettings). It greets whoever comes in and says its lines now and then.
+   */
+  bot?: boolean;
   /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
@@ -515,7 +520,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'toy' | 'hidden' | 'oneWay' | 'counter' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'toy' | 'hidden' | 'oneWay' | 'counter' | 'bot' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -897,7 +902,7 @@ export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey
  */
 export function stackable(entry: CatalogueEntry | undefined): boolean {
   if (!entry) return true;
-  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable && !entry.toy && !entry.oneWay;
+  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable && !entry.toy && !entry.oneWay && !entry.bot;
 }
 
 /**
@@ -1002,3 +1007,26 @@ export const WALLS: readonly WallStyle[] = [
 
 export const floorStyle = (id: string): FloorStyle => FLOORS.find((f) => f.id === id) ?? FLOORS[0]!;
 export const wallStyle = (id: string): WallStyle => WALLS.find((w) => w.id === id) ?? WALLS[0]!;
+
+/** What a robot is told by its owner: stored as JSON in its placement's data. */
+export interface BotSettings {
+  name: string;
+  /** The look it wears (the owner's, when they set it up), as in look.ts. */
+  look: unknown;
+  /** What it says now and then, in turn. */
+  lines: string[];
+  /** Does it greet whoever comes in? */
+  greet: boolean;
+}
+
+/** A robot's settings out of its placement's data, or null when there are none (or they do not read). */
+export function botSettings(data: string | null | undefined): BotSettings | null {
+  if (!data) return null;
+  try {
+    const v = JSON.parse(data) as Partial<BotSettings>;
+    if (typeof v?.name !== 'string' || !Array.isArray(v.lines)) return null;
+    return { name: v.name, look: v.look ?? null, lines: v.lines.filter((l): l is string => typeof l === 'string'), greet: v.greet !== false };
+  } catch {
+    return null;
+  }
+}

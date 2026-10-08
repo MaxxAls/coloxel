@@ -151,6 +151,35 @@ export function registerFurnitureRoutes(
     return { ok: true };
   });
 
+  // A robot: its name, its lines (filtered like the chat), whether it greets; it wears the owner's look of now.
+  const botSchema = z
+    .object({
+      name: z.string().transform((s) => s.replace(/\s+/g, ' ').trim()).pipe(z.string().min(2, 'Le nom est trop court').max(20, 'Le nom est trop long (20 caractères max)')),
+      lines: z.array(z.string().transform((s) => s.replace(/\s+/g, ' ').trim()).pipe(z.string().max(60, 'Une phrase fait 60 caractères au plus'))).max(5, '5 phrases au plus'),
+      greet: z.boolean(),
+    })
+    .strict();
+  app.put<{ Params: { id: string } }>('/api/furniture/:id/bot', async (req, reply) => {
+    const user = req.user;
+    if (!user) return reply.code(401).send({ error: 'Non connecté' });
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Meuble introuvable' });
+    const parsed = botSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Réglages invalides' });
+    const entry = await ownPlaced(req.params.id, user.id);
+    if (!entry) return reply.code(404).send({ error: 'Meuble introuvable ou pas posé' });
+    if (!entry.bot) return reply.code(400).send({ error: 'Cet objet n’est pas un robot.' });
+    const lines = parsed.data.lines.filter(Boolean);
+    for (const text of [parsed.data.name, ...lines]) {
+      const verdict = filterText(text);
+      if (!verdict.ok) return reply.code(422).send({ error: FILTER_MESSAGES[verdict.reason] });
+    }
+    const { look } = await loadAppearance(pool, user.id);
+    const settings = { name: parsed.data.name, look, lines, greet: parsed.data.greet };
+    await pool.query('UPDATE placements SET data = $2 WHERE furniture_id = $1', [req.params.id, JSON.stringify(settings)]);
+    notify?.(user.id, 'decor');
+    return { bot: settings };
+  });
+
   // The text of a sign: filtered like any free text, and short. Empty clears it.
   app.put<{ Params: { id: string } }>('/api/furniture/:id/text', async (req, reply) => {
     const user = req.user;

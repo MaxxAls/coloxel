@@ -5,6 +5,8 @@ export interface ChatMessage {
   from: string;
   nickname: string;
   text: string;
+  /** Where a robot speaks from: it is not a player of the room. */
+  at?: { i: number; j: number };
 }
 
 export const CHAT_MAX_LENGTH = 120;
@@ -86,7 +88,8 @@ export function createChat(options: ChatOptions): ChatUi {
       empty.remove();
       const li = el('li');
       li.append(el('strong', message.from === options.me ? 'me' : undefined, message.nickname), document.createTextNode(` ${message.text}`));
-      if (options.onReport && message.from !== options.me) {
+      // A robot's lines are its owner's, filtered when written: there is no message in the journal to report.
+      if (options.onReport && message.from !== options.me && message.id > 0) {
         const flag = el('button', 'link flag', 'Signaler');
         flag.type = 'button';
         flag.title = 'Signaler ce message';

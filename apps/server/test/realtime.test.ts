@@ -1133,6 +1133,29 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(await piece(chair)).toMatchObject({ i: 2, j: 6, rot: 1, data: null });
     }, 40000);
 
+    it('lets the owner set up a robot that wears their look and greets whoever comes in', async () => {
+      const owner = await signUp('mx_bot');
+      const guest = await signUp('mx_bot_guest');
+      await setAccess(owner.id, 'building');
+      const bot = await place(owner, 'robot', 5, 7);
+      const setup = (body: object) => app.inject({ method: 'PUT', url: `/api/furniture/${bot}/bot`, payload: body, cookies: { coloxel_sid: owner.sid } });
+      expect((await setup({ name: 'Robby', lines: ['connard'], greet: true })).statusCode).toBe(422);
+      expect((await setup({ name: 'Robby', lines: ['a', 'b', 'c', 'd', 'e', 'f'], greet: true })).statusCode).toBe(400);
+      const ok = await setup({ name: 'Robby', lines: ['Bienvenue chez moi !', ''], greet: true });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json().bot).toMatchObject({ name: 'Robby', lines: ['Bienvenue chez moi !'], greet: true });
+      // Only its owner sets it up.
+      const other = await app.inject({ method: 'PUT', url: `/api/furniture/${bot}/bot`, payload: { name: 'Pirate', lines: [], greet: false }, cookies: { coloxel_sid: guest.sid } });
+      expect(other.statusCode).toBe(404);
+      const host = await joinApartment(owner, owner.id);
+      await until(() => playerOf(host, owner.id));
+      const heard: { from: string; nickname: string; text: string; at?: { i: number; j: number } }[] = [];
+      const visitor = await joinApartment(guest, owner.id);
+      visitor.onMessage('chat', (m: (typeof heard)[number]) => heard.push(m));
+      await until(() => heard.some((m) => m.text === 'Bienvenue, mx_bot_guest !'), 4000);
+      expect(heard.find((m) => m.nickname === 'Robby')).toMatchObject({ from: `bot:${bot}`, at: { i: 5, j: 7 } });
+    }, 20000);
+
     it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
       const owner = await signUp('mx_step');
       await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);

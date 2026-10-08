@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, CHICKS, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
+import { CATALOGUE, CHICKS, PET_TRICKS, TRACKS, botSettings, catalogueEntry, handItem, isSwitchable, petTrick, type BotSettings } from '@coloxel/render';
 import { HALL_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { dropOrphanStacks, loadLayout } from '../apartments/layout';
@@ -39,6 +39,8 @@ type RoomMap = {
   teleports?: Cell[];
   /** One-way passages: cell -> the only step that goes through it. */
   oneWay?: Map<number, Cell>;
+  /** Robots: who they are, where they stand, what they say. */
+  bots?: { id: string; cell: Cell; settings: BotSettings }[];
 };
 
 /**
@@ -57,6 +59,13 @@ function oneWayAllows(oneWay: Map<number, Cell> | undefined, a: Cell, b: Cell): 
 const ROLL: readonly Cell[] = [{ i: 1, j: 0 }, { i: 0, j: 1 }, { i: -1, j: 0 }, { i: 0, j: -1 }];
 /** The colours of the wheel, as the room reads them. */
 const WHEEL_NAMES = ['rouge', 'jaune', 'vert', 'bleu', 'violet', 'rose', 'orange', 'blanc'];
+/** Robots: the first line comes after a while, then one every half minute or so; a greeting a moment after arriving. */
+const BOT_FIRST_MS = 8_000;
+const BOT_EVERY_MS = 25_000;
+const BOT_SPREAD_MS = 15_000;
+const BOT_GREET_MS = 1_200;
+/** The robots look at the clock every this many steps (about every two seconds). */
+const BOT_TICKS = 4;
 /** How long people may vote in a poll. */
 const POLL_MS = 60_000;
 /** Knocks it takes for an egg to hatch. */
@@ -173,7 +182,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   /** Players walking backwards. */
   private moonwalkers = new Set<string>();
   private lastShove = new Map<string, number>();
-  private ticks = 0;
+  protected ticks = 0;
   /** The question of the room, while people vote: yes or no, for a minute. */
   private poll: { question: string; until: number; yes: Set<string>; no: Set<string> } | null = null;
   /** The room had belts the last time its layout was read: only then does the clock look at them. */
@@ -1009,7 +1018,35 @@ export class ApartmentRoom extends BuildingRoom {
     return { track: this.tune.track, elapsed: this.tune.track ? Date.now() - this.tune.since : 0 };
   }
 
+  // ----- Robots ----------------------------------------------------------------------
+  // They greet whoever comes in, and say their lines in turn, now and then. Their lines were filtered when written.
+  private botTurn = new Map<string, { next: number; line: number }>();
+
+  private botSay(bot: { id: string; cell: Cell; settings: BotSettings }, text: string) {
+    this.broadcast('chat', { id: 0, from: `bot:${bot.id}`, nickname: bot.settings.name, text, at: bot.cell });
+  }
+
+  private async greetFromBots(nickname: string) {
+    const { bots } = await this.layout();
+    for (const bot of bots ?? []) if (bot.settings.greet) this.botSay(bot, `Bienvenue, ${nickname} !`);
+  }
+
+  private async botsTalk(now: number) {
+    const { bots } = await this.layout();
+    for (const bot of bots ?? []) {
+      if (!bot.settings.lines.length) continue;
+      const turn = this.botTurn.get(bot.id) ?? { next: now + BOT_FIRST_MS + Math.random() * BOT_SPREAD_MS, line: 0 };
+      this.botTurn.set(bot.id, turn);
+      if (now < turn.next) continue;
+      this.botSay(bot, bot.settings.lines[turn.line % bot.settings.lines.length]!);
+      turn.line++;
+      turn.next = now + BOT_EVERY_MS + Math.random() * BOT_SPREAD_MS;
+    }
+  }
+
   protected override onPlayerJoined(client: AuthedClient) {
+    const joined = this.state.players.get(userOf(client).id);
+    if (joined) setTimeout(() => void this.greetFromBots(joined.nickname).catch(() => {}), BOT_GREET_MS);
     // Somebody arriving in the middle of a game sees the board, and watches.
     if (this.game.isRunning) client.send('game', { kind: 'paint', ...this.game.snapshot() });
     if (this.statues.isRunning) client.send('game', this.statues.snapshot());
@@ -1038,6 +1075,7 @@ export class ApartmentRoom extends BuildingRoom {
 
   protected override onClock(now: number) {
     this.game.tick(now);
+    if (this.playerCount() > 0 && this.ticks % BOT_TICKS === 0) void this.botsTalk(now).catch(() => {});
     this.statues.tick(now);
     this.football.tick(now);
     if (!this.rules.length || this.playerCount() === 0) return;
@@ -1434,8 +1472,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   private async readLayout(): Promise<RoomMap> {
     const shape = await loadLayout(needDeps().pool, this.ownerId);
-    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; rot: number; lit: boolean; layer: number; key: string | null }>(
-      `SELECT p.i, p.j, p.w, p.h, p.rot, p.lit, p.layer, f.catalogue_key AS key
+    const { rows } = await needDeps().pool.query<{ id: string | null; i: number; j: number; w: number; h: number; rot: number; lit: boolean; layer: number; data: string | null; key: string | null }>(
+      `SELECT f.id, p.i, p.j, p.w, p.h, p.rot, p.lit, p.layer, p.data, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1
         ORDER BY p.placed_at, p.i, p.j`,
@@ -1444,6 +1482,7 @@ export class ApartmentRoom extends BuildingRoom {
     const rollers = new Map<number, Cell>();
     const teleports: Cell[] = [];
     const oneWay = new Map<number, Cell>();
+    const bots: { id: string; cell: Cell; settings: BotSettings }[] = [];
     // No floor: nobody walks there.
     const blocked = voidKeys(shape);
     const seats = new Map<number, Interaction>();
@@ -1465,7 +1504,9 @@ export class ApartmentRoom extends BuildingRoom {
         }
       }
       if (entry?.teleport) teleports.push({ i: r.i, j: r.j });
+      const settings = entry?.bot && r.id ? botSettings(r.data) : null;
+      if (settings) bots.push({ id: r.id!, cell: { i: r.i, j: r.j }, settings });
     }
-    return { blocked, seats, shape, rollers, teleports, oneWay };
+    return { blocked, seats, shape, rollers, teleports, oneWay, bots };
   }
 }

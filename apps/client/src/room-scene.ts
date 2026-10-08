@@ -1,5 +1,5 @@
 import { Container, Graphics, Rectangle, Sprite, Text, Texture, type Ticker } from 'pixi.js';
-import { RES, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, rotatedSize, stackable } from '@coloxel/render';
+import { RES, botSettings, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, rotatedSize, stackable } from '@coloxel/render';
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createShapeEditor } from './room-shape';
@@ -296,6 +296,29 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
               setMessage(res.ok ? 'Le mannequin porte ta tenue.' : res.error);
               await refreshOwn();
               furniCard.hide();
+            },
+          });
+        }
+        if (pieceEntry?.bot) {
+          actions.push({
+            label: 'Régler',
+            run: async () => {
+              furniCard.hide();
+              const now = botSettings((piece as FurnitureItem).data);
+              const name = await askText({ title: 'Robot', label: 'Son nom', value: now?.name ?? 'Robot', maxLength: 20, confirm: 'Suivant' });
+              if (name === null) return;
+              const lines = await askText({
+                title: 'Robot',
+                label: 'Ce qu’il dit de temps en temps (jusqu’à 5 phrases, séparées par /)',
+                value: now?.lines.join(' / ') ?? 'Bienvenue chez moi ! / Installe-toi, fais comme chez toi.',
+                maxLength: 320,
+                allowEmpty: true,
+                confirm: 'Enregistrer',
+              });
+              if (lines === null) return;
+              const res = await api.setupBot(piece.id, { name, lines: lines.split('/').map((l) => l.trim()).filter(Boolean).slice(0, 5), greet: true });
+              setMessage(res.ok ? `${name} porte ta tenue et salue les visiteurs.` : res.error);
+              await refreshOwn();
             },
           });
         }
@@ -635,8 +658,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         prop.score.position.set(x + 6, y - lift - 31);
         prop.score.zIndex = depthOf(thing) + 0.05;
       }
-      if (entry?.mannequin) {
-        const raw = thing.data ?? '';
+      if (entry?.mannequin || entry?.bot) {
+        // A robot's data holds its settings: the look is one of them.
+        const bot = entry.bot ? botSettings(thing.data) : null;
+        const raw = entry.bot ? (bot?.look ? JSON.stringify(bot.look) : '') : thing.data ?? '';
         if (prop.dummyRaw !== raw) {
           prop.dummyRaw = raw;
           prop.dummy?.destroy();
@@ -1015,7 +1040,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     // A taller bubble (a long message) climbs as many rows as it is tall.
     climb();
     for (let k = 1; k < Math.ceil(height / ROW); k++) climb();
-    const at = anchorOf(message.from, { x: ROOM_W / 2, y: 0 });
+    const at = anchorOf(message.from, message.at ? tileCenter(message.at.i, message.at.j) : { x: ROOM_W / 2, y: 0 });
     bubbles.push({ box, row: 0, shown: 0, x: at.x, width });
   }
 

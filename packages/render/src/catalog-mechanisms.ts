@@ -152,6 +152,17 @@ const mannequin: Recipe = {
   ],
 };
 
+/** The pedestal a robot stands on: a ring of light around a metal disc. */
+const botPedestal: Recipe = {
+  name: 'Robot d’accueil',
+  parts: [
+    cyl(0, 0, 6.4, 0, 1.6, '#3d4350', '#5a6070'),
+    cyl(0, 0, 5.4, 1.6, 2, '#7dffe0', '#b0fff0'),
+    pix(5.4, -1, 1, 2, 0.5, '#7dffe0'),
+    glow(0, 0, 2, 9, '#7dffe0', 0.5),
+  ],
+};
+
 /** A sign on a post: a board with lines that stand for writing. */
 const sign: Recipe = {
   name: 'Panneau',
@@ -406,6 +417,7 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'chariotglaces', category: 'tech', recipe: iceCart, extras: { price: 60, pressable: true, vendor: 3 } },
     { key: 'bacfleurs', category: 'decor', recipe: flowerBox, extras: { price: 40, pressable: true, vendor: 6 } },
     { key: 'mannequin', category: 'decor', recipe: mannequin, extras: { price: 80, mannequin: true } },
+    { key: 'robot', category: 'tech', recipe: botPedestal, extras: { price: 150, bot: true } },
     { key: 'panneau', category: 'decor', recipe: sign, extras: { price: 30, sign: true } },
     { key: 'jukebox', category: 'tech', recipe: jukebox, extras: { price: 150, pressable: true, jukebox: true, frames: [1, 2, 3, 4].map(jukeboxFrame), frameMs: 260 } },
     { key: 'aquariumgrand', category: 'decor', recipe: aquariumFrame(0), extras: { price: 220, frames: [1, 2, 3, 4, 5].map(aquariumFrame), frameMs: 320 } },

@@ -511,6 +511,7 @@ export const api = {
   setLight: (id: string, on: boolean) => call<{ on: boolean }>('PUT', `/api/furniture/${id}/light`, { on }),
   dressMannequin: (id: string) => call<{ ok: boolean }>('POST', `/api/furniture/${id}/dress`, {}),
   writeSign: (id: string, text: string) => call<{ text: string }>('PUT', `/api/furniture/${id}/text`, { text }),
+  setupBot: (id: string, settings: { name: string; lines: string[]; greet: boolean }) => call<unknown>('PUT', `/api/furniture/${id}/bot`, settings),
   throwFurniture: (id: string) => call<unknown>('DELETE', `/api/furniture/${id}`),
   /** `rot` is the number of quarter turns; left out, a move keeps the way the piece faces. */
   place: (itemId: string, i: number, j: number, rot?: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j, rot }),
