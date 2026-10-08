@@ -843,7 +843,7 @@ export class ApartmentRoom extends BuildingRoom {
   protected override async pressableAt(cell: Cell): Promise<boolean> {
     const { rows } = await needDeps().pool.query<{ key: string }>(
       `SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id
-        WHERE p.user_id = $1 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
+        WHERE p.user_id = $1 AND p.layer = 0 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
       [this.ownerId, cell.i, cell.j],
     );
     return !!rows[0] && !!catalogueEntry(rows[0].key)?.pressable;
@@ -877,7 +877,7 @@ export class ApartmentRoom extends BuildingRoom {
   private async pieceAt(cell: Cell) {
     const { rows } = await needDeps().pool.query<{ id: string; key: string; lit: boolean }>(
       `SELECT f.id, f.catalogue_key AS key, p.lit FROM placements p JOIN furniture f ON f.id = p.furniture_id
-        WHERE p.user_id = $1 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
+        WHERE p.user_id = $1 AND p.layer = 0 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
       [this.ownerId, cell.i, cell.j],
     );
     const row = rows[0];
@@ -1061,8 +1061,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   private async readLayout(): Promise<RoomMap> {
     const shape = await loadLayout(needDeps().pool, this.ownerId);
-    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; lit: boolean; key: string | null }>(
-      `SELECT p.i, p.j, p.w, p.h, p.lit, f.catalogue_key AS key
+    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; lit: boolean; layer: number; key: string | null }>(
+      `SELECT p.i, p.j, p.w, p.h, p.lit, p.layer, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1`,
       [this.ownerId],
@@ -1071,6 +1071,8 @@ export class ApartmentRoom extends BuildingRoom {
     const blocked = voidKeys(shape);
     const seats = new Map<number, Interaction>();
     for (const r of rows) {
+      // A piece hanging on a wall is not on the floor: nobody walks around it.
+      if (r.layer) continue;
       const entry = r.key ? catalogueEntry(r.key) : undefined;
       // A rug, a pressure plate, a portal lies on the floor: one walks over it.
       // A big piece blocks (or is used from) every tile it covers.

@@ -46,3 +46,9 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 - `glow` : halo de lumière (lampe, bougie, écran, feu) en bandes pixel art. Il éclaircit les formes déjà dessinées et ne change pas la silhouette.
 - Aperçu des matières : `npx tsx apps/server/scripts/preview-textures.ts out.png`.
 
+## Pièces plus grandes, murales et animées
+
+- **Plusieurs cases** : `size: [largeur, profondeur]` (jusqu'à 3 x 3) ; l'origine (0, 0) reste le centre de la première case, la suivante est à +16. Le sprite grandit avec la taille (`frameFor`), la rotation se fait autour du centre de l'empreinte.
+- **Pièces murales** (`wall: true` au catalogue) : la recette est dessinée contre le plan `x = -8` (mur de gauche), le jeu la tourne une fois pour le mur de droite. Elles ne prennent pas la case du sol (`placements.layer` : 0 sol, 1 mur gauche, 2 mur droit) et se posent derrière la première case de leur rangée ou colonne (`wallBehind` dans `packages/world`). Aperçu : `npx tsx apps/server/scripts/preview-walls.ts out.png`.
+- **Pièces animées** (`frames` et `frameMs` au catalogue) : d'autres apparences jouées en boucle par le client ; le serveur dessine l'image `k` avec `?f=k`. Toutes ont la même taille que la recette. Aperçu : `npx tsx apps/server/scripts/preview-big.ts out.png frames`.
+

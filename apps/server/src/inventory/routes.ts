@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry, normalizeSize, rotatedSize, type Size } from '@coloxel/render';
-import { hasFloor } from '@coloxel/world';
+import { hasFloor, wallBehind } from '@coloxel/world';
 import { loadLayout } from '../apartments/layout';
 import type { NotifyApartment } from '../building/routes';
 import type { QuestRecorder } from '../quests/engine';
@@ -124,7 +124,13 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
 
     // Turned or not, the piece covers w x h tiles from (i, j): the new turn if given, else the one it already has.
     const current = await pool.query<{ rot: number }>(`SELECT rot FROM placements WHERE ${column} = $1`, [itemId]);
-    const [w, h] = rotatedSize(baseSize, rot ?? current.rows[0]?.rot ?? 0);
+    let turns = rot ?? current.rows[0]?.rot ?? 0;
+    const entry = furniture?.rows[0] ? catalogueEntry(furniture.rows[0].catalogue_key) : undefined;
+    const onWall = !!entry?.wall;
+    // A wall piece has two ways to hang, the left wall (0) and the right wall (1); a floor piece has four.
+    if (onWall && turns > 1) turns = 0;
+    const [w, h] = onWall ? [1, 1] : rotatedSize(baseSize, turns);
+    const layer = onWall ? 1 + turns : 0;
 
     // Every tile it covers needs a floor, inside the grid.
     const shape = await loadLayout(pool, user.id);
@@ -136,6 +142,11 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
       }
     }
 
+    // It hangs behind the first floor tile of its row (left wall) or column (right wall), where the wall is.
+    if (onWall && !wallBehind(shape, turns === 0 ? 'left' : 'right', i, j)) {
+      return reply.code(400).send({ error: 'Ça se pose contre un mur : choisis une case le long du mur du fond.' });
+    }
+
     let saved: { rows: { rot: number }[] };
     const client = await pool.connect();
     try {
@@ -144,10 +155,10 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`placements:${user.id}`]);
       const clash = await client.query(
         `SELECT 1 FROM placements
-          WHERE user_id = $1 AND ${column} IS DISTINCT FROM $2::uuid
+          WHERE user_id = $1 AND ${column} IS DISTINCT FROM $2::uuid AND layer = $7::int
             AND i < $3::int + $5::int AND i + w > $3::int AND j < $4::int + $6::int AND j + h > $4::int
           LIMIT 1`,
-        [user.id, itemId, i, j, w, h],
+        [user.id, itemId, i, j, w, h, layer],
       );
       if (clash.rowCount) {
         await client.query('ROLLBACK');
@@ -155,10 +166,10 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
       }
       // The UNIQUE (user_id, i, j) constraint still guards the first tile.
       saved = await client.query<{ rot: number }>(
-        `INSERT INTO placements (${column}, user_id, i, j, rot, w, h) VALUES ($1, $2, $3, $4, COALESCE($5::smallint, 0), $6, $7)
-         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, rot = COALESCE($5::smallint, placements.rot), w = EXCLUDED.w, h = EXCLUDED.h, placed_at = now()
+        `INSERT INTO placements (${column}, user_id, i, j, rot, w, h, layer) VALUES ($1, $2, $3, $4, COALESCE($5::smallint, 0), $6, $7, $8)
+         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, rot = COALESCE($5::smallint, placements.rot), w = EXCLUDED.w, h = EXCLUDED.h, layer = EXCLUDED.layer, placed_at = now()
          RETURNING rot`,
-        [itemId, user.id, i, j, rot ?? null, w, h],
+        [itemId, user.id, i, j, onWall ? turns : (rot ?? null), w, h, layer],
       );
       await client.query('COMMIT');
     } catch (err) {

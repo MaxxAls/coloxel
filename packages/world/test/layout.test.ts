@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LAYOUT_PRESETS, N, canStep, findPath, floorCount, layoutProblem, levelAt, reachableFromDoor, voidKeys } from '../src';
+import { LAYOUT_PRESETS, N, canStep, findPath, floorCount, layoutProblem, levelAt, reachableFromDoor, voidKeys, wallBehind } from '../src';
 
 const preset = (key: string) => LAYOUT_PRESETS.find((p) => p.key === key)!.layout;
 const grid = (...r: string[]) => r.join('');
@@ -53,5 +53,28 @@ describe('room layouts', () => {
       expect(canStep(stage, prev, c)).toBe(true);
       prev = c;
     }
+  });
+
+  it('puts a wall behind the first floor tile of each row and column', () => {
+    const square = preset('square');
+    // In a plain square the left wall is behind i = 0 and the right wall behind j = 0, and nowhere else.
+    for (let k = 0; k < N; k++) {
+      expect(wallBehind(square, 'left', 0, k)).toBe(true);
+      expect(wallBehind(square, 'right', k, 0)).toBe(true);
+    }
+    expect(wallBehind(square, 'left', 1, 3)).toBe(false);
+    expect(wallBehind(square, 'right', 3, 1)).toBe(false);
+    // The corner has both.
+    expect(wallBehind(square, 'left', 0, 0) && wallBehind(square, 'right', 0, 0)).toBe(true);
+    // Outside the grid, or where there is no floor, there is no wall.
+    expect(wallBehind(square, 'left', -1, 2)).toBe(false);
+    expect(wallBehind(square, 'right', 3, N)).toBe(false);
+    // With a hole at the start of a row the wall moves to the next tile that has a floor.
+    const cells = '0'.repeat(N * N).split('');
+    cells[0 * N + 3] = 'x';
+    const holed = { ...square, cells: cells.join('') };
+    expect(wallBehind(holed, 'left', 0, 3)).toBe(false);
+    expect(wallBehind(holed, 'left', 1, 3)).toBe(true);
+    expect(wallBehind(holed, 'left', 2, 3)).toBe(false);
   });
 });

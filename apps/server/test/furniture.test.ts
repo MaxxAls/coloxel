@@ -45,6 +45,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       url: '/api/auth/register',
       payload: { email: `${nickname}@test.dev`, password: 'motdepasse', nickname, birthDate: '1990-01-01' },
     });
+    if (res.statusCode >= 300) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
     return { id: res.json().user.id as string, sid: res.cookies.find((c) => c.name === 'coloxel_sid')!.value };
   }
   const as = (sid: string) => ({ coloxel_sid: sid });
@@ -397,6 +398,54 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       // A piece that does not animate ignores the parameter.
       const lamp = await get('/api/catalogue/lampadaire.png');
       expect((await get('/api/catalogue/lampadaire.png?f=1')).rawPayload.equals(lamp.rawPayload)).toBe(true);
+    });
+  });
+
+  describe('wall pieces', () => {
+    const own = async (userId: string, key: string) =>
+      (await pool.query<{ id: string }>('INSERT INTO furniture (owner_id, catalogue_key) VALUES ($1, $2) RETURNING id', [userId, key])).rows[0]!.id;
+    const putAt = (sid: string, itemId: string, i: number, j: number, rot?: number) =>
+      app.inject({ method: 'PUT', url: '/api/placements', payload: { itemId, i, j, ...(rot === undefined ? {} : { rot }) }, cookies: as(sid) });
+
+    // The building has thirty apartments: one account serves both tests.
+    let ada: { id: string; sid: string };
+    beforeAll(async () => {
+      ada = await signUp('wall_ada');
+    });
+
+    it('hangs only against the wall at the back, takes no floor tile, and shares a corner between the two walls', async () => {
+      const window = await own(ada.id, 'fenetremer');
+      const picture = await own(ada.id, 'tableaucampagne');
+      const lamp = await own(ada.id, 'appliquelumineuse');
+      const stool = await own(ada.id, 'pouf');
+      // Left wall is behind the first tile of each row (i = 0 in a plain room); (3, 3) has floor behind it.
+      expect((await putAt(ada.sid, window, 3, 3)).statusCode).toBe(400);
+      expect((await putAt(ada.sid, window, 0, 3)).json().placement).toMatchObject({ i: 0, j: 3, rot: 0, w: 1, h: 1 });
+      // The floor tile under it is still free, for a piece that stands.
+      expect((await putAt(ada.sid, stool, 0, 3)).statusCode).toBe(200);
+      // But a second piece on the same wall of the same tile is refused.
+      expect((await putAt(ada.sid, picture, 0, 3)).statusCode).toBe(409);
+      // The right wall of that tile is not there (something at j < 3 has floor) ...
+      expect((await putAt(ada.sid, picture, 0, 3, 1)).statusCode).toBe(400);
+      // ... but in the corner both walls exist, and a wall piece can hang on each.
+      expect((await putAt(ada.sid, picture, 0, 0, 0)).statusCode).toBe(200);
+      expect((await putAt(ada.sid, lamp, 0, 0, 1)).json().placement).toMatchObject({ i: 0, j: 0, rot: 1 });
+      // A wall piece only has two ways to hang: a turn of 2 or 3 means the left wall, where the picture already is.
+      expect((await putAt(ada.sid, lamp, 0, 0, 3)).statusCode).toBe(409);
+    });
+
+    it('goes away with the wall when the room changes shape', async () => {
+      const bea = ada;
+      const window = await own(bea.id, 'fenetremer');
+      expect((await putAt(bea.sid, window, 0, 5)).statusCode).toBe(200);
+      // Make (0, 5) a hole: there is no floor, so no wall, and the window goes back to the inventory.
+      const cells = '0'.repeat(64).split('');
+      cells[0 * 8 + 5] = 'x';
+      const res = await app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { cells: cells.join(''), door: { i: 7, j: 0 } } }, cookies: as(bea.sid) });
+      expect(res.statusCode, JSON.stringify(res.json())).toBe(200);
+      expect(res.json().putAway).toBe(1);
+      const inv = (await inventory(bea.sid)).furniture.find((f) => f.id === window)!;
+      expect(inv.placement).toBeNull();
     });
   });
 });

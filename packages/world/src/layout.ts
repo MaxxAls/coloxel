@@ -27,6 +27,18 @@ export function levelAt(layout: RoomLayout, i: number, j: number): number | null
 
 export const hasFloor = (layout: RoomLayout, i: number, j: number) => levelAt(layout, i, j) !== null;
 
+/**
+ * Is there a wall behind this cell? The left wall stands behind the first floor cell of a row (nothing with a floor
+ * at a smaller i), the right wall behind the first of a column (nothing at a smaller j). Wall pieces hang there.
+ */
+export function wallBehind(layout: RoomLayout, side: 'left' | 'right', i: number, j: number): boolean {
+  if (!hasFloor(layout, i, j)) return false;
+  for (let k = (side === 'left' ? i : j) - 1; k >= 0; k--) {
+    if (hasFloor(layout, side === 'left' ? k : i, side === 'left' ? j : k)) return false;
+  }
+  return true;
+}
+
 /** A step between two neighbouring cells: both have a floor and they differ by one level at most. */
 export function canStep(layout: RoomLayout, from: Cell, to: Cell): boolean {
   const a = levelAt(layout, from.i, from.j);

@@ -1,5 +1,6 @@
 import { bigPieces } from './catalog-big';
 import { mechanismPieces } from './catalog-mechanisms';
+import { wallPieces } from './catalog-walls';
 import type { Part, Recipe } from './types';
 
 // The base catalogue: free, unlimited furniture drawn by hand, in the same
@@ -45,6 +46,11 @@ export interface CatalogueEntry {
   frames?: Recipe[];
   /** How long each frame stays, in milliseconds. */
   frameMs?: number;
+  /**
+   * Hangs on a wall instead of standing on the floor: the recipe is drawn against the plane x = -8 (the left wall)
+   * and turned once for the right wall. It takes no floor tile and nobody walks around it.
+   */
+  wall?: boolean;
   /** A click changes the tune of the room (see jukebox.ts). */
   jukebox?: boolean;
   /** A click puts this hand item (see hand.ts) in the hand of a player standing next to the piece. */
@@ -452,7 +458,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -805,6 +811,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   ...newEntries(),
   ...bigPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
   ...mechanismPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
+  ...wallPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
 ];
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));

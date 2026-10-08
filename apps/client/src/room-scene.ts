@@ -17,7 +17,7 @@ import { showPlayerCard } from './player-card';
 import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
 import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
-import { hasFloor, levelAt, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
+import { hasFloor, levelAt, wallBehind, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
 import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { askText } from './ask-dialog';
@@ -193,10 +193,22 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Does a placed piece cover this tile? A big piece covers w x h tiles from its first one. */
   const covers = (p: { i: number; j: number; w?: number; h?: number }, cell: { i: number; j: number }) =>
     cell.i >= p.i && cell.i < p.i + (p.w ?? 1) && cell.j >= p.j && cell.j < p.j + (p.h ?? 1);
+  /** The catalogue entry of the selected piece when it is base furniture (a wall piece hangs instead of standing). */
+  const selectedEntry = () => {
+    const f = furniture.find((x) => x.id === selected);
+    return f ? catalogueEntry(f.key) : undefined;
+  };
+  /** Which wall of this cell a wall piece could hang on: the one it already faces if it fits, else the other one. */
+  const wallFor = (cell: { i: number; j: number }, current: number): 0 | 1 | null => {
+    const left = wallBehind(shape, 'left', cell.i, cell.j), right = wallBehind(shape, 'right', cell.i, cell.j);
+    if (current === 1 && right) return 1;
+    if (left) return 0;
+    return right ? 1 : null;
+  };
   /** The footprint the selected piece would have if put down now: its size, turned the way it already faces. */
   const selectedFootprint = (): [number, number] => {
     const piece = items.find((it) => it.id === selected) ?? furniture.find((f) => f.id === selected);
-    if (!piece) return [1, 1];
+    if (!piece || selectedEntry()?.wall) return [1, 1];
     return rotatedSize(normalizeSize(piece.size), piece.placement?.rot ?? 0);
   };
 
@@ -255,7 +267,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         actions.push({
           label: 'Pivoter',
           run: async () => {
-            const res = await api.place(piece.id, where.i, where.j, (where.rot + 1) % 4);
+            const res = await api.place(piece.id, where.i, where.j, (where.rot + 1) % (!creation && catalogueEntry(piece.key)?.wall ? 2 : 4));
             if (!res.ok) setMessage(res.error);
             await refreshOwn();
             furniCard.hide();
@@ -502,7 +514,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const entry = thing.key ? catalogueEntry(thing.key) : undefined;
       // A rug, a pressure plate, a portal lies on the floor: one walks over it.
       // A rug lies on the floor, and an open gate lets players through.
-      if (!entry?.walkable && !(entry?.gate && thing.on)) {
+      if (!entry?.walkable && !entry?.wall && !(entry?.gate && thing.on)) {
         for (let a = 0; a < (thing.placement.w ?? 1); a++) for (let b = 0; b < (thing.placement.h ?? 1); b++) occupied.add(cellKey(i + a, j + b));
       }
       let prop = props.get(thing.id);
@@ -582,7 +594,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         }
       }
       // Drawn in front of what stands behind its far corner, behind what stands in front of its near corner.
-      prop.sprite.zIndex = i + j + (thing.placement.w ?? 1) - 1 + (thing.placement.h ?? 1) - 1 - (entry?.walkable ? 0.6 : 0);
+      prop.sprite.zIndex = entry?.wall ? i + j - 0.9 : i + j + (thing.placement.w ?? 1) - 1 + (thing.placement.h ?? 1) - 1 - (entry?.walkable ? 0.6 : 0);
       const light = lights.get(thing.id);
       if (light && entry?.glow) {
         light.sprite.position.set(x, y - entry.glow.z * 2);
@@ -963,6 +975,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (!cell) return;
       const here =
         items.find((it) => it.placement && covers(it.placement, cell)) ??
+        furniture.find((f) => f.placement && covers(f.placement, cell) && !catalogueEntry(f.key)?.wall) ??
         furniture.find((f) => f.placement && covers(f.placement, cell));
       if (here) inspect(here);
     },
@@ -1048,7 +1061,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         // Clicking an item opens its card instead of walking onto it.
         const here =
           items.find((it) => it.placement && covers(it.placement, cell)) ??
-          furniture.find((f) => f.placement && covers(f.placement, cell) && !catalogueEntry(f.key)?.walkable);
+          furniture.find((f) => f.placement && covers(f.placement, cell) && !catalogueEntry(f.key)?.walkable && !catalogueEntry(f.key)?.wall) ??
+          furniture.find((f) => f.placement && covers(f.placement, cell) && catalogueEntry(f.key)?.wall);
         if (here) {
           inspect(here);
           return;
@@ -1056,7 +1070,17 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       if (selected && mine) {
         // The server validates ownership and that the cell is free; we only send the intention.
-        const res = await api.place(selected, cell.i, cell.j);
+        // A wall piece hangs on the wall behind the cell: left if there is one, else right.
+        let turn: number | undefined;
+        if (selectedEntry()?.wall) {
+          const wall = wallFor(cell, furniture.find((x) => x.id === selected)?.placement?.rot ?? 0);
+          if (wall === null) {
+            setMessage('Ça se pose contre un mur : choisis une case le long du mur du fond.');
+            return;
+          }
+          turn = wall;
+        }
+        const res = await api.place(selected, cell.i, cell.j, turn);
         if (res.ok) {
           select(null);
           setMessage('Objet posé.');
@@ -1441,7 +1465,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       // Putting a piece down: every tile it would cover is shown, green if all are free, red if one is not.
       const [w, h] = selected ? selectedFootprint() : [1, 1];
       let free = true;
-      for (let a = 0; a < w; a++) for (let b = 0; b < h; b++) if (blocked(hover.i + a, hover.j + b) || hover.i + a >= N || hover.j + b >= N) free = false;
+      if (selectedEntry()?.wall) {
+        free = wallFor(hover, furniture.find((x) => x.id === selected)?.placement?.rot ?? 0) !== null;
+      } else {
+        for (let a = 0; a < w; a++) for (let b = 0; b < h; b++) if (blocked(hover.i + a, hover.j + b) || hover.i + a >= N || hover.j + b >= N) free = false;
+      }
       for (let a = 0; a < w; a++) {
         for (let b = 0; b < h; b++) {
           const c = tileCenter(hover.i + a, hover.j + b);

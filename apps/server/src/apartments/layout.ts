@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { DEFAULT_LAYOUT, hasFloor, isValidLayout, presetByKey, type RoomLayout } from '@coloxel/world';
+import { DEFAULT_LAYOUT, hasFloor, isValidLayout, presetByKey, wallBehind, type RoomLayout } from '@coloxel/world';
 
 /** The shape of a player's apartment. A stored shape that no longer passes validation falls back to the square. */
 export async function loadLayout(db: pg.Pool | pg.PoolClient, ownerId: string): Promise<RoomLayout> {
@@ -24,13 +24,14 @@ export async function saveLayout(pool: pg.Pool, ownerId: string, layout: RoomLay
       await client.query('ROLLBACK');
       return null;
     }
-    const { rows } = await client.query<{ i: number; j: number; w: number; h: number }>('SELECT i, j, w, h FROM placements WHERE user_id = $1', [ownerId]);
-    // A big piece needs a floor under every tile it covers.
+    const { rows } = await client.query<{ i: number; j: number; w: number; h: number; layer: number }>('SELECT i, j, w, h, layer FROM placements WHERE user_id = $1', [ownerId]);
+    // A big piece needs a floor under every tile it covers, and a piece on a wall needs the wall to still be there.
     const gone = rows.filter((r) => {
+      if (r.layer) return !wallBehind(layout, r.layer === 1 ? 'left' : 'right', r.i, r.j);
       for (let a = 0; a < r.w; a++) for (let b = 0; b < r.h; b++) if (!hasFloor(layout, r.i + a, r.j + b)) return true;
       return false;
     });
-    for (const r of gone) await client.query('DELETE FROM placements WHERE user_id = $1 AND i = $2 AND j = $3', [ownerId, r.i, r.j]);
+    for (const r of gone) await client.query('DELETE FROM placements WHERE user_id = $1 AND i = $2 AND j = $3 AND layer = $4', [ownerId, r.i, r.j, r.layer]);
     await client.query('COMMIT');
     return gone.length;
   } catch (err) {
