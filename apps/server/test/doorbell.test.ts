@@ -136,6 +136,33 @@ describe.skipIf(!available)('doorbell and showing visitors out (PostgreSQL)', ()
     expect(noOne.json().error).toMatch(/pas là/);
   });
 
+  it('lets an owner give a friend the rights to move and turn placed pieces, and nothing else', async () => {
+    const owner = await signUp('rt_owner');
+    const friend = await signUp('rt_friend');
+    const stranger = await signUp('rt_stranger');
+    await pool.query("UPDATE users SET apartment_access = 'building' WHERE id = $1", [owner.id]);
+    const furniture = async (who: Account) => (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(who) })).json().furniture as { id: string; key: string; placement: { i: number; j: number } | null }[];
+    const chair = (await furniture(owner)).find((f) => f.key === 'chaise')!;
+    const arrange = (who: Account, body: object) => app.inject({ method: 'PUT', url: `/api/apartments/${owner.id}/placements`, payload: body, cookies: as(who) });
+    const grant = (who: Account, to: Account) => app.inject({ method: 'PUT', url: `/api/apartment/rights/${to.id}`, cookies: as(who) });
+    // No rights, no moving; rights go to friends only.
+    expect((await arrange(friend, { itemId: chair.id, i: 6, j: 7 })).statusCode).toBe(403);
+    expect((await grant(owner, stranger)).statusCode).toBe(409);
+    await befriend(owner, friend);
+    expect((await grant(owner, friend)).statusCode).toBe(204);
+    expect((await visit(friend, owner)).json().canArrange).toBe(true);
+    expect((await visit(stranger, owner)).json().canArrange).toBe(false);
+    // The friend moves the owner's chair; the chair stays the owner's.
+    expect((await arrange(friend, { itemId: chair.id, i: 6, j: 7 })).statusCode).toBe(200);
+    expect((await furniture(owner)).find((f) => f.id === chair.id)!.placement).toMatchObject({ i: 6, j: 7 });
+    // Nothing new is placed by a friend: only what is already placed moves.
+    const spare = (await app.inject({ method: 'POST', url: '/api/furniture', payload: { key: 'pouf' }, cookies: as(owner) })).json().furniture.id as string;
+    expect((await arrange(friend, { itemId: spare, i: 6, j: 8 })).statusCode).toBe(404);
+    // Taken back, the rights are gone.
+    expect((await app.inject({ method: 'DELETE', url: `/api/apartment/rights/${friend.id}`, cookies: as(owner) })).statusCode).toBe(204);
+    expect((await arrange(friend, { itemId: chair.id, i: 6, j: 6 })).statusCode).toBe(403);
+  });
+
   it('lets friends walk in on a bell apartment, without ringing', async () => {
     const owner = await signUp('bl_fr_owner');
     const friend = await signUp('bl_fr_friend');

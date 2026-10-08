@@ -70,6 +70,8 @@ export interface VisitedApartment {
   layout: RoomLayout;
   items: InventoryItem[];
   furniture: FurnitureItem[];
+  /** The visitor is a friend the owner gave the rights to: they may move and turn what is placed. */
+  canArrange?: boolean;
 }
 
 export type ApartmentAccess = 'closed' | 'bell' | 'friends' | 'building';
@@ -527,6 +529,11 @@ export const api = {
   }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
+  rights: () => call<{ rights: { id: string; nickname: string }[] }>('GET', '/api/apartment/rights'),
+  grantRights: (userId: string) => call<unknown>('PUT', `/api/apartment/rights/${userId}`),
+  revokeRights: (userId: string) => call<unknown>('DELETE', `/api/apartment/rights/${userId}`),
+  arrange: (ownerId: string, itemId: string, i: number, j: number, rot?: number) =>
+    call<{ placement: { i: number; j: number; rot: number } }>('PUT', `/api/apartments/${ownerId}/placements`, { itemId, i, j, ...(rot === undefined ? {} : { rot }) }),
   myEvent: () => call<{ event: { title: string; endsAt: string } | null }>('GET', '/api/apartment/event'),
   announceEvent: (title: string) => call<{ event: { title: string; endsAt: string } }>('PUT', '/api/apartment/event', { title }),
   endEvent: () => call<unknown>('DELETE', '/api/apartment/event'),

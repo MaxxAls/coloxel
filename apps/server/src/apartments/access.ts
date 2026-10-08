@@ -51,3 +51,15 @@ export async function canEnterApartment(pool: pg.Pool, hostId: string, viewerId:
   );
   return (rowCount ?? 0) > 0;
 }
+
+/** May this player arrange this apartment for its owner? They were given the rights, and they are still friends. */
+export async function hasRights(db: pg.Pool | pg.PoolClient, ownerId: string, userId: string): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `SELECT 1 FROM apartment_rights r
+      WHERE r.owner_id = $1 AND r.user_id = $2
+        AND EXISTS (SELECT 1 FROM friendships f WHERE f.status = 'accepted'
+                      AND ((f.requester_id = $1 AND f.addressee_id = $2) OR (f.requester_id = $2 AND f.addressee_id = $1)))`,
+    [ownerId, userId],
+  );
+  return !!rowCount;
+}

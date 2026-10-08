@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry, normalizeSize, rotatedSize, stackable, type Size } from '@coloxel/render';
 import { N, hasFloor, wallBehind } from '@coloxel/world';
+import { hasRights } from '../apartments/access';
 import { dropOrphanStacks, loadLayout } from '../apartments/layout';
 import type { NotifyApartment } from '../building/routes';
 import type { QuestRecorder } from '../quests/engine';
@@ -104,12 +105,32 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
   app.put('/api/placements', async (req, reply) => {
     const user = req.user;
     if (!user) return reply.code(401).send({ error: 'Non connecté' });
-
     const parsed = placementSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Placement invalide' });
     }
-    const { itemId, i, j, rot } = parsed.data;
+    return placeFor(user.id, parsed.data, reply, true);
+  });
+
+  // A friend with the rights moves or turns a piece the owner already placed: the same rules, in the owner's name.
+  app.put<{ Params: { ownerId: string } }>('/api/apartments/:ownerId/placements', async (req, reply) => {
+    const me = req.user;
+    if (!me) return reply.code(401).send({ error: 'Non connecté' });
+    const ownerId = req.params.ownerId.toLowerCase();
+    if (!UUID.test(ownerId) || !(await hasRights(pool, ownerId, me.id))) return reply.code(403).send({ error: 'Tu n’as pas les droits dans cet appart.' });
+    const parsed = placementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Placement invalide' });
+    }
+    const placed = await pool.query('SELECT 1 FROM placements WHERE (item_id = $1 OR furniture_id = $1) AND user_id = $2', [parsed.data.itemId, ownerId]);
+    if (!placed.rowCount) return reply.code(404).send({ error: 'Tu peux déplacer les objets déjà posés, pas en poser de nouveaux.' });
+    return placeFor(ownerId, parsed.data, reply, false);
+  });
+
+  /** Places (or moves, or turns) a piece of `ownerId`'s in their apartment. `byOwner`: the owner did it themselves. */
+  async function placeFor(ownerId: string, data: z.infer<typeof placementSchema>, reply: FastifyReply, byOwner: boolean) {
+    const user = { id: ownerId };
+    const { itemId, i, j, rot } = data;
 
     // A creation or a piece of base furniture: the same rule for both, and the
     // object must belong to the player.
@@ -205,9 +226,9 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     }
     notify?.(user.id, 'decor');
     // Each object counts once, however often it is moved.
-    quest?.(user.id, 'place', itemId);
+    if (byOwner) quest?.(user.id, 'place', itemId);
     return { placement: { itemId, i, j, rot: saved.rows[0]?.rot ?? 0, w, h, z } };
-  });
+  }
 
   app.delete<{ Params: { itemId: string } }>('/api/placements/:itemId', async (req, reply) => {
     const user = req.user;

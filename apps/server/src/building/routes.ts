@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { FLOORS, WALLS, catalogueEntry } from '@coloxel/render';
 import { layoutProblem, type RoomLayout } from '@coloxel/world';
-import { apartmentAccessSql, canEnterApartment } from '../apartments/access';
+import { apartmentAccessSql, canEnterApartment, hasRights } from '../apartments/access';
 import { layoutOfPreset, loadLayout, saveLayout } from '../apartments/layout';
 import { listFriends } from '../friends/routes';
 import { itemMaskedSql } from '../moderation/masking';
@@ -149,6 +149,8 @@ export function registerBuildingRoutes(
       floor: owner.rows[0]!.floor_style ?? FLOORS[0]!.id,
       wall: owner.rows[0]!.wall_style ?? WALLS[0]!.id,
       layout,
+      // A friend with the rights may move and turn what is placed.
+      canArrange: req.user.id !== ownerId.toLowerCase() && (await hasRights(pool, ownerId.toLowerCase(), req.user.id)),
       furniture: base.rows.map((r) => ({
         id: r.id,
         key: r.catalogue_key,
@@ -240,6 +242,37 @@ export function registerBuildingRoutes(
     if (access !== undefined) notify?.(req.user.id, 'access');
     if (newName !== undefined || floor !== undefined || wall !== undefined || newLayout) notify?.(req.user.id, 'decor');
     return { ...(await mineOf(pool, req.user.id)), putAway };
+  });
+
+  // ----- Rights: friends the owner lets arrange the apartment ------------------------------------
+  app.get('/api/apartment/rights', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const { rows } = await pool.query<{ id: string; nickname: string }>(
+      'SELECT u.id, u.nickname FROM apartment_rights r JOIN users u ON u.id = r.user_id WHERE r.owner_id = $1 ORDER BY u.nickname',
+      [req.user.id],
+    );
+    return { rights: rows };
+  });
+
+  app.put<{ Params: { userId: string } }>('/api/apartment/rights/:userId', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    const userId = req.params.userId.toLowerCase();
+    if (!UUID.test(userId) || userId === req.user.id) return reply.code(404).send({ error: 'Joueur introuvable' });
+    const friends = await pool.query(
+      `SELECT 1 FROM friendships WHERE status = 'accepted'
+         AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`,
+      [req.user.id, userId],
+    );
+    if (!friends.rowCount) return reply.code(409).send({ error: 'On ne donne les droits qu’à ses amis.' });
+    await pool.query('INSERT INTO apartment_rights (owner_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.id, userId]);
+    return reply.code(204).send();
+  });
+
+  app.delete<{ Params: { userId: string } }>('/api/apartment/rights/:userId', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
+    if (!UUID.test(req.params.userId)) return reply.code(404).send({ error: 'Joueur introuvable' });
+    await pool.query('DELETE FROM apartment_rights WHERE owner_id = $1 AND user_id = $2', [req.user.id, req.params.userId.toLowerCase()]);
+    return reply.code(204).send();
   });
 
   // ----- Events: a player announces what happens in their apartment, for two hours -----------------

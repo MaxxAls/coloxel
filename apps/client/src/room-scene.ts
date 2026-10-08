@@ -3,6 +3,7 @@ import { RES, botSettings, catalogueEntry, frameFor, isSwitchable, normalizeSize
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createShapeEditor } from './room-shape';
+import { createRightsEditor } from './rights-editor';
 import { createEventEditor } from './room-event';
 import { createRulesEditor } from './rules-editor';
 import { createChat, type ChatMessage } from './chat-ui';
@@ -137,6 +138,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let furniture: FurnitureItem[] = [];
   let look = { floor: 'parquet', wall: 'violet' };
   let shape: RoomLayout = target.kind === 'hall' ? HALL_LAYOUT : DEFAULT_LAYOUT;
+  /** A friend with the rights, visiting: they may move and turn what is placed. */
+  let canArrange = false;
   if (target.kind === 'apartment' && !mine) {
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
@@ -147,6 +150,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     furniture = visit.data.furniture;
     look = { floor: visit.data.floor, wall: visit.data.wall };
     shape = visit.data.layout;
+    canArrange = !!visit.data.canArrange;
   } else if (mine) {
     const own = await api.myApartment();
     if (own.ok) {
@@ -273,6 +277,18 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       lines.push('Ni numéroté, ni échangeable.');
       // A sign says what its owner wrote, to everybody who looks at it.
       if (catalogueEntry(piece.key)?.sign) lines.unshift((piece as FurnitureItem).data ? `« ${(piece as FurnitureItem).data} »` : 'Le panneau est vide.');
+    }
+    if (!mine && canArrange && piece.placement) {
+      const where = piece.placement;
+      actions.push({ label: 'Déplacer', kind: 'primary', run: () => (furniCard.hide(), select(piece.id)) });
+      actions.push({
+        label: 'Pivoter',
+        run: async () => {
+          const res = await api.arrange(ownerId!, piece.id, where.i, where.j, (where.rot + 1) % (!creation && catalogueEntry(piece.key)?.wall ? 2 : 4));
+          if (!res.ok) setMessage(res.error);
+          furniCard.hide();
+        },
+      });
     }
     if (mine) {
       if (piece.placement) {
@@ -466,7 +482,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       },
       notify: (text) => host.notify(text),
     });
-    apartmentElement.append(createApartmentSettings(), createEventEditor(), createShapeEditor(), rulesEditor.element);
+    apartmentElement.append(createApartmentSettings(), createEventEditor(), createRightsEditor(), createShapeEditor(), rulesEditor.element);
     onFurniture = () => rulesEditor.rerender();
     info = createInfoCard({
       title: 'Mon appart',
@@ -1193,7 +1209,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           return;
         }
       }
-      if (selected && mine) {
+      if (selected && (mine || canArrange)) {
         // The server validates ownership and that the cell is free; we only send the intention.
         // A wall piece hangs on the wall behind the cell: left if there is one, else right.
         let turn: number | undefined;
@@ -1205,14 +1221,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           }
           turn = wall;
         }
-        const res = await api.place(selected, cell.i, cell.j, turn);
+        // A friend with the rights moves the owner's piece in the owner's name; the room hears of it and redraws.
+        const res = mine ? await api.place(selected, cell.i, cell.j, turn) : await api.arrange(ownerId!, selected, cell.i, cell.j, turn);
         if (res.ok) {
           select(null);
           setMessage('Objet posé.');
         } else {
           setMessage(res.error);
         }
-        await refreshOwn();
+        if (mine) await refreshOwn();
         return;
       }
       if (blocked(cell.i, cell.j)) return;
