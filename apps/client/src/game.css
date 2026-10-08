@@ -2617,3 +2617,22 @@ body.admin .staff .win-bar button.win-close {
   text-align: left;
   border-bottom: 1px solid var(--line);
 }
+
+/* The score line of the colour race, above the room. */
+.game-hud {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(27, 21, 48, 0.88);
+  color: #fff6e0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+

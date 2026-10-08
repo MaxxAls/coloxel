@@ -1026,6 +1026,80 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     }
   });
 
+  // ----- The colour race -----------------------------------------------------------
+  // The server runs the game and says who is on which team and which tiles got painted: here we only draw.
+  const TEAM_COLORS = [0xe0564f, 0x4f7fe0];
+  const TEAM_LABELS = ['Rouge', 'Bleu'];
+  const paintLayer = new Graphics();
+  paintLayer.zIndex = -0.5;
+  world.addChild(paintLayer);
+  const hud = document.createElement('div');
+  hud.className = 'game-hud';
+  hud.hidden = true;
+  document.body.append(hud);
+  let race: { running: boolean; endsAt: number; teams: Record<string, number>; painted: Map<string, number> } = {
+    running: false, endsAt: 0, teams: {}, painted: new Map(),
+  };
+  let paintDirty = false;
+  let hudHold = 0;
+  const redrawPaint = () => {
+    paintLayer.clear();
+    for (const [key, team] of race.painted) {
+      const [i, j] = key.split(',').map(Number) as [number, number];
+      const c = tileCenter(i, j);
+      diamond(paintLayer, c.x, c.y, TW / 2 - 1, TH / 2 - 1);
+      paintLayer.fill({ color: TEAM_COLORS[team] ?? 0xffffff, alpha: 0.5 });
+    }
+    paintDirty = false;
+  };
+  const scoreOf = () => {
+    const s = [0, 0];
+    for (const t of race.painted.values()) s[t] = (s[t] ?? 0) + 1;
+    return s as [number, number];
+  };
+  const drawHud = (now: number) => {
+    if (race.running) {
+      const [a, b] = scoreOf();
+      const left = Math.max(0, Math.ceil((race.endsAt - now) / 1000));
+      const mine = race.teams[user.id];
+      const you = mine === undefined ? 'Tu regardes la partie' : `Tu es dans l’équipe ${TEAM_LABELS[mine]}`;
+      hud.textContent = `${TEAM_LABELS[0]} ${a} · ${b} ${TEAM_LABELS[1]} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${you}`;
+      hud.hidden = false;
+    } else if (now < hudHold) {
+      hud.hidden = false;
+    } else {
+      hud.hidden = true;
+    }
+  };
+  room.onGame({
+    onStart: (snap) => {
+      race = { running: snap.running, endsAt: snap.endsAt, teams: snap.teams, painted: new Map(snap.cells.map(([i, j, t]) => [`${i},${j}`, t])) };
+      paintDirty = true;
+      if (snap.running && snap.teams[user.id] !== undefined) setMessage(`Course des couleurs : tu es dans l’équipe ${TEAM_LABELS[snap.teams[user.id]!]}. Marche sur un maximum de cases !`);
+    },
+    onPaint: (p) => {
+      race.painted.set(`${p.i},${p.j}`, p.team);
+      paintDirty = true;
+    },
+    onEnd: (end) => {
+      race.running = false;
+      const text =
+        end.winner === null
+          ? `Égalité ${end.scores[0]} à ${end.scores[1]} !`
+          : `Équipe ${TEAM_LABELS[end.winner]} gagnante : ${end.scores[end.winner]} cases contre ${end.scores[1 - end.winner]} !`;
+      hud.textContent = text;
+      hudHold = Date.now() + 8000;
+      setMessage(text);
+      // The painted floor stays a few seconds, then is wiped.
+      setTimeout(() => {
+        if (!race.running) {
+          race.painted.clear();
+          paintDirty = true;
+        }
+      }, 8000);
+    },
+  });
+
   /** A colour that goes round the wheel: hue in degrees. */
   const wheel = (hue: number) => {
     const h = ((hue % 360) + 360) % 360 / 60;
@@ -1120,6 +1194,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
     }
 
+    if (paintDirty) redrawPaint();
+    drawHud(Date.now());
     marks.clear();
     if (hover) {
       // Putting a piece down: every tile it would cover is shown, green if all are free, red if one is not.
@@ -1216,6 +1292,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       chat.destroy();
       furniCard.destroy();
       banner.remove();
+      hud.remove();
       abort.abort();
       app.ticker.remove(tick);
       void room.leave();

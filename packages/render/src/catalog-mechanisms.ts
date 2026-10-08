@@ -72,9 +72,24 @@ const cannon: Recipe = {
   ],
 };
 
+/** A scoreboard on two legs: a red half and a blue half, bulbs along the top. */
+const gameBoard: Recipe = {
+  name: 'Tableau des couleurs',
+  parts: [
+    box(-6, -4, -1.5, 1.5, 0, 22, WOOD_DARK, 'wood'), box(4, 6, -1.5, 1.5, 0, 22, WOOD_DARK, 'wood'),
+    box(-7, 7, -2, 2, 18, 32, '#2c2a3a', 'metal'),
+    box(-6, -0.4, -2.3, 2.3, 19.2, 30.6, '#d94f4f', 'fabric'), box(0.4, 6, -2.3, 2.3, 19.2, 30.6, '#4f7fd9', 'fabric'),
+    // Painted tiles on both halves, and a start button between them.
+    ...[0, 1, 2].flatMap((k) => [box(-5 + k * 1.7, -4 + k * 1.7, 2.4, 2.8, 21, 22.4 + k, '#f4b0b0'), box(1 + k * 1.7, 2 + k * 1.7, 2.4, 2.8, 21, 22.4 + k, '#b0c8f4')]),
+    cyl(0, 2.6, 1.4, 25, 26, '#ffc857', '#ffe08a'),
+    ...[-5, -2.5, 0, 2.5, 5].map((x) => ball(x, 2.4, 33, 0.8, '#ffe28a')),
+  ],
+};
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
+    { key: 'tableaucouleurs', category: 'tech', recipe: gameBoard, extras: { price: 90, pressable: true, game: 'paint' } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
   ];
 }

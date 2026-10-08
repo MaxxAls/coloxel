@@ -16,6 +16,7 @@ import { loadRules } from '../rules/routes';
 import type { Effect, Rule } from '../rules/schema';
 import { authenticateConnection } from './auth';
 import { DANCE_MS, HELP_TEXT, parseCommand } from './commands';
+import { PaintGame } from './paint-game';
 import { HOTEL_TOPIC, parseStaffCommand, runStaffCommand, usageOf, type CommandEnv, type CommandRoom, type HotelAlert } from './staff-commands';
 import { can, loadStaff } from '../staff/roles';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
@@ -457,6 +458,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     return false;
   }
 
+  /** A player is now in the room (it is told the state of whatever is going on). */
+  protected onPlayerJoined(_client: AuthedClient, _id: string): void {}
+  /** A player left the room. */
+  protected onPlayerLeft(_id: string): void {}
+
   /** What a click on a pressable piece does besides setting off the rules (a gate, a cannon). */
   protected async useAt(_cell: Cell, _who: string): Promise<void> {}
 
@@ -570,6 +576,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     await this.presence.hset(WHERE_KEY, user.id, JSON.stringify(entry)).catch(() => {});
     const at = this.location();
     if (at.kind === 'apartment' && at.ownerId.toLowerCase() !== user.id.toLowerCase()) needDeps().quest(user.id, 'visit', at.ownerId.toLowerCase());
+    this.onPlayerJoined(client, user.id);
     this.onGameEvent({ type: 'enter', who: user.id });
     if (this.roomMuted) client.send('system', { text: 'La salle est en sourdine : seule l’équipe peut parler.' });
   }
@@ -591,6 +598,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     this.paths.delete(id);
     this.pending.delete(id);
     this.state.players.delete(id);
+    this.onPlayerLeft(id);
     // Forget our place, unless the player already is somewhere else (they joined another room before this one noticed).
     try {
       const raw = await this.presence.hget(WHERE_KEY, id);
@@ -713,13 +721,30 @@ export class ApartmentRoom extends BuildingRoom {
     }
   }
 
+  // ----- Team game ------------------------------------------------------------------
+  private game = new PaintGame({
+    broadcast: (type, data) => this.broadcast(type, data),
+    sendTo: (id, type, data) => this.sendTo(id, type, data),
+  });
+
+  protected override onPlayerJoined(client: AuthedClient) {
+    // Somebody arriving in the middle of a game sees the board, and watches.
+    if (this.game.isRunning) client.send('game', this.game.snapshot());
+  }
+
+  protected override onPlayerLeft(id: string) {
+    this.game.leave(id, Date.now());
+  }
+
   protected override onGameEvent(event: GameEvent) {
+    if (event.type === 'step') this.game.step(event.who, event.cell);
     if (!this.rules.length) return;
     // One event at a time, in the order they happened.
     this.firing = this.firing.then(() => this.fire(event)).catch(() => {});
   }
 
   protected override onClock(now: number) {
+    this.game.tick(now);
     if (!this.rules.length || this.playerCount() === 0) return;
     this.rules.forEach((rule, index) => {
       if (!rule.enabled || rule.trigger.type !== 'every') return;
@@ -780,6 +805,13 @@ export class ApartmentRoom extends BuildingRoom {
       this.layoutCache = null;
       this.broadcast('fx', { kind: 'pulse', i: at.i, j: at.j, color: 0xd6b25a });
       this.broadcast('decor');
+      return;
+    }
+    if (entry.game) {
+      const players = [...this.state.players.keys()];
+      const res = this.game.start(players, Date.now());
+      if (!res.ok) return this.sendTo(who, 'rule-message', { text: res.message });
+      this.broadcast('fx', { kind: 'pulse', i: cell.i, j: cell.j, color: 0xffc857 });
       return;
     }
     if (entry.confetti) {

@@ -33,7 +33,29 @@ export interface PlayerState {
   emote: number;
 }
 
+/** What the server says about the team game of the room (the colour race). */
+export interface GameSnapshot {
+  running: boolean;
+  endsAt: number;
+  /** Player id -> team (0 red, 1 blue). */
+  teams: Record<string, number>;
+  /** Painted tiles: i, j, team. */
+  cells: [number, number, number][];
+}
+export interface GameEnd {
+  scores: [number, number];
+  winner: number | null;
+  teams: Record<string, number>;
+}
+export interface GameHandlers {
+  onStart(snapshot: GameSnapshot): void;
+  onPaint(paint: { i: number; j: number; team: number }): void;
+  onEnd(end: GameEnd): void;
+}
+
 export interface BuildingRoom {
+  /** The team game of the room: it starts, tiles get painted, it ends. */
+  onGame(handlers: GameHandlers): void;
   /** Every player in the room, with the position the server last decided. */
   players(): PlayerState[];
   /** "I click the button at (i, j)": the server checks there is one, and what it sets off. */
@@ -107,6 +129,11 @@ function wrap(room: Room): BuildingRoom {
       room.onMessage('fx', (m: { kind?: string; i: number; j: number; color?: number }) => {
         if (m.kind === 'pulse') callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 });
       });
+    },
+    onGame(handlers) {
+      room.onMessage('game', (m: GameSnapshot) => handlers.onStart(m));
+      room.onMessage('game-paint', (m: { i: number; j: number; team: number }) => handlers.onPaint(m));
+      room.onMessage('game-end', (m: GameEnd) => handlers.onEnd(m));
     },
     onConfetti(callback) {
       room.onMessage('fx', (m: { kind?: string }) => {

@@ -1020,6 +1020,39 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(showers).toBe(1);
     });
 
+    it('runs the colour race: needs two players, splits them in teams, paints the tiles they walk on', async () => {
+      const owner = await signUp('mx_race');
+      const guest = await signUp('mx_race2');
+      await setAccess(owner.id, 'building');
+      await place(owner, 'tableaucouleurs', 6, 6);
+      const host = await joinApartment(owner, owner.id);
+      const heard = { start: [] as any[], paint: [] as any[], messages: [] as string[] };
+      host.onMessage('game', (m: any) => heard.start.push(m));
+      host.onMessage('game-paint', (m: any) => heard.paint.push(m));
+      host.onMessage('rule-message', (m: { text: string }) => heard.messages.push(m.text));
+      await until(() => playerOf(host, owner.id));
+      // Alone: refused.
+      host.send('use', { i: 6, j: 6 });
+      await until(() => heard.messages.length > 0, 3000);
+      expect(heard.messages[0]).toMatch(/au moins 2 joueurs/);
+      expect(heard.start).toHaveLength(0);
+
+      const other = await joinApartment(guest, owner.id);
+      await until(() => playerOf(host, guest.id) && playerOf(other, owner.id));
+      await new Promise((r) => setTimeout(r, 600));
+      host.send('use', { i: 6, j: 6 });
+      await until(() => heard.start.length > 0, 3000);
+      expect(heard.start[0]).toMatchObject({ running: true });
+      expect(Object.keys(heard.start[0].teams).sort()).toEqual([owner.id, guest.id].sort());
+      expect(new Set(Object.values(heard.start[0].teams)).size).toBe(2);
+
+      // Walking paints.
+      host.send('move', { i: 6, j: 1 });
+      await until(() => heard.paint.some((p) => p.i === 6 && p.j === 1), walk);
+      const mineTeam = heard.start[0].teams[owner.id];
+      expect(heard.paint.find((p) => p.i === 6 && p.j === 1).team).toBe(mineTeam);
+    }, 40000);
+
     it('lets players walk over a pressure plate, and notices when they do', async () => {
       const owner = await signUp('mx_plate');
       await place(owner, 'plaque', 2, 5);
