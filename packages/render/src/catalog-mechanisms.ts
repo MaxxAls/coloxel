@@ -346,12 +346,11 @@ const egg: Recipe = {
   name: 'Œuf surprise',
   parts: [
     { t: 'cyl', x: 0, y: 0, r: 5.4, z0: 0, z1: 2.4, side: '#c99a4a', top: '#e8c070' },
-    ball(0, 0, 8, 5, '#fff3e0'),
-    ball(0, 0, 13, 3.6, '#fff8ec'),
+    ball(0, 0, 8.4, 5.6, '#fff3e0'),
     pix(-2, 2, 9, 1, 1, '#e0a060'),
     pix(1.4, -1, 12, 1, 1, '#e0a060'),
     pix(2.6, 2, 7, 1, 1, '#e0a060'),
-    pix(-1, -2.6, 14, 1, 1, '#e0a060'),
+    pix(-1, -2.6, 11.4, 1, 1, '#e0a060'),
   ],
 };
 
@@ -369,6 +368,32 @@ const chick = (name: string, body: string, light: string): Recipe => ({
     ball(-1.4, 3.6, 6.6, 1.6, light),
   ],
 });
+/** An arch over a floor plate with a big arrow: the way through. */
+const oneWayGate: Recipe = {
+  name: 'Passage à sens unique',
+  parts: [
+    box(-7.4, 7.4, -7.4, 7.4, 0, 1, '#3d4350'),
+    quad('#2fc48d', [-5, -2.4, 1.1], [3, -2.4, 1.1], [3, 2.4, 1.1], [-5, 2.4, 1.1]),
+    quad('#2fc48d', [2.6, -5.4, 1.1], [7, 0, 1.1], [2.6, 5.4, 1.1]),
+    box(-1, 1, -7.4, -5.6, 1, 26, '#5a6070'),
+    box(-1, 1, 5.6, 7.4, 1, 26, '#5a6070'),
+    box(-1.2, 1.2, -7.4, 7.4, 26, 28.4, '#6a7080'),
+    pix(1.2, -1.5, 27, 3, 1, '#7dffb0'),
+  ],
+};
+
+/** A scoreboard on a stand: the number itself is written by the game over its face. */
+const counter: Recipe = {
+  name: 'Compteur de points',
+  parts: [
+    box(-2, 2, -4, 4, 0, 1.6, '#3d4350'),
+    box(-0.8, 0.8, -0.8, 0.8, 1.6, 10, '#5a6070'),
+    box(-2.4, 1.6, -7, 7, 10, 22, '#2a2833'),
+    quad('#14121c', [1.6, -6, 11], [1.6, 6, 11], [1.6, 6, 21], [1.6, -6, 21]),
+    pix(1.6, -6.6, 21.6, 2, 0.5, '#ffc857'),
+  ],
+};
+
 /** The colours an egg may hatch into: same chick, a different coat. */
 export const CHICKS: readonly string[] = ['poussinjaune', 'poussinrose', 'poussinbleu', 'poussinvert'];
 
@@ -392,6 +417,8 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'tapisroulant', category: 'tech', recipe: roller, extras: { price: 50, walkable: true, roller: true } },
     { key: 'teleporteur', category: 'tech', recipe: teleportBooth, extras: { price: 120, walkable: true, teleport: true, glow: { z: 16, color: 0x8ee8ff, radius: 44 } } },
     { key: 'caissepuzzle', category: 'decor', recipe: pushCrate, extras: { price: 30, pressable: true, pushable: true } },
+    { key: 'sensunique', category: 'tech', recipe: oneWayGate, extras: { price: 60, walkable: true, oneWay: true } },
+    { key: 'compteur', category: 'tech', recipe: counter, extras: { price: 40, pressable: true, counter: true } },
     { key: 'grosde', category: 'decor', recipe: die, extras: { price: 25, pressable: true, toy: 'dice' } },
     { key: 'rouecouleurs', category: 'decor', recipe: wheel, extras: { price: 60, pressable: true, toy: 'wheel' } },
     { key: 'bouteille', category: 'decor', recipe: bottle, extras: { price: 20, pressable: true, toy: 'bottle' } },

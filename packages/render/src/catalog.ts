@@ -43,6 +43,10 @@ export interface CatalogueEntry {
   toy?: 'dice' | 'wheel' | 'bottle' | 'egg';
   /** Offered nowhere (not in the shop, not free to take): one only gets it another way (a chick hatches from an egg). */
   hidden?: boolean;
+  /** A one-way passage: players go through it only along its turn (0 +i, 1 +j, 2 -i, 3 -j). */
+  oneWay?: boolean;
+  /** A score counter: a click of the owner adds one (back to 0 after 99); the number is its placement's data. */
+  counter?: boolean;
   /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
@@ -511,7 +515,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'toy' | 'hidden' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'toy' | 'hidden' | 'oneWay' | 'counter' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -893,7 +897,7 @@ export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey
  */
 export function stackable(entry: CatalogueEntry | undefined): boolean {
   if (!entry) return true;
-  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable && !entry.toy;
+  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable && !entry.toy && !entry.oneWay;
 }
 
 /**

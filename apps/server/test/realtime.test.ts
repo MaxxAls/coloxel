@@ -1047,6 +1047,37 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(pixels.rows[0]!.pixels).toBe(100);
     }, 30000);
 
+    it('lets players through a one-way passage only along its way, and keeps the score on a counter', async () => {
+      const owner = await signUp('mx_oneway');
+      const guest = await signUp('mx_oneway_guest');
+      await setAccess(owner.id, 'building');
+      await pool.query('DELETE FROM placements WHERE user_id = $1', [owner.id]);
+      // A wall of crates across row i = 4, with a passage at (4, 4) that goes along +i only.
+      for (let j = 0; j < 10; j++) if (j !== 4) await place(owner, 'caissepuzzle', 4, j);
+      await place(owner, 'sensunique', 4, 4);
+      const counter = await place(owner, 'compteur', 8, 8);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      // From the door (9, 0), the far side (i < 4) cannot be reached: the passage only goes the other way.
+      room.send('move', { i: 1, j: 4 });
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(playerOf(room, owner.id)!.i).toBeGreaterThan(4);
+      // The score: the owner adds one with a click, a visitor cannot.
+      room.send('move', { i: 7, j: 8 });
+      await until(() => at(room, owner.id, 7, 8), walk);
+      room.send('use', { i: 8, j: 8 });
+      const score = async () => (await pool.query<{ data: string | null }>('SELECT data FROM placements WHERE furniture_id = $1', [counter])).rows[0]?.data;
+      for (let tries = 0; (await score()) !== '1'; tries++) {
+        if (tries > 60) throw new Error('the counter did not move');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const visitor = await joinApartment(guest, owner.id);
+      await until(() => playerOf(visitor, guest.id));
+      visitor.send('use', { i: 8, j: 8 });
+      await new Promise((r) => setTimeout(r, 600));
+      expect(await score()).toBe('1');
+    }, 30000);
+
     it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
       const owner = await signUp('mx_step');
       await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);

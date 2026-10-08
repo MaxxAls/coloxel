@@ -499,6 +499,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   ];
 
   interface Prop {
+    /** The number over a score counter. */
+    score?: Text;
     on: boolean;
     sprite: Sprite;
     anim?: 'sway' | 'flicker';
@@ -621,6 +623,17 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const lift = (thing.placement.z ?? 0) * 2;
       const { x, y } = tileCenter(i, j);
       prop.sprite.position.set(x, y - lift);
+      if (entry?.counter) {
+        const text = String(Number(thing.data) || 0);
+        if (!prop.score) {
+          prop.score = new Text({ text, style: { fontFamily: FONT, fontSize: 13, fontWeight: '700', fill: 0x7dffb0 }, resolution: 2 });
+          prop.score.anchor.set(0.5);
+          world.addChild(prop.score);
+        }
+        prop.score.text = text;
+        prop.score.position.set(x + 6, y - lift - 31);
+        prop.score.zIndex = depthOf(thing) + 0.05;
+      }
       if (entry?.mannequin) {
         const raw = thing.data ?? '';
         if (prop.dummyRaw !== raw) {
@@ -652,6 +665,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (placed.has(id)) continue;
       prop.sprite.destroy();
       prop.dummy?.destroy();
+      prop.score?.destroy();
       props.delete(id);
       itemSprites.delete(id);
       lights.get(id)?.sprite.destroy();

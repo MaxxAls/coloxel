@@ -1,4 +1,3 @@
-import { withTransaction } from '../db/pool';
 import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
@@ -22,6 +21,7 @@ import { FreezeGame, SoccerGame, type TeamGameIO } from './team-games';
 import { HOTEL_TOPIC, parseStaffCommand, runStaffCommand, usageOf, type CommandEnv, type CommandRoom, type HotelAlert } from './staff-commands';
 import { can, loadStaff } from '../staff/roles';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
+import { withTransaction } from '../db/pool';
 
 /** One cell per step: a calm, continuous walk, about half a second per cell. */
 export const STEP_MS = 480;
@@ -36,7 +36,22 @@ type RoomMap = {
   rollers?: Map<number, Cell>;
   /** Booths, in the order they were put down: stepping into one takes a player out of the next. */
   teleports?: Cell[];
+  /** One-way passages: cell -> the only step that goes through it. */
+  oneWay?: Map<number, Cell>;
 };
+
+/**
+ * May a player take this step, with the room's one-way passages? Into a passage or out of it, only along its way.
+ */
+function oneWayAllows(oneWay: Map<number, Cell> | undefined, a: Cell, b: Cell): boolean {
+  if (!oneWay?.size) return true;
+  const di = b.i - a.i, dj = b.j - a.j;
+  for (const cell of [a, b]) {
+    const way = oneWay.get(cell.i * N + cell.j);
+    if (way && (way.i !== di || way.j !== dj)) return false;
+  }
+  return true;
+}
 /** The step a belt carries along, for each of its turns. */
 const ROLL: readonly Cell[] = [{ i: 1, j: 0 }, { i: 0, j: 1 }, { i: -1, j: 0 }, { i: 0, j: -1 }];
 /** The colours of the wheel, as the room reads them. */
@@ -386,7 +401,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       this.following.delete(id);
       this.setEmote(id, 0);
       this.onFloor.delete(id);
-      const { blocked, seats, shape, rollers } = await this.layout();
+      const { blocked, seats, shape, rollers, oneWay } = await this.layout();
       this.blockedCache = blocked;
       this.shapeCache = shape;
       this.hasRollers = !!rollers?.size;
@@ -398,7 +413,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         { i: player.i, j: player.j },
         target,
         (i, j) => blocked.has(i * N + j) && !(usable && i === target.i && j === target.j),
-        (a, b) => canStep(shape, a, b),
+        (a, b) => canStep(shape, a, b) && oneWayAllows(oneWay, a, b),
       );
       if (path.length) {
         // Any new walk gets the player back on their feet first.
@@ -1028,6 +1043,18 @@ export class ApartmentRoom extends BuildingRoom {
 
   private lastToy = new Map<string, number>();
 
+  /** Adds to a score counter (back to 0 after 99), and tells the room to show the new number. */
+  protected async addToCounter(pieceId: string, points: number) {
+    const moved = await needDeps().pool.query(
+      `UPDATE placements SET data = (((COALESCE(NULLIF(data, '')::int, 0) + $3) % 100 + 100) % 100)::text
+        WHERE furniture_id = $1 AND user_id = $2 AND COALESCE(data, '') ~ '^[0-9]{0,2}$'`,
+      [pieceId, this.ownerId, points],
+    );
+    if (!moved.rowCount) return;
+    this.layoutCache = null;
+    this.broadcast('decor');
+  }
+
   /**
    * A toy of chance: a die, a wheel, a bottle, an egg. Only for show: the room sees the result, nobody wins or loses
    * anything. The egg, bought for Pixels, always hatches into a chick: only its colour is a surprise.
@@ -1136,6 +1163,12 @@ export class ApartmentRoom extends BuildingRoom {
     if (!piece || !entry) return;
     if (entry.pushable) return this.pushCrate(piece.id, cell, who);
     if (entry.toy) return this.playToy(piece.id, entry.toy, cell, who);
+    if (entry.counter) {
+      // The owner keeps the score; the room sees it change at once.
+      if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire compte les points.' });
+      await this.addToCounter(piece.id, 1);
+      return;
+    }
     if (entry.gate) {
       // Only the owner decides who gets through.
       if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire ouvre et ferme ce portillon.' });
@@ -1318,6 +1351,7 @@ export class ApartmentRoom extends BuildingRoom {
     );
     const rollers = new Map<number, Cell>();
     const teleports: Cell[] = [];
+    const oneWay = new Map<number, Cell>();
     // No floor: nobody walks there.
     const blocked = voidKeys(shape);
     const seats = new Map<number, Interaction>();
@@ -1335,10 +1369,11 @@ export class ApartmentRoom extends BuildingRoom {
           // Only base furniture can be used: a creation is whatever its maker invented.
           if (entry?.interaction) seats.set(cell, entry.interaction);
           if (entry?.roller && !r.layer) rollers.set(cell, ROLL[r.rot & 3]!);
+          if (entry?.oneWay && !r.layer) oneWay.set(cell, ROLL[r.rot & 3]!);
         }
       }
       if (entry?.teleport) teleports.push({ i: r.i, j: r.j });
     }
-    return { blocked, seats, shape, rollers, teleports };
+    return { blocked, seats, shape, rollers, teleports, oneWay };
   }
 }
