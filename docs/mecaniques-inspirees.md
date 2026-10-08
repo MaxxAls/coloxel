@@ -42,8 +42,8 @@ L'émulateur a 35 « interacteurs » de meubles. Verdict pour Coloxel, sans rien
 | Feux d'artifice, canon | **Fait : canon à confettis.** Un clic, une pluie pour toute la salle, une seule à la fois. |
 | Mannequin (habillé avec le look du joueur) | **Fait : mannequin.** « Habiller » dans la fiche : il porte la tenue actuelle du propriétaire, dessinée par le client avec le moteur d'avatars. Le look est stocké dans `placements.data`. |
 | Distributeur (objet en main) | **Fait : objets tenus en main.** 6 objets (café, jus, glace, thé glacé, cookie, fleur), dessinés par une petite grille partagée (`packages/render/src/hand.ts`). Machine à café, stand de jus, chariot de glaces et bac de fleurs servent un joueur qui se tient à deux cases au plus ; `/poser` pour reposer. L'état est dans `Player.hand`, décidé par le serveur. |
-| Juke-box, tableau de score, vidéos | À faire, après les jeux d'équipe et si on ajoute des sons. |
-| Jeux d'équipe (banzai, gel, football) et compteurs | **Fait : Course des couleurs** (inspirée du banzai) : 2 à 12 joueurs, 2 équipes, 60 secondes, chacun peint les cases où il marche, l'équipe qui en a le plus gagne. Lancée depuis le tableau des couleurs, gérée par `apps/server/src/realtime/paint-game.ts`. Ni mise ni gain. Gel et football restent à faire. |
+| Juke-box, tableau de score, vidéos | **Fait : juke-box.** 4 morceaux composés pour Coloxel et écrits comme des données (`packages/render/src/jukebox.ts`), joués par le synthétiseur du navigateur, aucun fichier audio. Le serveur dit quel morceau et depuis quand, chaque client garde le temps. Un bouton coupe le son. Vidéos et tableau de score séparé : non retenus. |
+| Jeux d'équipe (banzai, gel, football) et compteurs | **Fait : Course des couleurs** (inspirée du banzai) : 2 à 12 joueurs, 2 équipes, 60 secondes, chacun peint les cases où il marche, l'équipe qui en a le plus gagne. Lancée depuis le tableau des couleurs, gérée par `apps/server/src/realtime/paint-game.ts`. Ni mise ni gain. **Statues** (inspirée du gel) : des gardiens figent les coureurs qu'ils touchent, un coureur libre délivre un gelé en le touchant, les gardiens gagnent si tous sont gelés, les coureurs si le temps passe. **Football** : un ballon que l'on pousse de trois cases en marchant dessus, deux buts (rouge, bleu) à poser, 90 secondes. Un seul jeu à la fois par salle, logique dans `apps/server/src/realtime/team-games.ts`. |
 | Panneau avec texte | **Fait : panneau.** Le propriétaire écrit jusqu'à 120 lettres (filtrées comme le chat), tous les visiteurs le lisent dans la fiche. |
 | Portes à sens unique, portes de groupe, portes VIP | Portes de groupe : hors périmètre (groupes). Le reste : à faire si le besoin se confirme. |
 | Dés, roue, bouteille, œuf à casser, boîte de puzzle à gains, mélangeur d'amour | **Non retenu** : jeux d'argent et loot boxes (règle 6). |
@@ -86,11 +86,15 @@ Deux joueurs dans la même salle ouvrent un échange, chacun dépose des créati
 - Journal `trades` (qui, quoi, quand). Limite de débit, signalement possible d'un échange.
 - **Ne rien construire avant la phase 3.**
 
-### 3. Compagnons plus vivants
+### 3. Compagnons plus vivants : fait
+
+Faim et joie sont calculées à la lecture depuis l'heure du dernier repas et de la dernière partie (`packages/render/src/pets.ts`), jamais stockées ni décomptées. Nourrir et jouer sont gratuits, ne marchent qu'une fois le besoin là (moins de 80), en une seule requête SQL, et rapportent de l'expérience : le niveau débloque les tours `/compagnon assis`, `viens`, `saute`, `tourne`. Un compagnon négligé est pâle et triste, sans autre conséquence. Texte d'origine de la spec ci-dessous.
 
 Besoins qui descendent avec le temps réel (calculés à la lecture à partir d'une date, sans tâche de fond), commandes simples (« assis », « viens ») avec niveaux d'expérience. Pas de mort ni de faim bloquante : un compagnon négligé est triste, rien de plus. Nourrir coûte quelques Pixels ou rien.
 
-### 4. Jeux d'équipe
+### 4. Jeux d'équipe : fait
+
+Trois jeux (course des couleurs, statues, football), voir le tableau plus haut. Texte d'origine de la spec ci-dessous.
 
 Équipes, score, minuteur dans un appart, construits sur les mécanismes (effets « rejoindre une équipe », « marquer un point »). Jamais de mise en Pixels ni de pari (règle 6).
 

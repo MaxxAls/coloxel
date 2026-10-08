@@ -39,16 +39,24 @@ export interface PlayerState {
   petLevel: number;
 }
 
-/** What the server says about the team game of the room (the colour race). */
+/** What the server says about the team game of the room (colour race, statues, football). */
 export interface GameSnapshot {
+  /** Absent means the colour race. */
+  kind?: 'paint' | 'freeze' | 'soccer';
   running: boolean;
   endsAt: number;
-  /** Player id -> team (0 red, 1 blue). */
+  /** Player id -> team (0 red, 1 blue; for the statues 0 keeper, 1 runner). */
   teams: Record<string, number>;
-  /** Painted tiles: i, j, team. */
+  /** Painted tiles: i, j, team (colour race). */
   cells: [number, number, number][];
+  /** Frozen players (statues). */
+  frozen?: string[];
+  /** The ball and the score (football). */
+  ball?: { i: number; j: number };
+  scores?: [number, number];
 }
 export interface GameEnd {
+  kind?: 'paint' | 'freeze' | 'soccer';
   scores: [number, number];
   winner: number | null;
   teams: Record<string, number>;
@@ -57,6 +65,9 @@ export interface GameHandlers {
   onStart(snapshot: GameSnapshot): void;
   onPaint(paint: { i: number; j: number; team: number }): void;
   onEnd(end: GameEnd): void;
+  onFreeze(change: { id: string; frozen: boolean }): void;
+  onBall(ball: { i: number; j: number }): void;
+  onGoal(goal: { team: number; scores: [number, number]; ball: { i: number; j: number } }): void;
 }
 
 export interface BuildingRoom {
@@ -150,6 +161,9 @@ function wrap(room: Room): BuildingRoom {
       room.onMessage('game', (m: GameSnapshot) => handlers.onStart(m));
       room.onMessage('game-paint', (m: { i: number; j: number; team: number }) => handlers.onPaint(m));
       room.onMessage('game-end', (m: GameEnd) => handlers.onEnd(m));
+      room.onMessage('game-freeze', (m: { id: string; frozen: boolean }) => handlers.onFreeze(m));
+      room.onMessage('game-ball', (m: { i: number; j: number }) => handlers.onBall(m));
+      room.onMessage('game-goal', (m: { team: number; scores: [number, number]; ball: { i: number; j: number } }) => handlers.onGoal(m));
     },
     onConfetti(callback) {
       room.onMessage('fx', (m: { kind?: string }) => {

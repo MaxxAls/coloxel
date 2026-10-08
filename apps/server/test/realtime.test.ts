@@ -770,7 +770,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
 
     it('lets a companion do the tricks it has learnt, and only when it is in a mood for it', async () => {
-      const eli = await named('cm_eli');
+      const eli = await named('pt_eli');
       const adopt = async (a: Account, xp: number, hoursSinceMeal: number) => {
         const pet = (await pool.query<{ id: string }>("INSERT INTO pets (owner_id, species, color, name, xp, fed_at) VALUES ($1, 'chien', 0, 'Rex', $2, now() - ($3 || ' hours')::interval) RETURNING id", [a.id, xp, String(hoursSinceMeal)])).rows[0]!.id;
         await pool.query('UPDATE users SET active_pet_id = $2 WHERE id = $1', [a.id, pet]);
@@ -783,7 +783,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(heardBare.system[0]).toMatch(/pas de compagnon/);
 
       // A happy level 1 companion sits, but does not yet jump.
-      const fay = await named('cm_fay');
+      const fay = await named('pt_fay');
       await adopt(fay, 0, 0);
       const room = await joinHall(fay);
       const heard = listenSystem(room);
@@ -803,7 +803,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect(heard.system[1]).toMatch(/Quel tour/);
 
       // A hungry one is sad and refuses.
-      const gus = await named('cm_gus');
+      const gus = await named('pt_gus');
       await adopt(gus, 0, 30);
       const sad = await joinHall(gus);
       const heardSad = listenSystem(sad);
@@ -1147,6 +1147,47 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await app.inject({ method: 'DELETE', url: `/api/furniture/${box}`, cookies: { coloxel_sid: owner.sid } });
       await until(() => tunes.length === 2, 3000);
       expect(tunes[1]).toEqual({ track: 0, elapsed: 0 });
+    }, 40000);
+
+    it('starts the statues game with three players, one keeper, and refuses a football game without goals', async () => {
+      const owner = await signUp('mx_stat');
+      const b = await signUp('mx_stat2');
+      const c = await signUp('mx_stat3');
+      await setAccess(owner.id, 'building');
+      await place(owner, 'tableaustatues', 6, 6);
+      await place(owner, 'coupdenvoi', 6, 5);
+      const host = await joinApartment(owner, owner.id);
+      const starts: any[] = [];
+      const messages: string[] = [];
+      host.onMessage('game', (m: any) => starts.push(m));
+      host.onMessage('rule-message', (m: { text: string }) => messages.push(m.text));
+      await until(() => playerOf(host, owner.id));
+      const roomB = await joinApartment(b, owner.id);
+      await until(() => playerOf(host, b.id) && playerOf(roomB, owner.id));
+      await new Promise((r) => setTimeout(r, 400));
+      // Two players: not enough for statues.
+      host.send('use', { i: 6, j: 6 });
+      await until(() => messages.length > 0, 3000);
+      expect(messages[0]).toMatch(/au moins 3 joueurs/);
+      // Football without goals.
+      await new Promise((r) => setTimeout(r, 600));
+      host.send('use', { i: 6, j: 5 });
+      await until(() => messages.length > 1, 3000);
+      expect(messages[1]).toMatch(/but rouge et un but bleu/);
+      // Three players: it starts, with exactly one keeper.
+      const roomC = await joinApartment(c, owner.id);
+      await until(() => playerOf(host, c.id) && playerOf(roomC, owner.id));
+      await new Promise((r) => setTimeout(r, 600));
+      host.send('use', { i: 6, j: 6 });
+      await until(() => starts.length > 0, 3000);
+      expect(starts[0]).toMatchObject({ kind: 'freeze', running: true });
+      expect(Object.values(starts[0].teams).filter((t) => t === 0)).toHaveLength(1);
+      expect(Object.values(starts[0].teams).filter((t) => t === 1)).toHaveLength(2);
+      // Another game cannot start on top of it.
+      await new Promise((r) => setTimeout(r, 600));
+      host.send('use', { i: 6, j: 5 });
+      await until(() => messages.length > 2, 3000);
+      expect(messages[2]).toMatch(/déjà en cours/);
     }, 40000);
 
     it('lets players walk over a pressure plate, and notices when they do', async () => {

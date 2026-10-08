@@ -178,6 +178,42 @@ const jukebox: Recipe = {
   ],
 };
 
+/** The board that starts the statues game: an ice-blue plaque with a frozen figure. */
+const statuesBoard: Recipe = {
+  name: 'Tableau des statues',
+  parts: [
+    box(-6, -4, -1.5, 1.5, 0, 22, WOOD_DARK, 'wood'), box(4, 6, -1.5, 1.5, 0, 22, WOOD_DARK, 'wood'),
+    box(-7, 7, -2, 2, 18, 32, '#2c2a3a', 'metal'),
+    box(-6, 6, -2.3, 2.3, 19.2, 30.6, '#8fd0f0', 'glass'),
+    cyl(0, 2.6, 2, 21, 27, '#e6f6ff', '#ffffff'), ball(0, 2.6, 29, 1.8, '#e6f6ff'),
+    pix(-3, 2.6, 24, 1, 1, '#ffffff'), pix(3, 2.6, 26, 1, 1, '#ffffff'),
+    ...[-5, -2.5, 0, 2.5, 5].map((x) => ball(x, 2.4, 33, 0.8, '#bfe8f8')),
+  ],
+};
+
+/** The kick-off pad: a round plinth and a football on top. */
+const kickoff: Recipe = {
+  name: 'Coup d’envoi',
+  parts: [
+    cyl(0, 0, 7, 0, 3, '#4f9a5a', '#6bbf6f'), cyl(0, 0, 5, 3, 3.6, '#f4efe6', '#ffffff'),
+    ball(0, 0, 9, 4.6, '#f4efe6'),
+    pix(-1, -1, 12, 2, 2, '#2c2a3a'), pix(-3, 0, 9, 1.5, 1.5, '#2c2a3a'), pix(2, 1, 8, 1.5, 1.5, '#2c2a3a'),
+  ],
+};
+
+/** A goal: two posts and a crossbar with a net, in the colour of the team that defends it. */
+const goalOf = (name: string, c: string, dark: string): Recipe => ({
+  name,
+  parts: [
+    box(-7, -5.6, -7, 7, 0, 3, dark),
+    box(-7, -5.6, -7, -5.6, 0, 26, '#f4efe6', 'metal'), box(-7, -5.6, 5.6, 7, 0, 26, '#f4efe6', 'metal'),
+    box(-7, -5.6, -7, 7, 24.6, 26, '#f4efe6', 'metal'),
+    box(-5.6, -4.4, -5.6, 5.6, 2, 24, c, 'weave'),
+    box(-5.6, 3, -5.6, -4.6, 2, 22, c, 'weave'), box(-5.6, 3, 4.6, 5.6, 2, 22, c, 'weave'),
+    pix(-6, -5, 25, 1, 1, '#ffffff'),
+  ],
+});
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
@@ -189,6 +225,10 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'mannequin', category: 'decor', recipe: mannequin, extras: { price: 80, mannequin: true } },
     { key: 'panneau', category: 'decor', recipe: sign, extras: { price: 30, sign: true } },
     { key: 'jukebox', category: 'tech', recipe: jukebox, extras: { price: 150, pressable: true, jukebox: true } },
+    { key: 'tableaustatues', category: 'tech', recipe: statuesBoard, extras: { price: 90, pressable: true, game: 'freeze' } },
+    { key: 'coupdenvoi', category: 'tech', recipe: kickoff, extras: { price: 90, pressable: true, game: 'soccer' } },
+    { key: 'butrouge', category: 'decor', recipe: goalOf('But rouge', '#e0564f', '#a8302c'), extras: { price: 60, goal: 0 } },
+    { key: 'butbleu', category: 'decor', recipe: goalOf('But bleu', '#4f7fe0', '#2f509c'), extras: { price: 60, goal: 1 } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
   ];
 }

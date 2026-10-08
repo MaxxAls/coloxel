@@ -17,6 +17,7 @@ import type { Effect, Rule } from '../rules/schema';
 import { authenticateConnection } from './auth';
 import { DANCE_MS, HELP_TEXT, parseCommand } from './commands';
 import { PaintGame } from './paint-game';
+import { FreezeGame, SoccerGame, type TeamGameIO } from './team-games';
 import { HOTEL_TOPIC, parseStaffCommand, runStaffCommand, usageOf, type CommandEnv, type CommandRoom, type HotelAlert } from './staff-commands';
 import { can, loadStaff } from '../staff/roles';
 import { WHERE_KEY, roomLabel, type Location, type WhereEntry } from './where';
@@ -214,6 +215,21 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   // ----- Commands of the staff: what they may do to this room -----------------------
   private roomMuted = false;
   private frozen = new Map<string, number>();
+
+  /** Hold a player still for a game (or let go): no message, and walking stops. */
+  protected hold(id: string, on: boolean): void {
+    if (!on) {
+      this.frozen.delete(id);
+      return;
+    }
+    this.frozen.set(id, Date.now() + 10 * 60_000);
+    this.paths.delete(id);
+    this.pending.delete(id);
+    this.following.delete(id);
+  }
+  protected blockedNow(): ReadonlySet<number> {
+    return this.blockedCache;
+  }
 
   private isFrozen(id: string): boolean {
     const until = this.frozen.get(id);
@@ -754,11 +770,22 @@ export class ApartmentRoom extends BuildingRoom {
     }
   }
 
-  // ----- Team game ------------------------------------------------------------------
-  private game = new PaintGame({
+  // ----- Team games ------------------------------------------------------------------
+  // One game at a time in a room: the colour race, the statues, or football.
+  private gameIO: TeamGameIO = {
     broadcast: (type, data) => this.broadcast(type, data),
     sendTo: (id, type, data) => this.sendTo(id, type, data),
-  });
+    at: (id) => {
+      const p = this.state.players.get(id);
+      return p ? { i: p.i, j: p.j } : undefined;
+    },
+    hold: (id, on) => this.hold(id, on),
+    blocked: () => this.blockedNow(),
+  };
+  private game = new PaintGame(this.gameIO);
+  private statues = new FreezeGame(this.gameIO);
+  private football = new SoccerGame(this.gameIO);
+  private anyGameRunning = () => this.game.isRunning || this.statues.isRunning || this.football.isRunning;
 
   // ----- Jukebox ---------------------------------------------------------------------
   // The tune of the room: 0 is silence. Clients are told which tune and how long ago it started, and keep time themselves.
@@ -771,16 +798,26 @@ export class ApartmentRoom extends BuildingRoom {
 
   protected override onPlayerJoined(client: AuthedClient) {
     // Somebody arriving in the middle of a game sees the board, and watches.
-    if (this.game.isRunning) client.send('game', this.game.snapshot());
+    if (this.game.isRunning) client.send('game', { kind: 'paint', ...this.game.snapshot() });
+    if (this.statues.isRunning) client.send('game', this.statues.snapshot());
+    if (this.football.isRunning) client.send('game', this.football.snapshot());
     if (this.tune.track) client.send('music', this.tuneMessage());
   }
 
   protected override onPlayerLeft(id: string) {
-    this.game.leave(id, Date.now());
+    const now = Date.now();
+    this.game.leave(id, now);
+    this.statues.leave(id, now);
+    this.football.leave(id, now);
+    this.hold(id, false);
   }
 
   protected override onGameEvent(event: GameEvent) {
-    if (event.type === 'step') this.game.step(event.who, event.cell);
+    if (event.type === 'step') {
+      this.game.step(event.who, event.cell);
+      this.statues.step(event.who, event.cell);
+      this.football.step(event.who, event.cell);
+    }
     if (!this.rules.length) return;
     // One event at a time, in the order they happened.
     this.firing = this.firing.then(() => this.fire(event)).catch(() => {});
@@ -788,6 +825,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   protected override onClock(now: number) {
     this.game.tick(now);
+    this.statues.tick(now);
+    this.football.tick(now);
     if (!this.rules.length || this.playerCount() === 0) return;
     this.rules.forEach((rule, index) => {
       if (!rule.enabled || rule.trigger.type !== 'every') return;
@@ -811,6 +850,28 @@ export class ApartmentRoom extends BuildingRoom {
   }
 
   private lastConfetti = 0;
+
+  /** Football needs goals on the floor: read them, and put the ball at the middle between them. */
+  private async startFootball(players: string[], now: number) {
+    const { rows } = await needDeps().pool.query<{ key: string; i: number; j: number; w: number; h: number }>(
+      `SELECT f.catalogue_key AS key, p.i, p.j, p.w, p.h FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1`,
+      [this.ownerId],
+    );
+    const goals = new Map<number, 0 | 1>();
+    const centres: { i: number; j: number }[] = [];
+    for (const r of rows) {
+      const team = catalogueEntry(r.key)?.goal;
+      if (team === undefined) continue;
+      for (let a = 0; a < r.w; a++) for (let b = 0; b < r.h; b++) goals.set((r.i + a) * N + (r.j + b), team);
+      centres.push({ i: r.i, j: r.j });
+    }
+    const { blocked } = await this.layout();
+    const mid = centres.length
+      ? { i: Math.round(centres.reduce((s, c) => s + c.i, 0) / centres.length), j: Math.round(centres.reduce((s, c) => s + c.j, 0) / centres.length) }
+      : { i: 3, j: 3 };
+    const kickoff = this.freeCellNear(mid, blocked, '') ?? mid;
+    return this.football.start(players, now, { goals, kickoff });
+  }
 
   /** The piece under a click, if it is base furniture: what it is, which placement, and whether it is lit (a gate: open). */
   private async pieceAt(cell: Cell) {
@@ -872,8 +933,13 @@ export class ApartmentRoom extends BuildingRoom {
       return;
     }
     if (entry.game) {
+      if (this.anyGameRunning()) return this.sendTo(who, 'rule-message', { text: 'Une partie est déjà en cours.' });
       const players = [...this.state.players.keys()];
-      const res = this.game.start(players, Date.now());
+      const now = Date.now();
+      let res: { ok: true } | { ok: false; message: string };
+      if (entry.game === 'paint') res = this.game.start(players, now);
+      else if (entry.game === 'freeze') res = this.statues.start(players, now);
+      else res = await this.startFootball(players, now);
       if (!res.ok) return this.sendTo(who, 'rule-message', { text: res.message });
       this.broadcast('fx', { kind: 'pulse', i: cell.i, j: cell.j, color: 0xffc857 });
       return;

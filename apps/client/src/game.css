@@ -2658,3 +2658,9 @@ body.admin .staff .win-bar button.win-close {
   cursor: pointer;
 }
 
+/* The small window that asks for one line of text. */
+.ask-form { display: flex; flex-direction: column; gap: 8px; min-width: 260px; }
+.ask-label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.ask-label input { padding: 6px 8px; font: inherit; }
+.ask-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+

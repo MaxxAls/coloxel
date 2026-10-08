@@ -43,7 +43,9 @@ export interface CatalogueEntry {
   /** A click puts this hand item (see hand.ts) in the hand of a player standing next to the piece. */
   vendor?: number;
   /** A click starts a team game in the room (the colour race): the server runs it. */
-  game?: 'paint';
+  game?: 'paint' | 'freeze' | 'soccer';
+  /** A football goal of this team (0 red, 1 blue): the other team scores in it. */
+  goal?: 0 | 1;
 }
 
 /** A piece that gives light can be switched on and off by whoever owns the apartment. */
@@ -443,7 +445,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,

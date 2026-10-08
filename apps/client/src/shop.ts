@@ -1,6 +1,7 @@
 import { LOOK_ITEMS, MAX_PETS, PET_SPECIES, PET_TRICKS, petSpecies, type Slot } from '@coloxel/render';
 import { api, type CatalogueData, type MyApartment, type PetData } from './api';
 import { appearance } from './appearance';
+import { askText } from './ask-dialog';
 import { lookCanvas, thumbCanvas } from './look-art';
 import { petCanvas, type PetFrame } from './pets';
 import { pixelIcon } from './pixel-icons';
@@ -534,8 +535,8 @@ export function createShop(options: {
       );
       const rename = el('button', undefined, 'Renommer');
       rename.type = 'button';
-      rename.addEventListener('click', () => {
-        const next = prompt('Nouveau nom (20 caractères au maximum) :', pet.name);
+      rename.addEventListener('click', async () => {
+        const next = await askText({ title: 'Renommer', label: `Nouveau nom pour ${pet.name}`, value: pet.name, maxLength: 20, confirm: 'Renommer' });
         if (next === null) return;
         void spend(async () => {
           const res = await api.renamePet(pet.id, next);

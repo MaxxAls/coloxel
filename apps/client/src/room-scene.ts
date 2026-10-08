@@ -20,6 +20,7 @@ import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, 
 import { hasFloor, levelAt, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
 import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
+import { askText } from './ask-dialog';
 import { createMusic } from './music';
 import { handTexture, avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 
@@ -276,8 +277,15 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
           actions.push({
             label: 'Écrire',
             run: async () => {
-              const text = window.prompt('Texte du panneau (120 lettres au plus ; vide pour l’effacer)', (piece as FurnitureItem).data ?? '');
               furniCard.hide();
+              const text = await askText({
+                title: 'Panneau',
+                label: 'Ce que dit le panneau (vide pour l’effacer)',
+                value: (piece as FurnitureItem).data ?? '',
+                maxLength: 120,
+                allowEmpty: true,
+                confirm: 'Écrire',
+              });
               if (text === null) return;
               const res = await api.writeSign(piece.id, text);
               if (!res.ok) setMessage(res.error);
@@ -790,6 +798,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       }
       view.hand.visible = view.handId !== 0 && pose !== 'lie' && !!handTexture(view.handId);
       if (view.hand.visible) view.hand.position.set(7 * PX * (pose === 'stand' ? turn : 1), (pose === 'sit' ? -9 : -14) * PX - Math.round(bob));
+      // A player frozen in the statues game is ice-blue.
+      view.body.tint = race.frozen.has(p.id) ? 0x9fd8ff : 0xffffff;
       view.shadow.visible = pose === 'stand';
       view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -71 : -64 - Math.round(bob));
       view.zzz.forEach((zed, k) => {
@@ -1116,10 +1126,12 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     }
   });
 
-  // ----- The colour race -----------------------------------------------------------
-  // The server runs the game and says who is on which team and which tiles got painted: here we only draw.
+  // ----- Team games ----------------------------------------------------------------
+  // The server runs the game (colour race, statues, football) and says who is on which team, which tiles got painted,
+  // who is frozen, where the ball is: here we only draw.
   const TEAM_COLORS = [0xe0564f, 0x4f7fe0];
   const TEAM_LABELS = ['Rouge', 'Bleu'];
+  const ROLE_LABELS = ['Gardien', 'Coureur'];
   const paintLayer = new Graphics();
   paintLayer.zIndex = -0.5;
   world.addChild(paintLayer);
@@ -1127,11 +1139,48 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   hud.className = 'game-hud';
   hud.hidden = true;
   document.body.append(hud);
-  let race: { running: boolean; endsAt: number; teams: Record<string, number>; painted: Map<string, number> } = {
-    running: false, endsAt: 0, teams: {}, painted: new Map(),
-  };
+  type Kind = 'paint' | 'freeze' | 'soccer';
+  let race: {
+    kind: Kind;
+    running: boolean;
+    endsAt: number;
+    teams: Record<string, number>;
+    painted: Map<string, number>;
+    frozen: Set<string>;
+    scores: [number, number];
+  } = { kind: 'paint', running: false, endsAt: 0, teams: {}, painted: new Map(), frozen: new Set(), scores: [0, 0] };
   let paintDirty = false;
   let hudHold = 0;
+  // The ball of football: drawn on the floor, it glides to where the server says it is.
+  const ball = { layer: new Graphics(), i: 0, j: 0, x: 0, y: 0, shown: false };
+  ball.layer.visible = false;
+  world.addChild(ball.layer);
+  const placeBall = (i: number, j: number, snap: boolean) => {
+    const c = tileCenter(i, j);
+    ball.i = i;
+    ball.j = j;
+    if (snap || !ball.shown) {
+      ball.x = c.x;
+      ball.y = c.y;
+    }
+    ball.shown = true;
+    ball.layer.visible = true;
+  };
+  const drawBall = (deltaMs: number) => {
+    if (!ball.shown) return;
+    const target = tileCenter(ball.i, ball.j);
+    const k = reduceMotion ? 1 : Math.min(1, deltaMs / 120);
+    ball.x += (target.x - ball.x) * k;
+    ball.y += (target.y - ball.y) * k;
+    const moving = Math.hypot(target.x - ball.x, target.y - ball.y) > 2;
+    const hop = moving && !reduceMotion ? Math.abs(Math.sin(performance.now() / 70)) * 5 : 0;
+    ball.layer.clear();
+    ball.layer.ellipse(ball.x, ball.y + 2, 6, 3).fill({ color: 0x1b1530, alpha: 0.3 });
+    ball.layer.circle(ball.x, ball.y - 6 - hop, 6).fill({ color: 0xf4efe6 }).stroke({ color: 0x1b1530, width: 1 });
+    ball.layer.circle(ball.x - 1, ball.y - 7 - hop, 2).fill({ color: 0x2c2a3a });
+    ball.layer.circle(ball.x + 3, ball.y - 4 - hop, 1.4).fill({ color: 0x2c2a3a });
+    ball.layer.zIndex = ball.i + ball.j + 0.45;
+  };
   const redrawPaint = () => {
     paintLayer.clear();
     for (const [key, team] of race.painted) {
@@ -1147,13 +1196,25 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     for (const t of race.painted.values()) s[t] = (s[t] ?? 0) + 1;
     return s as [number, number];
   };
+  const clock = (now: number) => {
+    const left = Math.max(0, Math.ceil((race.endsAt - now) / 1000));
+    return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  };
   const drawHud = (now: number) => {
     if (race.running) {
-      const [a, b] = scoreOf();
-      const left = Math.max(0, Math.ceil((race.endsAt - now) / 1000));
       const mine = race.teams[user.id];
-      const you = mine === undefined ? 'Tu regardes la partie' : `Tu es dans l’équipe ${TEAM_LABELS[mine]}`;
-      hud.textContent = `${TEAM_LABELS[0]} ${a} · ${b} ${TEAM_LABELS[1]} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${you}`;
+      if (race.kind === 'paint') {
+        const [a, b] = scoreOf();
+        const you = mine === undefined ? 'Tu regardes la partie' : `Tu es dans l’équipe ${TEAM_LABELS[mine]}`;
+        hud.textContent = `${TEAM_LABELS[0]} ${a} · ${b} ${TEAM_LABELS[1]} · ${clock(now)} · ${you}`;
+      } else if (race.kind === 'soccer') {
+        const you = mine === undefined ? 'Tu regardes le match' : `Tu es dans l’équipe ${TEAM_LABELS[mine]}`;
+        hud.textContent = `${TEAM_LABELS[0]} ${race.scores[0]} · ${race.scores[1]} ${TEAM_LABELS[1]} · ${clock(now)} · ${you}`;
+      } else {
+        const runners = Object.values(race.teams).filter((t) => t === 1).length;
+        const you = mine === undefined ? 'Tu regardes la partie' : mine === 0 ? 'Tu es gardien : fige les coureurs' : race.frozen.has(user.id) ? 'Tu es gelé : un coureur doit venir te délivrer' : 'Tu es coureur : fuis, et délivre les gelés';
+        hud.textContent = `Gelés ${race.frozen.size}/${runners} · ${clock(now)} · ${you}`;
+      }
       hud.hidden = false;
     } else if (now < hudHold) {
       hud.hidden = false;
@@ -1163,23 +1224,49 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   };
   room.onGame({
     onStart: (snap) => {
-      race = { running: snap.running, endsAt: snap.endsAt, teams: snap.teams, painted: new Map(snap.cells.map(([i, j, t]) => [`${i},${j}`, t])) };
+      const kind = snap.kind ?? 'paint';
+      race = {
+        kind, running: snap.running, endsAt: snap.endsAt, teams: snap.teams,
+        painted: new Map(snap.cells.map(([i, j, t]) => [`${i},${j}`, t])),
+        frozen: new Set(snap.frozen ?? []), scores: snap.scores ?? [0, 0],
+      };
       paintDirty = true;
-      if (snap.running && snap.teams[user.id] !== undefined) setMessage(`Course des couleurs : tu es dans l’équipe ${TEAM_LABELS[snap.teams[user.id]!]}. Marche sur un maximum de cases !`);
+      if (kind === 'soccer' && snap.ball) placeBall(snap.ball.i, snap.ball.j, true);
+      const mine = snap.teams[user.id];
+      if (snap.running && mine !== undefined) {
+        if (kind === 'paint') setMessage(`Course des couleurs : tu es dans l’équipe ${TEAM_LABELS[mine]}. Marche sur un maximum de cases !`);
+        else if (kind === 'soccer') setMessage(`Football : tu es dans l’équipe ${TEAM_LABELS[mine]}. Marche sur le ballon pour le pousser vers le but adverse !`);
+        else setMessage(mine === 0 ? 'Statues : tu es gardien. Touche les coureurs pour les geler !' : 'Statues : tu es coureur. Fuis les gardiens, et délivre les gelés en les touchant !');
+      }
     },
     onPaint: (p) => {
       race.painted.set(`${p.i},${p.j}`, p.team);
       paintDirty = true;
     },
+    onFreeze: ({ id, frozen }) => {
+      if (frozen) race.frozen.add(id);
+      else race.frozen.delete(id);
+      if (id === user.id) setMessage(frozen ? 'Tu es gelé ! Un coureur doit venir te toucher.' : 'Te voilà délivré, cours !');
+    },
+    onBall: (b) => placeBall(b.i, b.j, false),
+    onGoal: (g) => {
+      race.scores = g.scores;
+      placeBall(g.ball.i, g.ball.j, true);
+      setMessage(`But pour l’équipe ${TEAM_LABELS[g.team]} ! ${g.scores[0]} à ${g.scores[1]}`);
+    },
     onEnd: (end) => {
       race.running = false;
-      const text =
-        end.winner === null
-          ? `Égalité ${end.scores[0]} à ${end.scores[1]} !`
-          : `Équipe ${TEAM_LABELS[end.winner]} gagnante : ${end.scores[end.winner]} cases contre ${end.scores[1 - end.winner]} !`;
+      const kind = end.kind ?? 'paint';
+      let text: string;
+      if (kind === 'freeze') text = end.winner === 0 ? 'Les gardiens ont gelé tous les coureurs !' : 'Les coureurs ont tenu jusqu’au bout !';
+      else if (end.winner === null) text = `Égalité ${end.scores[0]} à ${end.scores[1]} !`;
+      else text = `Équipe ${TEAM_LABELS[end.winner]} gagnante : ${end.scores[end.winner]} contre ${end.scores[1 - end.winner]} !`;
       hud.textContent = text;
       hudHold = Date.now() + 8000;
       setMessage(text);
+      race.frozen.clear();
+      ball.shown = false;
+      ball.layer.visible = false;
       // The painted floor stays a few seconds, then is wiped.
       setTimeout(() => {
         if (!race.running) {
@@ -1323,6 +1410,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     }
 
     if (paintDirty) redrawPaint();
+    drawBall(ticker.deltaMS);
     drawHud(Date.now());
     marks.clear();
     if (hover) {
@@ -1421,6 +1509,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       furniCard.destroy();
       banner.remove();
       hud.remove();
+      ball.layer.destroy();
       soundButton.remove();
       music.destroy();
       abort.abort();
