@@ -9,7 +9,6 @@ import { showAlert, showSummon } from './alerts';
 import { showNotice } from './notice-dialog';
 import { wallet } from './wallet';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
-import { createAura } from './aura';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createFurniCard, type FurniAction } from './furni-card';
 import { createInfoCard, type InfoCard } from './info-card';
@@ -153,8 +152,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   if (import.meta.env.DEV) (window as unknown as { __room: BuildingRoom }).__room = room;
 
   const abort = new AbortController();
-  const aura = createAura();
-  host.stage.addChild(aura.root);
   const world = new Container();
   world.sortableChildren = true;
   host.stage.addChild(world);
@@ -164,8 +161,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   function drawFloor() {
     floor?.destroy();
     const roomLook = target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall);
-    aura.setColor(roomLook.wall.left);
-    aura.place(roomBounds(shape));
     floor = roomSprite(roomLook, shape);
     floor.zIndex = -3;
     world.addChild(floor);
@@ -644,7 +639,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       text: p.nickname,
       style: {
         fontFamily: FONT,
-        fontSize: 8,
+        fontSize: 12,
+        fontWeight: '700',
         fill: p.id === user.id ? 0xffc857 : 0xffffff,
         stroke: { color: 0x1b1530, width: 3 },
       },
@@ -653,7 +649,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     label.anchor.set(0.5, 1);
     label.position.set(0, -36);
     const zzz = ['z', 'Z', 'z'].map((ch) => {
-      const t = new Text({ text: ch, style: { fontFamily: FONT, fontSize: 8, fill: 0xe9d6ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+      const t = new Text({ text: ch, style: { fontFamily: FONT, fontSize: 11, fontWeight: '700', fill: 0xe9d6ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
       t.anchor.set(0.5);
       t.visible = false;
       return t;
@@ -708,10 +704,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         const sprite = new Sprite(petTexture(species, Number(color) || 0, 0));
         sprite.anchor.set(0.5, 1);
         sprite.position.set(0, 5);
-        const label = new Text({ text: name.join(':'), style: { fontFamily: FONT, fontSize: 7, fill: 0xfff3d6, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+        const label = new Text({ text: name.join(':'), style: { fontFamily: FONT, fontSize: 11, fontWeight: '700', fill: 0xfff3d6, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
         label.anchor.set(0.5, 0);
         label.position.set(0, 9);
-        const mood = new Text({ text: '…', style: { fontFamily: FONT, fontSize: 9, fill: 0xbfc8ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+        const mood = new Text({ text: '…', style: { fontFamily: FONT, fontSize: 12, fontWeight: '700', fill: 0xbfc8ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
         mood.anchor.set(0.5, 1);
         mood.position.set(0, -14);
         mood.visible = false;
@@ -1425,7 +1421,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
   const tick = (ticker: Ticker) => {
     const now = performance.now();
-    if (!reduceMotion) aura.tick(now);
     syncPlayers(ticker.deltaMS, now);
     layoutBubbles(now, ticker.deltaMS);
     drawFlashes(now);
@@ -1575,7 +1570,6 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       app.ticker.remove(tick);
       void room.leave();
       world.destroy({ children: true });
-      aura.root.destroy({ children: true });
     },
   };
 }

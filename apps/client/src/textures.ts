@@ -38,9 +38,8 @@ export function avatarTexture(look: Look, facing: Facing, frame: Frame, blink = 
   const key = `${pose}.${Object.values(look).join(".")}.${facing}.${frame}.${blink ? 1 : 0}`;
   let tex = avatarCache.get(key);
   if (!tex) {
-    // The sprite is drawn at twice the resolution it is shown at, so it is smoothed down, not sampled.
-    tex = Texture.from(avatarFrame(look, facing, frame, blink, pose));
-    tex.source.scaleMode = 'linear';
+    // The sprite is drawn at the size it is shown at: sampled as it is, crisp.
+    tex = nearest(Texture.from(avatarFrame(look, facing, frame, blink, pose)));
     avatarCache.set(key, tex);
   }
   return tex;

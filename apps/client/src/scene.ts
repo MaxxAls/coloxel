@@ -50,4 +50,5 @@ export interface Scene {
   destroy(): void;
 }
 
-export const FONT = '"Press Start 2P", ui-monospace, monospace';
+/** Names and labels drawn in the scene: a clean, bold sans, like the rest of the interface. */
+export const FONT = '"Ubuntu", "Segoe UI", system-ui, sans-serif';

@@ -391,7 +391,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
   const labels = new Container();
   const hallSign = new Text({
     text: 'HALL',
-    style: { fontFamily: FONT, fontSize: 16, fill: 0xffc857 },
+    style: { fontFamily: FONT, fontSize: 20, fontWeight: '700', fill: 0xffc857 },
     resolution: 2,
   });
   hallSign.anchor.set(0.5, 0);
@@ -485,7 +485,7 @@ export async function createBuildingScene(host: SceneHost): Promise<Scene | { er
       labels.addChild(plate);
       const t = new Text({
         text: name,
-        style: { fontFamily: FONT, fontSize: 8, fill: a.mine ? 0xffc857 : 0xffffff },
+        style: { fontFamily: FONT, fontSize: 11, fontWeight: '700', fill: a.mine ? 0xffc857 : 0xffffff },
         resolution: 2,
       });
       t.position.set(r.x + 7, r.y + 7);

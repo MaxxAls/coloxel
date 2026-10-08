@@ -21,9 +21,12 @@ export type Frame = 0 | 1 | 2;
 /**
  * The drawing code places the body on a compact 30 x 58 sketch; a vertical warp then stretches it into a person
  * (see `BODY_WARP`): the head keeps its size, the torso and arms grow by a quarter, the legs almost double.
- * The avatar is drawn at RES times the resolution of its design grid: the room shows it at 1 / RES of the zoom.
+ * The avatar is shown at RES pixels per unit of its design grid: one pixel of the sprite is one pixel of the screen,
+ * crisp, with a one pixel outline. It is painted at twice that (DRAW_RES, a whole number, so the shapes land on
+ * whole pixels) and each 2 x 2 block is averaged into one pixel: clean edges, fine details.
  */
-export const RES = 2;
+export const RES = 1.5;
+const DRAW_RES = RES * 2;
 /** Where the torso starts and ends on the sketch, where the legs end (the top of a planted shoe), and how much each part grows. */
 const WARP_TORSO = [25.5, 40.5, 1.25] as const;
 const WARP_LEGS = [40.5, 49, 1.9] as const;
@@ -1353,7 +1356,7 @@ function squeezeBody(p: Painter, from: number, k: number): void {
 
 function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: boolean, pose: Pose): Painter {
   const { w, h } = avatarSize(pose);
-  const p = new Painter(w / RES, h / RES, RES);
+  const p = new Painter(w / RES, h / RES, DRAW_RES);
   const pal = paletteOf(look, tint);
   if (pose === 'lie') {
     // The body is drawn lower on the canvas than the head; drawLying moves the head itself.
@@ -1392,11 +1395,25 @@ export function avatarPixels(
   pose: Pose = 'stand',
   tint: Tint = {},
 ): Uint8ClampedArray {
-  return outlinePixels(build(look, tint, facing, frame, blink, pose));
+  return outlinePixels(halve(build(look, tint, facing, frame, blink, pose)));
+}
+
+/** A painted canvas at half its size: each 2 x 2 block becomes one pixel, its average colour, if at least half of it is painted. */
+function halve(p: Painter): Pick<Painter, 'w' | 'h' | 'get'> {
+  const w = Math.floor(p.w / 2), h = Math.floor(p.h / 2);
+  const px: (RGB | null)[] = new Array(w * h).fill(null);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const cells = [p.get(2 * x, 2 * y), p.get(2 * x + 1, 2 * y), p.get(2 * x, 2 * y + 1), p.get(2 * x + 1, 2 * y + 1)].filter((c): c is RGB => !!c);
+      if (cells.length < 2) continue;
+      px[y * w + x] = [0, 1, 2].map((k) => Math.round(cells.reduce((a, c) => a + c[k]!, 0) / cells.length)) as RGB;
+    }
+  }
+  return { w, h, get: (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? null : px[y * w + x] ?? null) };
 }
 
 /** RGBA pixels of a painted canvas with the style guide's outline around it. */
-export function outlinePixels(p: Painter): Uint8ClampedArray {
+export function outlinePixels(p: Pick<Painter, 'w' | 'h' | 'get'>): Uint8ClampedArray {
   const { w, h } = p;
   const data = new Uint8ClampedArray(w * h * 4);
   const put = (x: number, y: number, c: RGB) => {

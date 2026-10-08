@@ -1,7 +1,6 @@
 import { Application, Container } from 'pixi.js';
 import type { User } from './api';
 import { api } from './api';
-import { createBackdrop } from './backdrop';
 import { createBuildingScene } from './building-scene';
 import { appearance } from './appearance';
 import { createFriends } from './friends';
@@ -48,7 +47,7 @@ export async function startApp(user: User) {
   // The canvas is the whole window; the page's gradient shows through behind the scene.
   await app.init({ resizeTo: window, backgroundAlpha: 0, antialias: false, roundPixels: true });
   try {
-    await document.fonts.load('8px "Press Start 2P"');
+    await document.fonts.load('700 12px "Ubuntu"');
   } catch {
     // The fallback monospace font is fine.
   }
@@ -73,7 +72,7 @@ export async function startApp(user: User) {
   const chatSlot = make('div', 'dock-chat');
   const dockEnd = make('div', 'dock-end');
   dock.append(nav, chatSlot, dockEnd);
-  document.body.append(createBackdrop(), app.canvas, vignette, hud, infoSlot, dock, toast);
+  document.body.append(app.canvas, vignette, hud, infoSlot, dock, toast);
 
   let scene: Scene | null = null;
   let current: Target | null = null;

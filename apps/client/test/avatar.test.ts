@@ -32,9 +32,11 @@ describe('avatar', () => {
 
   it('outlines the silhouette with the style guide color', () => {
     const px = avatarPixels(lookFor('x'));
+    // Down the middle column: the first pixel met is the outline on top of the head.
+    const x = Math.floor(AVATAR_W / 2);
     let y = 0;
-    while (alpha(px, 5 * RES, y) === 0) y++;
-    expect(rgb(px, 5 * RES, y)).toBe(OUTLINE);
+    while (alpha(px, x, y) === 0) y++;
+    expect(rgb(px, x, y)).toBe(OUTLINE);
   });
 
   it('gives the same player the same look, and different players different ones', () => {

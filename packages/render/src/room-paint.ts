@@ -56,8 +56,6 @@ function smooth(x: number, y: number): number {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 const fract = (v: number) => v - Math.floor(v);
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-const bayer = (x: number, y: number) => (BAYER[((y & 3) << 2) | (x & 3)]! + 0.5) / 16;
 
 // ----- Geometry -----------------------------------------------------------------------
 
@@ -399,7 +397,7 @@ function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py:
   for (const lu of pillars.slice(0, -1).map(([p0]) => p0 + 2.2)) {
     const d = Math.hypot((u - lu) * 32, v - 74);
     if (d < 4) return d < 2 ? [0xff, 0xf6, 0xcc] : [0xff, 0xd8, 0x70];
-    if (d < 40) return tone(wall, 0.2 * (1 - d / 40) * (bayer(px, py) < 0.85 ? 1 : 0.4));
+    if (d < 40) return tone(wall, 0.2 * (1 - d / 40) * (1 - d / 40));
   }
   return null;
 }
@@ -416,7 +414,7 @@ function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py
     out = tone(out, 0.07 * sheen * sheen);
   }
   // Contact shadow along the walls.
-  if (wallDist < 0.45) out = tone(out, -0.16 * (1 - wallDist / 0.45) * (bayer(px, py) < 0.8 ? 1 : 0.5));
+  if (wallDist < 0.45) out = tone(out, -0.16 * (1 - wallDist / 0.45) ** 1.5);
 
   if (look.decor === 'hall') {
     // A red carpet from the glass doors to the front of the hall, with a gold border and a woven pattern.
@@ -435,11 +433,11 @@ function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py
     }
     return out;
   }
-  // A beam of sunlight from the window, soft and dithered at its edges.
+  // A beam of sunlight from the window, fading softly at its edges.
   const bu = u - (3.1 + 0.55 * v), bw = 1.65;
   if (v < 4.3 && bu > 0 && bu < bw) {
     const fade = Math.min(1, bu / 0.2, (bw - bu) / 0.2, (4.3 - v) / 0.8);
-    if (fade > bayer(px, py)) out = tone(out, 0.12 + (noise(px >> 1, py >> 1) - 0.5) * 0.03);
+    if (fade > 0) out = tone(out, (0.12 + (noise(px >> 1, py >> 1) - 0.5) * 0.03) * fade);
     // The window bars cast their shadow in the beam.
     if (Math.abs(fract(bu / bw * 2) - 0.5) < 0.05 && fade > 0.6) out = tone(out, -0.07);
   }

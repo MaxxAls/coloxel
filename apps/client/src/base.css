@@ -44,7 +44,7 @@
       .item-card-body img { image-rendering: auto; background: #120f22; border: 1px solid var(--line); border-radius: 8px; flex: none; }
       .item-card .meta { min-width: 0; display: grid; gap: 4px; }
       .item-card .meta p { margin: 0; overflow-wrap: anywhere; }
-      .item-card .name { font-family: 'Press Start 2P', monospace; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+      .item-card .name { font-family: 'Ubuntu', system-ui, sans-serif; font-weight: 700; font-size: 15px; line-height: 1.3; overflow-wrap: anywhere; }
       .item-card-actions { display: flex; gap: 8px; }
       .inventory { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow-y: auto; }
       .inventory li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }

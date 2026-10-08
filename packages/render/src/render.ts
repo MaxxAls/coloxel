@@ -56,9 +56,7 @@ function noise(x: number, y: number): number {
   return (h >>> 0) / 4294967296;
 }
 
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 /** Ordered-dither threshold in (0, 1) for a pixel: turns smooth gradients into pixel-art bands. */
-const bayer = (x: number, y: number) => (BAYER[((y & 3) << 2) | (x & 3)]! + 0.5) / 16;
 
 const fract = (v: number) => v - Math.floor(v);
 /** Smooth value noise: blotches bigger than a pixel. */
@@ -256,9 +254,9 @@ class Canvas {
       for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(this.width - 1, Math.ceil(cx + r)); x++) {
         const d = Math.hypot(x + 0.5 - cx, (y + 0.5 - cy) * 1.15) / r;
         if (d >= 1) continue;
-        // Four pixel-art bands instead of a smooth fade.
-        const k = Math.floor((1 - d) * (1 - d) * strength * 4 + bayer(x, y) * 0.9) / 4;
-        if (k <= 0) continue;
+        // A smooth fade from the centre.
+        const k = (1 - d) * (1 - d) * strength;
+        if (k <= 0.01) continue;
         const i = (y * this.width + x) * 4;
         const alpha = this.data[i + 3]!;
         if (alpha > 40) {
@@ -413,17 +411,16 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       const rx = r * 1.41 * SCALE, ry = rx / 2;
       const side = rgb(hex(p.side));
       const top = rgb(hex(p.top ?? toHex(tone(side, 0.18))));
-      const TONES = [-0.34, -0.22, -0.1, 0, 0.1, 0.2];
-      // Curved side: light from the upper left, banded like pixel art, darker toward the floor.
+      // Curved side: light from the upper left in a smooth gradient, darker toward the floor.
       for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
         const nx = Math.max(-1, Math.min(1, (x + 0.5 - cx) / rx));
         const nz = Math.sqrt(1 - nx * nx);
         const lam = -0.6 * nx + 0.55 * nz;
         const yb = cb + ry * nz;
         for (let y = Math.floor(ct); y < yb; y++) {
-          const idx = Math.max(0, Math.min(5, Math.round((lam * 0.5 + 0.5) * 5 + (bayer(x, y) - 0.5) * 0.8)));
+          const lit = -0.34 + Math.max(0, Math.min(1, lam * 0.5 + 0.5)) * 0.54;
           const fall = height > 0 ? 0.1 * Math.min(1, Math.max(0, (y - ct) / (height + ry))) : 0;
-          cv.put(x, y, tone(side, TONES[idx]! - fall + grain(x, y, 0.04)));
+          cv.put(x, y, tone(side, lit - fall + grain(x, y, 0.04)));
         }
       }
       // A thin glint along the curved side.
@@ -446,7 +443,6 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       if (sz - r / SCALE <= 12) addFootprint(fp, sx - r / SCALE * 0.9, sx + r / SCALE * 0.9, sy - r / SCALE * 0.9, sy + r / SCALE * 0.9, sz + r / SCALE);
       const [cx, cy] = P(sx, sy, sz);
       const c = rgb(hex(p.c));
-      const TONES = [-0.42, -0.28, -0.14, 0, 0.12, 0.24];
       for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
         for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
           const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / r;
@@ -458,8 +454,8 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
           if (lam > 0.93 && r >= 3) { cv.put(x, y, tone(c, 0.62)); continue; }
           // Bounce light on the lower right rim keeps the dark side from going flat.
           const bounce = d2 > 0.62 && dx + dy > 0.4 ? 0.12 : 0;
-          const idx = Math.max(0, Math.min(5, Math.round(((lam + 1) / 2) * 5 + (bayer(x, y) - 0.5) * 0.9)));
-          cv.put(x, y, tone(c, TONES[idx]! + bounce + grain(x, y, 0.04)));
+          const lit = -0.42 + Math.max(0, Math.min(1, (lam + 1) / 2)) * 0.66;
+          cv.put(x, y, tone(c, lit + bounce + grain(x, y, 0.04)));
         }
       }
       return;
@@ -492,7 +488,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
   }
 }
 
-/** A soft contact shadow on the floor under the footprint, dithered to stay pixel art. */
+/** A soft contact shadow on the floor under the footprint. */
 function castShadow(d: Uint8ClampedArray, fp: Footprint, frame: Frame): void {
   if (!fp.any) return;
   // Light comes from the upper left: the shadow leans toward the viewer's right, further for tall objects.
@@ -510,9 +506,9 @@ function castShadow(d: Uint8ClampedArray, fp: Footprint, frame: Frame): void {
       const oy = fy < y0 ? y0 - fy : fy > y1 ? fy - y1 : 0;
       const dist = Math.hypot(ox, oy);
       if (dist >= soft) continue;
+      // A soft shadow: its strength fades smoothly toward the edge (alpha stays under the silhouette threshold).
       const strength = 1 - dist / soft;
-      if (strength <= bayer(px, py) * 0.9) continue;
-      d[i] = OUTLINE[0]; d[i + 1] = OUTLINE[1]; d[i + 2] = OUTLINE[2]; d[i + 3] = 74;
+      d[i] = OUTLINE[0]; d[i + 1] = OUTLINE[1]; d[i + 2] = OUTLINE[2]; d[i + 3] = Math.round(78 * strength);
     }
   }
 }

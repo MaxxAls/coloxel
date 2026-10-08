@@ -105,9 +105,9 @@ body {
 }
 .cat-nav h3 {
   margin: 8px 6px 2px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 8px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  font-weight: 700;
   color: #8d82c4;
   text-transform: uppercase;
 }
@@ -153,8 +153,9 @@ body {
 }
 .cat-banner h2 {
   margin: 0 0 3px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--ui-font);
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1.4;
   color: #fff7d6;
   text-shadow: 2px 2px 0 #2a2050;
@@ -645,8 +646,9 @@ body.in-game {
   z-index: 1;
 }
 .win-title {
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 10px;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-weight: 700;
   letter-spacing: 0.5px;
   color: #fff7d6;
   text-shadow: 1px 1px 0 #2a2050;
@@ -846,8 +848,9 @@ body.in-game {
 }
 .hud-balance strong {
   min-width: 2.2ch;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--ui-font);
+  font-size: 16px;
+  font-weight: 700;
   color: #fff7d6;
   text-shadow: 1px 1px 0 #2a2050;
 }
@@ -1006,9 +1009,9 @@ body.in-game {
 }
 .wd-heading {
   margin: 4px 0 6px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 700;
   color: #8d82c4;
   text-transform: uppercase;
 }
@@ -1130,8 +1133,9 @@ body.in-game {
 }
 .shop-banner h2 {
   margin: 0 0 3px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 13px;
+  font-family: var(--ui-font);
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1.4;
   color: #fff7d6;
   text-shadow: 2px 2px 0 #1b1530;
@@ -1427,8 +1431,9 @@ body.in-game {
 }
 .vip-text h3 {
   margin: 0;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 15px;
+  font-family: var(--ui-font);
+  font-size: 19px;
+  font-weight: 700;
   color: #fff7d6;
 }
 .vip-perks {
@@ -1564,9 +1569,9 @@ body.in-game {
 }
 .friend-lists h3 {
   margin: 0 0 6px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 700;
   color: #8d82c4;
 }
 .friend-row {
@@ -1741,9 +1746,9 @@ body.in-game {
 }
 .staff-list h3 {
   margin: 8px 0 0;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 700;
   color: #8d82c4;
 }
 .staff-list p,
@@ -1960,9 +1965,9 @@ button.dash-card:hover {
   filter: none;
 }
 .dash-card strong {
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 18px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 22px;
+  font-weight: 700;
   color: var(--accent);
 }
 .dash-alert {
@@ -2007,9 +2012,9 @@ body.admin .admin-bar {
 }
 body.admin .admin-bar h1 {
   margin: 0;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 14px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 18px;
+  font-weight: 700;
   color: var(--accent);
 }
 body.admin .admin-bar a {
@@ -2080,8 +2085,9 @@ body.admin .staff .win-bar button.win-close {
 }
 .rules-editor > summary {
   cursor: pointer;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 10px;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-weight: 700;
   color: var(--accent);
   padding: 4px 0;
 }
@@ -2129,8 +2135,9 @@ body.admin .staff .win-bar button.win-close {
 }
 .rule-label {
   min-width: 52px;
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 8px;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  font-weight: 700;
   color: var(--accent);
 }
 .rule-row .params,
@@ -2193,9 +2200,9 @@ body.admin .staff .win-bar button.win-close {
   border-color: #5ab8ff;
 }
 .alert-card strong {
-  font-family: 'Press Start 2P', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 400;
+  font-family: var(--ui-font);
+  font-size: 14px;
+  font-weight: 700;
   color: #ffc857;
 }
 .alert-card.event strong {
