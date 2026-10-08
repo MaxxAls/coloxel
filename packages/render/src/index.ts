@@ -85,3 +85,4 @@ export {
 } from './avatar';
 export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, roomBounds, tileAt, tileCenter } from './room';
 export { paintRoom, type RoomLook } from './room-paint';
+export { CHICKS } from './catalog-mechanisms';

@@ -36,6 +36,13 @@ export interface CatalogueEntry {
   teleport?: boolean;
   /** A crate: a click from a cell next to it slides it one cell away, if there is room. */
   pushable?: boolean;
+  /**
+   * A toy of chance, for show only: a die shows 1 to 6, a wheel stops on a colour, a bottle points at someone, an egg
+   * cracks and hatches into a chick of a colour nobody knows in advance. Nothing is ever won or lost with them.
+   */
+  toy?: 'dice' | 'wheel' | 'bottle' | 'egg';
+  /** Offered nowhere (not in the shop, not free to take): one only gets it another way (a chick hatches from an egg). */
+  hidden?: boolean;
   /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
@@ -504,7 +511,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'toy' | 'hidden' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -886,7 +893,7 @@ export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey
  */
 export function stackable(entry: CatalogueEntry | undefined): boolean {
   if (!entry) return true;
-  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable;
+  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable && !entry.toy;
 }
 
 /**

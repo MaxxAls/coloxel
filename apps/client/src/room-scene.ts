@@ -1193,6 +1193,38 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   room.onFx((fx) => {
     if (flashes.length < 24) flashes.push({ ...fx, at: performance.now() });
   });
+  // A toy's result rises over it for a moment, in a little bubble.
+  const toyTexts: { box: Container; at: number }[] = [];
+  const TOY_MS = 2600;
+  room.onToy((toy) => {
+    const label = new Text({ text: toy.text, style: { fontFamily: FONT, fontSize: 16, fontWeight: '700', fill: 0x1b1530 }, resolution: 2 });
+    label.anchor.set(0.5);
+    const box = new Container();
+    const back = new Graphics();
+    back.roundRect(-label.width / 2 - 7, -label.height / 2 - 3, label.width + 14, label.height + 6, 7).fill(0xffffff).stroke({ color: 0x1b1530, width: 1.5 });
+    box.addChild(back, label);
+    const c = tileCenter(toy.i, toy.j);
+    box.position.set(c.x, c.y - 52);
+    box.zIndex = 8700;
+    world.addChild(box);
+    toyTexts.push({ box, at: performance.now() });
+    if (toyTexts.length > 8) toyTexts.shift()!.box.destroy({ children: true });
+  });
+  const drawToys = (now: number) => {
+    for (let k = toyTexts.length - 1; k >= 0; k--) {
+      const t = toyTexts[k]!;
+      const age = (now - t.at) / TOY_MS;
+      if (age >= 1) {
+        t.box.destroy({ children: true });
+        toyTexts.splice(k, 1);
+        continue;
+      }
+      // A little pop, a slow climb, then it fades.
+      t.box.scale.set(age < 0.08 ? 0.6 + age * 5 : 1);
+      t.box.pivot.y = age * 18;
+      t.box.alpha = age > 0.75 ? (1 - age) / 0.25 : 1;
+    }
+  };
   // What a rule says to us, shown like a thought of the apartment.
   room.onRuleMessage((text) => {
     host.notify(text);
@@ -1508,6 +1540,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     syncPlayers(ticker.deltaMS, now);
     layoutBubbles(now, ticker.deltaMS);
     drawFlashes(now);
+    drawToys(now);
     drawParty(now, ticker.deltaMS);
 
     if (!reduceMotion) {

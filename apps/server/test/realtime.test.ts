@@ -1004,6 +1004,49 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       }
     }, 40000);
 
+    it('plays toys of chance for show: a die, a wheel, a bottle, and an egg that hatches into a chick', async () => {
+      const owner = await signUp('mx_toys');
+      await pool.query('DELETE FROM placements WHERE user_id = $1', [owner.id]);
+      await place(owner, 'grosde', 4, 4);
+      await place(owner, 'rouecouleurs', 4, 6);
+      await place(owner, 'bouteille', 6, 4);
+      const egg = await place(owner, 'oeufsurprise', 6, 6);
+      const room = await joinApartment(owner, owner.id);
+      const lines: string[] = [];
+      const toys: string[] = [];
+      room.onMessage('system', (m: { text: string }) => lines.push(m.text));
+      room.onMessage('fx', (m: { kind?: string; text?: string }) => {
+        if (m.kind === 'toy') toys.push(m.text ?? '');
+      });
+      await until(() => playerOf(room, owner.id));
+      room.send('move', { i: 5, j: 5 });
+      await until(() => at(room, owner.id, 5, 5), walk);
+      room.send('use', { i: 4, j: 4 });
+      await until(() => lines.some((l) => /lance le dé : [1-6]\./.test(l)));
+      expect(Number(toys.at(-1))).toBeGreaterThanOrEqual(1);
+      await new Promise((r) => setTimeout(r, 600));
+      room.send('use', { i: 4, j: 6 });
+      await until(() => lines.some((l) => /la roue : elle s’arrête sur le/.test(l)));
+      await new Promise((r) => setTimeout(r, 600));
+      room.send('use', { i: 6, j: 4 });
+      await until(() => lines.some((l) => /tu es seul ici/.test(l)));
+      // One knock short of hatching: the next one hatches it into a chick, the same piece, another key.
+      await pool.query("UPDATE placements SET data = '7' WHERE furniture_id = $1", [egg]);
+      await new Promise((r) => setTimeout(r, 600));
+      room.send('use', { i: 6, j: 6 });
+      await until(() => lines.some((l) => /L’œuf éclot : un poussin/.test(l)));
+      // The egg is gone, a chick stands where it was.
+      expect((await pool.query('SELECT 1 FROM furniture WHERE id = $1', [egg])).rowCount).toBe(0);
+      const { rows } = await pool.query<{ key: string }>(
+        'SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND p.i = 6 AND p.j = 6',
+        [owner.id],
+      );
+      expect(rows[0]!.key).toMatch(/^poussin/);
+      // Toys give nothing: the player's Pixels did not move.
+      const pixels = await pool.query<{ pixels: number }>('SELECT pixels FROM users WHERE id = $1', [owner.id]);
+      expect(pixels.rows[0]!.pixels).toBe(100);
+    }, 30000);
+
     it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
       const owner = await signUp('mx_step');
       await saveRules(owner, [rule({ type: 'step', cell: { i: 3, j: 3 } }, [{ type: 'light', piece: await lampOf(owner), mode: 'off' }])]);

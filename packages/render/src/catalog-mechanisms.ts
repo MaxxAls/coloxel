@@ -296,6 +296,82 @@ const pushCrate: Recipe = {
   ],
 };
 
+/** A big white die, the pips of 5 on top, 3 on the right side, 2 on the left. */
+const die: Recipe = {
+  name: 'Gros dé',
+  parts: [
+    box(-4.5, 4.5, -4.5, 4.5, 0, 9, '#f4efe6'),
+    box(-4.2, 4.2, -4.2, 4.2, 9, 9.3, '#ffffff'),
+    ...[[-2.4, -2.4], [2.4, 2.4], [-2.4, 2.4], [2.4, -2.4], [0, 0]].map(([x, y]) => pix(x!, y!, 9.4, 0.8, 0.8, '#d6334f')),
+    pix(4.5, -2.6, 7.4, 1, 1, '#2a2140'),
+    pix(4.5, 0, 4.6, 1, 1, '#2a2140'),
+    pix(4.5, 2.6, 1.8, 1, 1, '#2a2140'),
+    pix(-2.4, 4.5, 6.4, 1, 1, '#2a2140'),
+    pix(2.4, 4.5, 2.6, 1, 1, '#2a2140'),
+  ],
+};
+
+/** A wheel of colours on a stand, with its pointer on top. */
+const WHEEL_COLOURS = ['#e0564f', '#ffc857', '#2fc48d', '#3ea7ff', '#b78cff', '#ff8fb1', '#ff9a5a', '#f4efe6'];
+const wheel: Recipe = {
+  name: 'Roue des couleurs',
+  parts: [
+    box(-3, 3, -5, 5, 0, 2, WOOD_DARK),
+    box(-1, 1, -0.8, 0.8, 2, 14, WOOD),
+    // The face of the wheel, toward the viewer's right: eight slices around a hub.
+    ...WHEEL_COLOURS.map((c, k) => {
+      const a0 = (k / 8) * Math.PI * 2, a1 = ((k + 1) / 8) * Math.PI * 2, r = 9;
+      return quad(c, [1.2, 0, 22], [1.2, Math.cos(a0) * r, 22 + Math.sin(a0) * r], [1.2, Math.cos((a0 + a1) / 2) * r, 22 + Math.sin((a0 + a1) / 2) * r], [1.2, Math.cos(a1) * r, 22 + Math.sin(a1) * r]);
+    }),
+    { t: 'circle', x: 1.4, y: 0, z: 22, r: 1.4, c: '#ffc857', c2: '#c9921a' },
+    quad('#2a2140', [1.4, -1, 32.6], [1.4, 1, 32.6], [1.4, 0, 30]),
+  ],
+};
+
+/** A green bottle lying on a little round rug. */
+const bottle: Recipe = {
+  name: 'Bouteille à faire tourner',
+  parts: [
+    { t: 'cyl', x: 0, y: 0, r: 6, z0: 0, z1: 0.6, side: '#8f5fd0', top: '#b78cff' },
+    box(-4.5, 2, -1.3, 1.3, 0.6, 3.2, '#2f9e5a'),
+    box(-4.2, 1.8, -1, 1, 3.2, 3.5, '#5fd08a'),
+    box(2, 4.2, -0.6, 0.6, 1.2, 2.6, '#2f9e5a'),
+    box(4.2, 5, -0.7, 0.7, 1.1, 2.7, '#c98f5e'),
+    pix(-3, -1, 3.5, 3, 0.5, '#c8ffd8'),
+  ],
+};
+
+/** A big speckled egg in its nest of straw. */
+const egg: Recipe = {
+  name: 'Œuf surprise',
+  parts: [
+    { t: 'cyl', x: 0, y: 0, r: 5.4, z0: 0, z1: 2.4, side: '#c99a4a', top: '#e8c070' },
+    ball(0, 0, 8, 5, '#fff3e0'),
+    ball(0, 0, 13, 3.6, '#fff8ec'),
+    pix(-2, 2, 9, 1, 1, '#e0a060'),
+    pix(1.4, -1, 12, 1, 1, '#e0a060'),
+    pix(2.6, 2, 7, 1, 1, '#e0a060'),
+    pix(-1, -2.6, 14, 1, 1, '#e0a060'),
+  ],
+};
+
+/** The chick that comes out of the egg, in the colour the egg chose. */
+const chick = (name: string, body: string, light: string): Recipe => ({
+  name,
+  parts: [
+    { t: 'cyl', x: 0, y: 0, r: 5.4, z0: 0, z1: 2.4, side: '#c99a4a', top: '#e8c070' },
+    ball(-1, 0, 6, 4, body),
+    ball(1.6, 0, 10.4, 2.8, light),
+    box(4, 4.2 + 1.6, -0.5, 0.5, 9.6, 10.4, '#ff9a3a'),
+    pix(3.4, -1.4, 11.4, 0.6, 0.6, '#2a2140'),
+    pix(3.4, 1.4, 11.4, 0.6, 0.6, '#2a2140'),
+    ball(-1.4, -3.6, 6.6, 1.6, light),
+    ball(-1.4, 3.6, 6.6, 1.6, light),
+  ],
+});
+/** The colours an egg may hatch into: same chick, a different coat. */
+export const CHICKS: readonly string[] = ['poussinjaune', 'poussinrose', 'poussinbleu', 'poussinvert'];
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
@@ -316,5 +392,13 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'tapisroulant', category: 'tech', recipe: roller, extras: { price: 50, walkable: true, roller: true } },
     { key: 'teleporteur', category: 'tech', recipe: teleportBooth, extras: { price: 120, walkable: true, teleport: true, glow: { z: 16, color: 0x8ee8ff, radius: 44 } } },
     { key: 'caissepuzzle', category: 'decor', recipe: pushCrate, extras: { price: 30, pressable: true, pushable: true } },
+    { key: 'grosde', category: 'decor', recipe: die, extras: { price: 25, pressable: true, toy: 'dice' } },
+    { key: 'rouecouleurs', category: 'decor', recipe: wheel, extras: { price: 60, pressable: true, toy: 'wheel' } },
+    { key: 'bouteille', category: 'decor', recipe: bottle, extras: { price: 20, pressable: true, toy: 'bottle' } },
+    { key: 'oeufsurprise', category: 'decor', recipe: egg, extras: { price: 30, pressable: true, toy: 'egg' } },
+    { key: 'poussinjaune', category: 'decor', recipe: chick('Poussin jaune', '#ffd84a', '#ffe88a'), extras: { price: 30, hidden: true } },
+    { key: 'poussinrose', category: 'decor', recipe: chick('Poussin rose', '#ff9cc0', '#ffc0d8'), extras: { price: 30, hidden: true } },
+    { key: 'poussinbleu', category: 'decor', recipe: chick('Poussin bleu', '#7cc0ff', '#b0dcff'), extras: { price: 30, hidden: true } },
+    { key: 'poussinvert', category: 'decor', recipe: chick('Poussin vert', '#7ad778', '#b0f0a8'), extras: { price: 30, hidden: true } },
   ];
 }

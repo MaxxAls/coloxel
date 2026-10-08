@@ -58,7 +58,7 @@ export function registerFurnitureRoutes(
   app.get('/api/catalogue', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     return {
-      furniture: CATALOGUE.map((e) => ({ key: e.key, name: e.name, category: e.category, price: e.price })),
+      furniture: CATALOGUE.filter((e) => !e.hidden).map((e) => ({ key: e.key, name: e.name, category: e.category, price: e.price })),
       floors: FLOORS.map((f) => ({ id: f.id, name: f.name, a: f.a, b: f.b })),
       walls: WALLS.map((w) => ({ id: w.id, name: w.name, left: w.left, right: w.right })),
     };

@@ -70,8 +70,12 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     const { sid } = await signUp('alice');
     const res = await app.inject({ method: 'GET', url: '/api/catalogue', cookies: as(sid) });
     const body = res.json();
-    expect(body.furniture).toHaveLength(CATALOGUE.length);
-    expect(body.furniture.map((f: { key: string; price: number }) => [f.key, f.price])).toEqual(CATALOGUE.map((e) => [e.key, e.price]));
+    // What is offered nowhere (a chick hatches from an egg) is not listed.
+    const offered = CATALOGUE.filter((e) => !e.hidden);
+    expect(body.furniture).toHaveLength(offered.length);
+    expect(body.furniture.map((f: { key: string; price: number }) => [f.key, f.price])).toEqual(offered.map((e) => [e.key, e.price]));
+    const chick = await app.inject({ method: 'POST', url: '/api/shop/buy', payload: { kind: 'furniture', key: 'poussinrose' }, cookies: as(sid) });
+    expect(chick.statusCode).toBe(404);
     expect(body.furniture.filter((f: { price: number }) => f.price === 0).length).toBeGreaterThanOrEqual(20);
     expect(body.floors).toHaveLength(FLOORS.length);
     expect(body.walls).toHaveLength(WALLS.length);

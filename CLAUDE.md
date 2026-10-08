@@ -54,8 +54,8 @@ Avant de considérer une tâche finie : `npm run typecheck` et `npm test` passen
 3. **Une seule source de rendu.** Tout sprite d'objet sort de `packages/render`. Le client ne redessine jamais un objet à sa façon, sinon l'objet ne serait plus le même partout.
 4. **Aucune recette du modèle n'est rendue sans passer par `validateRecipe`** (`packages/generator`). La sortie du modèle est une donnée non fiable.
 5. **Aucun asset, nom ou terme repris de Habbo** (pas de « mobis », pas d'hôtel, pas de sprites d'origine). Univers : immeubles en coupe, apparts en isométrique 2:1.
-6. **Pas de jeux d'argent** : pas de casino, de dés, ni de loot boxes payantes.
-7. **Mineurs** : le jeu les accepte à terme. Ne jamais exposer d'info personnelle, filtrer tout texte libre, garder les messages privés hors périmètre tant que la modération n'existe pas.
+6. **Pas de jeux d'argent** : rien de ce qui se gagne ou se perd au hasard. Les jouets au hasard (dés, roue, bouteille) sont permis s'ils restent cosmétiques : ils affichent un résultat, ne donnent ni ne prennent jamais de Pixels, de Coloxs ou d'objets. Pas de loot box payante : ce qui s'achète avec des Pixels donne un résultat connu d'avance (l'œuf éclot toujours en poussin, seule sa couleur est une surprise). Pas de casino.
+7. **Mineurs** : le jeu les accepte à terme. Ne jamais exposer d'info personnelle, filtrer tout texte libre. Les messages privés existent entre amis seulement : filtrés, journalisés pour la modération, signalables, et coupés pour les comptes mineurs le jour où il y en aura.
 8. Secrets uniquement par variables d'environnement (`.env`, voir `.env.example`), jamais commités.
 
 ## Conventions

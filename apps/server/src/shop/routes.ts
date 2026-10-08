@@ -46,7 +46,7 @@ export function registerShopRoutes(app: FastifyInstance, pool: pg.Pool, guards: 
       const result = await withTransaction(pool, async (client) => {
         if (order.kind === 'furniture') {
           const entry = catalogueEntry(order.key);
-          if (!entry) throw new Refused(404, 'Meuble introuvable');
+          if (!entry || entry.hidden) throw new Refused(404, 'Meuble introuvable');
           const { rows } = await client.query<{ id: string }>(
             `INSERT INTO furniture (owner_id, catalogue_key)
              SELECT $1, $2 WHERE (SELECT count(*) FROM furniture WHERE owner_id = $1) < $3

@@ -1,8 +1,9 @@
+import { withTransaction } from '../db/pool';
 import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
+import { CATALOGUE, CHICKS, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
 import { HALL_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadLayout } from '../apartments/layout';
@@ -38,6 +39,10 @@ type RoomMap = {
 };
 /** The step a belt carries along, for each of its turns. */
 const ROLL: readonly Cell[] = [{ i: 1, j: 0 }, { i: 0, j: 1 }, { i: -1, j: 0 }, { i: 0, j: -1 }];
+/** The colours of the wheel, as the room reads them. */
+const WHEEL_NAMES = ['rouge', 'jaune', 'vert', 'bleu', 'violet', 'rose', 'orange', 'blanc'];
+/** Knocks it takes for an egg to hatch. */
+const EGG_KNOCKS = 8;
 /** A belt carries every this many steps of the clock (about a second). */
 const ROLL_EVERY = 2;
 /** How long a player stands in a booth before coming out of the other one. */
@@ -1021,6 +1026,70 @@ export class ApartmentRoom extends BuildingRoom {
     return this.football.start(players, now, { goals, kickoff });
   }
 
+  private lastToy = new Map<string, number>();
+
+  /**
+   * A toy of chance: a die, a wheel, a bottle, an egg. Only for show: the room sees the result, nobody wins or loses
+   * anything. The egg, bought for Pixels, always hatches into a chick: only its colour is a surprise.
+   */
+  private async playToy(pieceId: string, toy: 'dice' | 'wheel' | 'bottle' | 'egg', cell: Cell, who: string) {
+    const player = this.state.players.get(who);
+    if (!player) return;
+    if (Math.max(Math.abs(player.i - cell.i), Math.abs(player.j - cell.j)) > 2) {
+      return this.sendTo(who, 'rule-message', { text: 'Rapproche-toi pour jouer.' });
+    }
+    const now = Date.now();
+    if (now - (this.lastToy.get(pieceId) ?? 0) < 1500) return;
+    this.lastToy.set(pieceId, now);
+    const show = (text: string, line: string) => {
+      this.broadcast('fx', { kind: 'toy', i: cell.i, j: cell.j, text });
+      this.broadcast('system', { text: line });
+    };
+    if (toy === 'dice') {
+      const value = 1 + Math.floor(Math.random() * 6);
+      return show(String(value), `${player.nickname} lance le dé : ${value}.`);
+    }
+    if (toy === 'wheel') {
+      const colour = WHEEL_NAMES[Math.floor(Math.random() * WHEEL_NAMES.length)]!;
+      return show(colour, `${player.nickname} fait tourner la roue : elle s’arrête sur le ${colour}.`);
+    }
+    if (toy === 'bottle') {
+      const others = [...this.state.players.values()].filter((p) => p.id !== who);
+      if (!others.length) return show('…', 'La bouteille tourne, tourne… et revient vers toi : tu es seul ici.');
+      const chosen = others[Math.floor(Math.random() * others.length)]!;
+      return show(chosen.nickname, `${player.nickname} fait tourner la bouteille : elle désigne ${chosen.nickname}.`);
+    }
+    // The egg: eight knocks, then it hatches.
+    const { pool } = needDeps();
+    const { rows } = await pool.query<{ data: string | null }>('SELECT data FROM placements WHERE furniture_id = $1 AND user_id = $2', [pieceId, this.ownerId]);
+    if (!rows[0]) return;
+    const knocks = (Number(rows[0].data) || 0) + 1;
+    if (knocks < EGG_KNOCKS) {
+      await pool.query('UPDATE placements SET data = $3 WHERE furniture_id = $1 AND user_id = $2', [pieceId, this.ownerId, String(knocks)]);
+      return this.broadcast('fx', { kind: 'toy', i: cell.i, j: cell.j, text: knocks < EGG_KNOCKS - 2 ? 'Toc !' : 'Crac !' });
+    }
+    // A piece of base furniture never changes: the egg goes, and a chick takes its place, in one transaction.
+    const chick = CHICKS[Math.floor(Math.random() * CHICKS.length)]!;
+    const hatched = await withTransaction(pool, async (client) => {
+      const egg = await client.query<{ i: number; j: number; rot: number }>(
+        `DELETE FROM placements p USING furniture f
+          WHERE p.furniture_id = $1 AND p.user_id = $2 AND f.id = p.furniture_id AND f.catalogue_key = 'oeufsurprise'
+          RETURNING p.i, p.j, p.rot`,
+        [pieceId, this.ownerId],
+      );
+      const at = egg.rows[0];
+      if (!at) return false;
+      await client.query('DELETE FROM furniture WHERE id = $1 AND owner_id = $2', [pieceId, this.ownerId]);
+      const born = await client.query<{ id: string }>('INSERT INTO furniture (owner_id, catalogue_key) VALUES ($1, $2) RETURNING id', [this.ownerId, chick]);
+      await client.query('INSERT INTO placements (furniture_id, user_id, i, j, rot) VALUES ($1, $2, $3, $4, $5)', [born.rows[0]!.id, this.ownerId, at.i, at.j, at.rot]);
+      return true;
+    });
+    if (!hatched) return;
+    this.layoutCache = null;
+    this.broadcast('decor');
+    show('Cui !', `L’œuf éclot : un ${catalogueEntry(chick)?.name.toLowerCase() ?? 'poussin'} !`);
+  }
+
   /** A crate clicked from a cell next to it slides one cell away from the player, onto free floor. */
   private async pushCrate(pieceId: string, cell: Cell, who: string) {
     const player = this.state.players.get(who);
@@ -1066,6 +1135,7 @@ export class ApartmentRoom extends BuildingRoom {
     const entry = piece?.entry;
     if (!piece || !entry) return;
     if (entry.pushable) return this.pushCrate(piece.id, cell, who);
+    if (entry.toy) return this.playToy(piece.id, entry.toy, cell, who);
     if (entry.gate) {
       // Only the owner decides who gets through.
       if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire ouvre et ferme ce portillon.' });

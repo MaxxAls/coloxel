@@ -87,6 +87,8 @@ export interface BuildingRoom {
   onFx(callback: (fx: { i: number; j: number; color: number }) => void): void;
   /** A burst of confetti, thrown by a host. */
   onConfetti(callback: () => void): void;
+  /** A toy of chance shows its result over its cell (a die's number, the wheel's colour, who the bottle points at). */
+  onToy(callback: (toy: { i: number; j: number; text: string }) => void): void;
   /** Are the party lights on? Part of the room's state, so that whoever comes in later sees them. */
   lights(): boolean;
   /** An announcement of the staff. */
@@ -170,6 +172,11 @@ function wrap(room: Room): BuildingRoom {
     onConfetti(callback) {
       room.onMessage('fx', (m: { kind?: string }) => {
         if (m.kind === 'confetti') callback();
+      });
+    },
+    onToy(callback) {
+      room.onMessage('fx', (m: { kind?: string; i: number; j: number; text?: string }) => {
+        if (m.kind === 'toy' && typeof m.text === 'string') callback({ i: m.i, j: m.j, text: m.text.slice(0, 24) });
       });
     },
     lights() {
