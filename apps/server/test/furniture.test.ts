@@ -279,6 +279,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
         name: expect.any(String),
         placement: { i: expect.any(Number), j: expect.any(Number), rot: 0, w: 1, h: 1 },
         on: true,
+        data: null,
       });
       // The building view takes the wall color.
       const list = (await app.inject({ method: 'GET', url: '/api/building', cookies: as(sam.sid) })).json().apartments;
@@ -330,6 +331,54 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       await app.inject({ method: 'DELETE', url: `/api/placements/${lamp.id}`, cookies: as(eve.sid) });
       await app.inject({ method: 'PUT', url: '/api/placements', payload: { itemId: lamp.id, i: 6, j: 6 }, cookies: as(eve.sid) });
       expect(((await piece(eve.sid, 'lampadaire')) as Furniture & { on: boolean }).on).toBe(true);
+    });
+  });
+
+  describe('signs and mannequins', () => {
+    const put = (sid: string, id: string, path: string, payload: unknown = {}) =>
+      app.inject({ method: path === 'dress' ? 'POST' : 'PUT', url: `/api/furniture/${id}/${path}`, payload: payload as object, cookies: as(sid) });
+    const give = async (userId: string, key: string, i: number, j: number) => {
+      const id = (await pool.query<{ id: string }>('INSERT INTO furniture (owner_id, catalogue_key) VALUES ($1, $2) RETURNING id', [userId, key])).rows[0]!.id;
+      await pool.query('INSERT INTO placements (furniture_id, user_id, i, j) VALUES ($1, $2, $3, $4)', [id, userId, i, j]);
+      return id;
+    };
+    const dataOf = async (id: string) => (await pool.query<{ data: string | null }>('SELECT data FROM placements WHERE furniture_id = $1', [id])).rows[0]!.data;
+
+    it('lets the owner write on a sign, filtered, short, and shows it to visitors', async () => {
+      const ada = await signUp('sign_ada');
+      const bob = await signUp('sign_bob');
+      await app.inject({ method: 'PUT', url: '/api/apartment', payload: { access: 'building' }, cookies: as(ada.sid) });
+      const sign = await give(ada.id, 'panneau', 6, 6);
+      expect((await put(ada.sid, sign, 'text', { text: '  Bienvenue   chez   moi <b>  ' })).json()).toEqual({ text: 'Bienvenue chez moi b' });
+      expect(await dataOf(sign)).toBe('Bienvenue chez moi b');
+      // Visitors read it in the apartment's furniture.
+      const seen = (await app.inject({ method: 'GET', url: `/api/apartments/${ada.id}`, cookies: as(bob.sid) })).json();
+      expect(seen.furniture.find((f: { id: string }) => f.id === sign)).toMatchObject({ data: 'Bienvenue chez moi b' });
+      // Not for strangers, not too long, not an insult or a link, not on other pieces.
+      expect((await put(bob.sid, sign, 'text', { text: 'coucou' })).statusCode).toBe(404);
+      expect((await put(ada.sid, sign, 'text', { text: 'a'.repeat(121) })).statusCode).toBe(400);
+      expect((await put(ada.sid, sign, 'text', { text: 'viens sur https://exemple.com' })).statusCode).toBe(422);
+      expect((await put(ada.sid, sign, 'text', { text: 1 })).statusCode).toBe(400);
+      const lamp = (await inventory(ada.sid)).furniture.find((f) => f.key === 'lampadaire')!;
+      expect((await put(ada.sid, lamp.id, 'text', { text: 'non' })).statusCode).toBe(400);
+      // Empty clears it.
+      expect((await put(ada.sid, sign, 'text', { text: '' })).json()).toEqual({ text: '' });
+      expect(await dataOf(sign)).toBeNull();
+    });
+
+    it('dresses a mannequin with the look the owner wears now, and only for the owner', async () => {
+      const cleo = await signUp('dummy_cleo');
+      const dan = await signUp('dummy_dan');
+      const dummy = await give(cleo.id, 'mannequin', 6, 6);
+      expect((await put(dan.sid, dummy, 'dress')).statusCode).toBe(404);
+      expect((await put(cleo.sid, dummy, 'dress')).statusCode).toBe(200);
+      const look = JSON.parse((await dataOf(dummy))!);
+      expect(typeof look).toBe('object');
+      const mine = (await app.inject({ method: 'GET', url: '/api/me/look', cookies: as(cleo.sid) })).json().look;
+      expect(look).toEqual(mine);
+      // A sign cannot be dressed.
+      const sign = await give(cleo.id, 'panneau', 5, 6);
+      expect((await put(cleo.sid, sign, 'dress')).statusCode).toBe(400);
     });
   });
 });

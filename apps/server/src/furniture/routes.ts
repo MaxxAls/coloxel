@@ -5,8 +5,14 @@ import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, re
 import type { NotifyApartment } from '../building/routes';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spriteToPng } from '../sprite-png';
+import { loadAppearance } from '../avatar/routes';
+import { FILTER_MESSAGES, filterText } from '../moderation/text-filter';
 
 const lightSchema = z.object({ on: z.boolean() }).strict();
+const textSchema = z.object({ text: z.string().max(400) }).strict();
+
+/** Longest text on a sign. */
+export const SIGN_MAX = 120;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -107,6 +113,51 @@ export function registerFurnitureRoutes(
     await pool.query('UPDATE placements SET lit = $2 WHERE furniture_id = $1', [req.params.id, parsed.data.on]);
     notify?.(user.id, 'decor');
     return { on: parsed.data.on };
+  });
+
+  /** A placed piece of the player's own apartment, with its catalogue key; null when it is not theirs or not placed. */
+  const ownPlaced = async (id: string, userId: string) => {
+    const { rows } = await pool.query<{ catalogue_key: string }>(
+      `SELECT f.catalogue_key FROM furniture f JOIN placements p ON p.furniture_id = f.id
+        WHERE f.id = $1 AND f.owner_id = $2 AND p.user_id = $2`,
+      [id, userId],
+    );
+    return rows[0] ? catalogueEntry(rows[0].catalogue_key) : undefined;
+  };
+
+  // A mannequin puts on what the owner wears right now.
+  app.post<{ Params: { id: string } }>('/api/furniture/:id/dress', async (req, reply) => {
+    const user = req.user;
+    if (!user) return reply.code(401).send({ error: 'Non connecté' });
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Meuble introuvable' });
+    const entry = await ownPlaced(req.params.id, user.id);
+    if (!entry) return reply.code(404).send({ error: 'Meuble introuvable ou pas posé' });
+    if (!entry.mannequin) return reply.code(400).send({ error: 'Cet objet ne se habille pas.' });
+    const { look } = await loadAppearance(pool, user.id);
+    await pool.query('UPDATE placements SET data = $2 WHERE furniture_id = $1', [req.params.id, JSON.stringify(look)]);
+    notify?.(user.id, 'decor');
+    return { ok: true };
+  });
+
+  // The text of a sign: filtered like any free text, and short. Empty clears it.
+  app.put<{ Params: { id: string } }>('/api/furniture/:id/text', async (req, reply) => {
+    const user = req.user;
+    if (!user) return reply.code(401).send({ error: 'Non connecté' });
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: 'Meuble introuvable' });
+    const parsed = textSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Requête invalide' });
+    const entry = await ownPlaced(req.params.id, user.id);
+    if (!entry) return reply.code(404).send({ error: 'Meuble introuvable ou pas posé' });
+    if (!entry.sign) return reply.code(400).send({ error: 'On ne peut pas écrire sur cet objet.' });
+    const text = parsed.data.text.replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (text.length > SIGN_MAX) return reply.code(400).send({ error: `Le panneau accepte ${SIGN_MAX} lettres au plus.` });
+    if (text) {
+      const verdict = filterText(text);
+      if (!verdict.ok) return reply.code(422).send({ error: FILTER_MESSAGES[verdict.reason] });
+    }
+    await pool.query('UPDATE placements SET data = $2 WHERE furniture_id = $1', [req.params.id, text || null]);
+    notify?.(user.id, 'decor');
+    return { text };
   });
 
   // Throw a copy away. It costs nothing to take another one.

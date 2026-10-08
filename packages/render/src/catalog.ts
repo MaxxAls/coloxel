@@ -34,6 +34,10 @@ export interface CatalogueEntry {
   gate?: { open: Recipe };
   /** A click throws confetti for the whole room. */
   confetti?: boolean;
+  /** Wears the look of whoever dresses it (the owner), drawn by the client from the placement's data. */
+  mannequin?: boolean;
+  /** Shows a short text written by the owner (the placement's data) to whoever clicks it. */
+  sign?: boolean;
   /** A click puts this hand item (see hand.ts) in the hand of a player standing next to the piece. */
   vendor?: number;
   /** A click starts a team game in the room (the colour race): the server runs it. */
@@ -437,7 +441,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,

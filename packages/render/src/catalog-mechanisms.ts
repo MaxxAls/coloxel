@@ -142,6 +142,25 @@ const flowerBox: Recipe = {
   ],
 };
 
+/** A tailor's stand: a round base, a pole, a plain wooden torso where the look is drawn over by the game. */
+const mannequin: Recipe = {
+  name: 'Mannequin',
+  parts: [
+    cyl(0, 0, 6, 0, 2, WOOD_DARK, WOOD), cyl(0, 0, 0.9, 2, 12, '#c4c8d0'),
+    box(-0.8, 0.8, -0.8, 0.8, 11, 13, WOOD_DARK),
+  ],
+};
+
+/** A sign on a post: a board with lines that stand for writing. */
+const sign: Recipe = {
+  name: 'Panneau',
+  parts: [
+    box(-0.9, 0.9, -0.9, 0.9, 0, 18, WOOD_DARK, 'wood'),
+    box(-7, 7, -1.2, 1.2, 16, 30, '#d9b27a', 'planks'), box(-7.4, 7.4, -1.5, 1.5, 15, 16, WOOD), box(-7.4, 7.4, -1.5, 1.5, 30, 31, WOOD),
+    ...[0, 1, 2].map((k) => box(-5, 5 - k * 2, 1.2, 1.6, 25 - k * 3.4, 26.4 - k * 3.4, '#6a4628')),
+  ],
+};
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
@@ -150,6 +169,8 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'standjus', category: 'tech', recipe: juiceStand, extras: { price: 60, pressable: true, vendor: 2 } },
     { key: 'chariotglaces', category: 'tech', recipe: iceCart, extras: { price: 60, pressable: true, vendor: 3 } },
     { key: 'bacfleurs', category: 'decor', recipe: flowerBox, extras: { price: 40, pressable: true, vendor: 6 } },
+    { key: 'mannequin', category: 'decor', recipe: mannequin, extras: { price: 80, mannequin: true } },
+    { key: 'panneau', category: 'decor', recipe: sign, extras: { price: 30, sign: true } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
   ];
 }

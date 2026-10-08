@@ -136,8 +136,8 @@ export function registerBuildingRoutes(
       ),
     ]);
     const layout = await loadLayout(pool, ownerId);
-    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; rot: number; w: number; h: number; lit: boolean }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.w, p.h, p.lit
+    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; rot: number; w: number; h: number; lit: boolean; data: string | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.w, p.h, p.lit, p.data
          FROM placements p JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1 ORDER BY p.i, p.j`,
       [ownerId],
@@ -154,6 +154,7 @@ export function registerBuildingRoutes(
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
         placement: { i: r.i, j: r.j, rot: r.rot, w: r.w, h: r.h },
         on: r.lit,
+        data: r.data,
       })),
       items: placed.rows.map((r) => ({
         id: r.id,

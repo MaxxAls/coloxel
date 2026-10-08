@@ -40,11 +40,11 @@ L'émulateur a 35 « interacteurs » de meubles. Verdict pour Coloxel, sans rien
 | Téléporteur, téléporteur rapide, trémie | Déjà fait (portail, effet « téléporter »). |
 | Porte (ouverte/fermée) | **Fait : portillon.** Le propriétaire l'ouvre et le ferme d'un clic, fermé il bloque le passage, jamais fermé sur quelqu'un. État dans `placements.lit`, deuxième apparence demandée au serveur avec `?s=1`. |
 | Feux d'artifice, canon | **Fait : canon à confettis.** Un clic, une pluie pour toute la salle, une seule à la fois. |
-| Mannequin (habillé avec le look du joueur) | À faire : s'appuie sur le rendu des avatars. |
-| Distributeur (objet en main) | À faire : demande des objets tenus à la main dans le rendu des avatars. |
+| Mannequin (habillé avec le look du joueur) | **Fait : mannequin.** « Habiller » dans la fiche : il porte la tenue actuelle du propriétaire, dessinée par le client avec le moteur d'avatars. Le look est stocké dans `placements.data`. |
+| Distributeur (objet en main) | **Fait : objets tenus en main.** 6 objets (café, jus, glace, thé glacé, cookie, fleur), dessinés par une petite grille partagée (`packages/render/src/hand.ts`). Machine à café, stand de jus, chariot de glaces et bac de fleurs servent un joueur qui se tient à deux cases au plus ; `/poser` pour reposer. L'état est dans `Player.hand`, décidé par le serveur. |
 | Juke-box, tableau de score, vidéos | À faire, après les jeux d'équipe et si on ajoute des sons. |
-| Jeux d'équipe (banzai, gel, football) et compteurs | À faire (idée 4 ci-dessus), construits sur les mécanismes. |
-| Panneau avec texte | À faire : texte du propriétaire, filtré. |
+| Jeux d'équipe (banzai, gel, football) et compteurs | **Fait : Course des couleurs** (inspirée du banzai) : 2 à 12 joueurs, 2 équipes, 60 secondes, chacun peint les cases où il marche, l'équipe qui en a le plus gagne. Lancée depuis le tableau des couleurs, gérée par `apps/server/src/realtime/paint-game.ts`. Ni mise ni gain. Gel et football restent à faire. |
+| Panneau avec texte | **Fait : panneau.** Le propriétaire écrit jusqu'à 120 lettres (filtrées comme le chat), tous les visiteurs le lisent dans la fiche. |
 | Portes à sens unique, portes de groupe, portes VIP | Portes de groupe : hors périmètre (groupes). Le reste : à faire si le besoin se confirme. |
 | Dés, roue, bouteille, œuf à casser, boîte de puzzle à gains, mélangeur d'amour | **Non retenu** : jeux d'argent et loot boxes (règle 6). |
 | Terminal de forum de groupe | Non retenu : groupes hors périmètre. |

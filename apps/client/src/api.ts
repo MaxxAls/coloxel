@@ -36,6 +36,8 @@ export interface FurnitureItem {
   size?: [number, number];
   /** A piece that gives light: lit or switched off. Absent means lit. */
   on?: boolean;
+  /** What a placed piece says or wears: the text of a sign, the look (JSON) on a mannequin. */
+  data?: string | null;
 }
 
 export interface BuildingApartment {
@@ -478,6 +480,8 @@ export const api = {
   catalogue: () => call<CatalogueData>('GET', '/api/catalogue'),
   takeFurniture: (key: string) => call<{ furniture: FurnitureItem }>('POST', '/api/furniture', { key }),
   setLight: (id: string, on: boolean) => call<{ on: boolean }>('PUT', `/api/furniture/${id}/light`, { on }),
+  dressMannequin: (id: string) => call<{ ok: boolean }>('POST', `/api/furniture/${id}/dress`, {}),
+  writeSign: (id: string, text: string) => call<{ text: string }>('PUT', `/api/furniture/${id}/text`, { text }),
   throwFurniture: (id: string) => call<unknown>('DELETE', `/api/furniture/${id}`),
   /** `rot` is the number of quarter turns; left out, a move keeps the way the piece faces. */
   place: (itemId: string, i: number, j: number, rot?: number) => call<unknown>('PUT', '/api/placements', { itemId, i, j, rot }),

@@ -239,6 +239,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     } else {
       lines.push('Mobilier de base · gratuit, en quantité illimitée.');
       lines.push('Ni numéroté, ni échangeable.');
+      // A sign says what its owner wrote, to everybody who looks at it.
+      if (catalogueEntry(piece.key)?.sign) lines.unshift((piece as FurnitureItem).data ? `« ${(piece as FurnitureItem).data} »` : 'Le panneau est vide.');
     }
     if (mine) {
       if (piece.placement) {
@@ -253,6 +255,31 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
             furniCard.hide();
           },
         });
+        const pieceEntry = creation ? undefined : catalogueEntry(piece.key);
+        if (pieceEntry?.mannequin) {
+          actions.push({
+            label: 'Habiller',
+            run: async () => {
+              const res = await api.dressMannequin(piece.id);
+              setMessage(res.ok ? 'Le mannequin porte ta tenue.' : res.error);
+              await refreshOwn();
+              furniCard.hide();
+            },
+          });
+        }
+        if (pieceEntry?.sign) {
+          actions.push({
+            label: 'Écrire',
+            run: async () => {
+              const text = window.prompt('Texte du panneau (120 lettres au plus ; vide pour l’effacer)', (piece as FurnitureItem).data ?? '');
+              furniCard.hide();
+              if (text === null) return;
+              const res = await api.writeSign(piece.id, text);
+              if (!res.ok) setMessage(res.error);
+              await refreshOwn();
+            },
+          });
+        }
         if (!creation && isSwitchable(catalogueEntry(piece.key))) {
           const lit = piece.on !== false;
           actions.push({
@@ -426,10 +453,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
     ...items.flatMap((it) =>
-      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, on: true, texture: (rot: number, _alt: boolean) => itemTexture(it.id, rot) }] : [],
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, data: null as string | null, on: true, texture: (rot: number, _alt: boolean) => itemTexture(it.id, rot) }] : [],
     ),
     ...furniture.flatMap((f) =>
-      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, on: f.on !== false, texture: (rot: number, alt: boolean) => furnitureTexture(f.key, rot, alt) }] : [],
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, data: f.data ?? null, on: f.on !== false, texture: (rot: number, alt: boolean) => furnitureTexture(f.key, rot, alt) }] : [],
     ),
   ];
 
@@ -442,6 +469,9 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     rot: number;
     /** The second look of a piece that has two (a gate standing open). */
     alt: boolean;
+    /** A mannequin wears a look: an avatar drawn on the piece. */
+    dummy?: Sprite;
+    dummyRaw?: string;
   }
   const props = new Map<string, Prop>();
   const lights = new Map<string, { sprite: Sprite; flicker: boolean; base: number; phase: number }>();
@@ -503,6 +533,25 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       prop.sprite.pivot.set(frame.ax, frame.ay);
       const { x, y } = tileCenter(i, j);
       prop.sprite.position.set(x, y);
+      if (entry?.mannequin) {
+        const raw = thing.data ?? '';
+        if (prop.dummyRaw !== raw) {
+          prop.dummyRaw = raw;
+          prop.dummy?.destroy();
+          prop.dummy = undefined;
+          if (raw) {
+            const body = new Sprite(avatarTexture(lookOf(raw, thing.id), 'front34', 0));
+            body.anchor.set(0.5, 1);
+            body.scale.set(BODY_SCALE);
+            world.addChild(body);
+            prop.dummy = body;
+          }
+        }
+        if (prop.dummy) {
+          prop.dummy.position.set(x, y + 4 * PX);
+          prop.dummy.zIndex = i + j + 0.3;
+        }
+      }
       // Drawn in front of what stands behind its far corner, behind what stands in front of its near corner.
       prop.sprite.zIndex = i + j + (thing.placement.w ?? 1) - 1 + (thing.placement.h ?? 1) - 1 - (entry?.walkable ? 0.6 : 0);
       const light = lights.get(thing.id);
@@ -514,6 +563,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     for (const [id, prop] of props) {
       if (placed.has(id)) continue;
       prop.sprite.destroy();
+      prop.dummy?.destroy();
       props.delete(id);
       itemSprites.delete(id);
       lights.get(id)?.sprite.destroy();
