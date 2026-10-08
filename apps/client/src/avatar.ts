@@ -9,6 +9,7 @@ export {
   LIE_W,
   OUTLINE,
   Painter,
+  RES,
   avatarPixels,
   avatarSize,
   lookFor,

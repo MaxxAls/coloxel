@@ -1,13 +1,13 @@
-import type { Look, Slot } from '@coloxel/render';
+import { RES, type Look, type Slot } from '@coloxel/render';
 import { avatarFrame, type Facing, type Frame, type Pose } from './avatar';
 
 // Little pictures of avatars for the wardrobe and the shop. Pixel art, so they
 // are drawn at their own size and zoomed by the browser without smoothing.
 
-/** The avatar at 1:1 in a canvas the browser shows `zoom` times larger. */
+/** The avatar in a canvas the browser shows at `zoom` screen pixels per pixel of its design grid (the sprite is RES times finer). */
 export function lookCanvas(look: Look, opts: { zoom?: number; facing?: Facing; frame?: Frame; pose?: Pose; blink?: boolean } = {}): HTMLCanvasElement {
   const cv = avatarFrame(look, opts.facing ?? 'front', opts.frame ?? 0, opts.blink ?? false, opts.pose ?? 'stand');
-  const zoom = opts.zoom ?? 3;
+  const zoom = (opts.zoom ?? 3) / RES;
   cv.className = 'pixel-art';
   cv.style.width = `${cv.width * zoom}px`;
   cv.style.height = `${cv.height * zoom}px`;
@@ -31,9 +31,9 @@ export function thumbCanvas(look: Look, area: Slot | 'face', zoom = 3): HTMLCanv
   const [sx, sy, sw, sh] = CROPS[area];
   const source = avatarFrame(look, area === 'extra' && look.extra === 2 ? 'back' : 'front', 0, false, 'stand');
   const cv = document.createElement('canvas');
-  cv.width = sw;
-  cv.height = sh;
-  cv.getContext('2d')!.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh);
+  cv.width = sw * RES;
+  cv.height = sh * RES;
+  cv.getContext('2d')!.drawImage(source, sx * RES, sy * RES, sw * RES, sh * RES, 0, 0, sw * RES, sh * RES);
   cv.className = 'pixel-art';
   cv.style.width = `${sw * zoom}px`;
   cv.style.height = `${sh * zoom}px`;

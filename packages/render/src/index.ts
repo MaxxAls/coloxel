@@ -43,6 +43,7 @@ export {
   LIE_W,
   OUTLINE,
   Painter,
+  RES,
   avatarPixels,
   avatarSize,
   mix2,

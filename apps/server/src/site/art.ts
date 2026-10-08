@@ -3,6 +3,7 @@ import {
   ANCHOR_X,
   ANCHOR_Y,
   ROOM_H,
+  RES,
   ROOM_W,
   avatarPixels,
   avatarSize,
@@ -30,8 +31,41 @@ interface Canvas {
 
 const blank = (w: number, h: number): Canvas => ({ w, h, data: new Uint8ClampedArray(w * h * 4) });
 
-/** Draw `src` over the canvas ("source over"), enlarged by `scale` without smoothing. */
+/** Draw `src` over the canvas ("source over"), enlarged by `scale` without smoothing (shrunk, it is averaged). */
 function over(dst: Canvas, src: ArrayLike<number>, sw: number, sh: number, dx: number, dy: number, scale = 1): void {
+  if (scale < 1) {
+    // Shrinking: every pixel of the result is the average of the pixels it covers, weighted by their opacity.
+    const tw = Math.max(1, Math.round(sw * scale));
+    const th = Math.max(1, Math.round(sh * scale));
+    const small = new Uint8ClampedArray(tw * th * 4);
+    for (let y = 0; y < th; y++) {
+      for (let x = 0; x < tw; x++) {
+        const x0 = Math.floor(x / scale), x1 = Math.min(sw, Math.max(x0 + 1, Math.ceil((x + 1) / scale)));
+        const y0 = Math.floor(y / scale), y1 = Math.min(sh, Math.max(y0 + 1, Math.ceil((y + 1) / scale)));
+        let r = 0, g = 0, b = 0, a = 0, n = 0;
+        for (let sy = y0; sy < y1; sy++) {
+          for (let sx = x0; sx < x1; sx++) {
+            const i = (sy * sw + sx) * 4;
+            const al = src[i + 3]!;
+            r += src[i]! * al;
+            g += src[i + 1]! * al;
+            b += src[i + 2]! * al;
+            a += al;
+            n++;
+          }
+        }
+        const o = (y * tw + x) * 4;
+        if (a > 0) {
+          small[o] = r / a;
+          small[o + 1] = g / a;
+          small[o + 2] = b / a;
+          small[o + 3] = a / n;
+        }
+      }
+    }
+    over(dst, small, tw, th, dx, dy, 1);
+    return;
+  }
   const tw = Math.round(sw * scale);
   const th = Math.round(sh * scale);
   for (let y = 0; y < th; y++) {
@@ -77,8 +111,8 @@ const toPng = (c: Canvas) => {
 /** A player standing, as everybody sees them in the game. */
 export function avatarPng(look: Look, scale = 5, facing: Facing = 'front', pose: Pose = 'stand'): Buffer {
   const { w, h } = avatarSize(pose);
-  const out = blank(Math.round(w * scale), Math.round(h * scale));
-  over(out, avatarPixels(look, facing, 0, false, pose), w, h, 0, 0, scale);
+  const out = blank(Math.round((w * scale) / RES), Math.round((h * scale) / RES));
+  over(out, avatarPixels(look, facing, 0, false, pose), w, h, 0, 0, scale / RES);
   return toPng(out);
 }
 
@@ -106,7 +140,9 @@ interface RoomPlan {
   people: Person[];
 }
 
-const BODY_SCALE = 1.5;
+/** Pixels of the scene for one pixel of the avatar's design grid. */
+const PX = 1.5;
+const BODY_SCALE = PX / RES;
 
 const roomLook = (floor: string, wall: string): RoomLook => {
   const f = floorStyle(floor);
@@ -146,8 +182,8 @@ function drawRoom(scene: Canvas, plan: RoomPlan): void {
       depth: p.i + p.j + 0.5,
       draw: () => {
         if (!p.sit) shadow(scene, plan.x + c.x, plan.y + c.y + 1, 15, 7);
-        const dx = plan.x + c.x - (w * BODY_SCALE) / 2 + (p.sit ? 3 * BODY_SCALE : 0);
-        const dy = plan.y + c.y + (p.sit ? 4 : 10) * BODY_SCALE - h * BODY_SCALE;
+        const dx = plan.x + c.x - (w * BODY_SCALE) / 2 + (p.sit ? 3 * PX : 0);
+        const dy = plan.y + c.y + (p.sit ? 4 : 10) * PX - h * BODY_SCALE;
         over(scene, pixels, w, h, dx, dy, BODY_SCALE);
       },
     });

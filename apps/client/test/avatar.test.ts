@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, LOOK_ITEMS, SLOTS, type Look } from '@coloxel/render';
-import { AVATAR_H, AVATAR_W, OUTLINE, avatarPixels, avatarSize, lookFor, type Frame, type Pose } from '../src/avatar';
+import { AVATAR_H, AVATAR_W, OUTLINE, RES, avatarPixels, avatarSize, lookFor, type Frame, type Pose } from '../src/avatar';
 
 const alpha = (px: Uint8ClampedArray, x: number, y: number) => px[(y * AVATAR_W + x) * 4 + 3]!;
 const rgb = (px: Uint8ClampedArray, x: number, y: number) => {
@@ -33,8 +33,8 @@ describe('avatar', () => {
   it('outlines the silhouette with the style guide color', () => {
     const px = avatarPixels(lookFor('x'));
     let y = 0;
-    while (alpha(px, 5, y) === 0) y++;
-    expect(rgb(px, 5, y)).toBe(OUTLINE);
+    while (alpha(px, 5 * RES, y) === 0) y++;
+    expect(rgb(px, 5 * RES, y)).toBe(OUTLINE);
   });
 
   it('gives the same player the same look, and different players different ones', () => {

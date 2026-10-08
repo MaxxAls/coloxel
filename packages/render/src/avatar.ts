@@ -18,12 +18,17 @@ export const showsFace = (f: Facing) => f === 'front' || f === 'front34' || f ==
 /** 0 standing, 1 and 2 the two steps of a walk. */
 export type Frame = 0 | 1 | 2;
 
-export const AVATAR_W = 30;
+/**
+ * The avatar is designed on a 30 x 58 grid and drawn at RES times that resolution: the pixels are finer than
+ * the ones of a sprite drawn on the design grid itself, and the room shows the sprite at 1 / RES of the zoom.
+ */
+export const RES = 2;
+export const AVATAR_W = 30 * RES;
 /** Tall enough for the head of a seated player to sit above the seat, and for the legs to reach the floor. */
-export const AVATAR_H = 58;
+export const AVATAR_H = 58 * RES;
 /** A player lying down, drawn along the iso axis: wider and flatter. */
-export const LIE_W = 66;
-export const LIE_H = 50;
+export const LIE_W = 66 * RES;
+export const LIE_H = 50 * RES;
 
 /** How the avatar is posed: standing (or walking), sitting, or lying down. */
 export type Pose = 'stand' | 'sit' | 'lie';
@@ -42,30 +47,65 @@ export function tone(c: RGB, f: number): RGB {
 export function mix2(a: RGB, b: RGB, t: number): RGB {
   return [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
 }
-/** A tiny shaded-shape painter on a transparent canvas. */
+/**
+ * A tiny shaded-shape painter on a transparent canvas. Shapes are given in design units (one unit is `k` pixels
+ * of the canvas) and sampled pixel by pixel, so a bigger `k` gives finer curves, finer shading and a finer outline.
+ */
 export class Painter {
   readonly px: (RGB | null)[];
-  /** Everything drawn is moved by this much: the same drawing code serves every pose. */
+  /** Size of the canvas, in pixels. */
+  readonly w: number;
+  readonly h: number;
+  /** Everything drawn is moved by this much (in design units): the same drawing code serves every pose. */
   ox = 0;
   oy = 0;
 
   constructor(
-    readonly w: number,
-    readonly h: number,
+    designW: number,
+    designH: number,
+    readonly k = 1,
   ) {
-    this.px = new Array(w * h).fill(null);
+    this.w = designW * k;
+    this.h = designH * k;
+    this.px = new Array(this.w * this.h).fill(null);
   }
 
   /** While set, what is drawn is moved sideways by this function (a turned head), and dropped where `keepX` says no. */
   mapX: ((x: number) => number) | null = null;
   keepX: ((x: number) => boolean) | null = null;
 
+  /** Writes one canvas pixel. */
+  private put(fx: number, fy: number, c: RGB): void {
+    if (fx < 0 || fy < 0 || fx >= this.w || fy >= this.h) return;
+    this.px[fy * this.w + fx] = c;
+  }
+
+  /** Paints the canvas pixel under the design point (u, v), given as a pixel index: it goes through the turn and the offset. */
+  private paint(u: number, v: number, c: RGB): void {
+    if (this.keepX && !this.keepX(u)) return;
+    const x = this.mapX ? this.mapX(u) : u;
+    this.put(Math.floor((x + this.ox + 0.5) * this.k), Math.floor((v + this.oy + 0.5) * this.k), c);
+  }
+
+  /** One whole design pixel (k x k canvas pixels): for the bold marks of a drawing. */
   set(x: number, y: number, c: RGB): void {
     if (this.keepX && !this.keepX(x)) return;
     if (this.mapX) x = this.mapX(x);
-    const xi = Math.round(x + this.ox), yi = Math.round(y + this.oy);
-    if (xi < 0 || yi < 0 || xi >= this.w || yi >= this.h) return;
-    this.px[yi * this.w + xi] = c;
+    const xi = Math.round(x + this.ox) * this.k, yi = Math.round(y + this.oy) * this.k;
+    for (let dy = 0; dy < this.k; dy++) for (let dx = 0; dx < this.k; dx++) this.put(xi + dx, yi + dy, c);
+  }
+
+  /** One canvas pixel (the finest mark there is): for the fine details of a face, a strand, a lace. */
+  dot(x: number, y: number, c: RGB): void {
+    this.paint(x, y, c);
+  }
+
+  /** A flat rectangle with exact edges, in design units. */
+  rect(x0: number, y0: number, x1: number, y1: number, c: RGB): void {
+    const k = this.k;
+    for (let fy = Math.round(y0 * k); fy < Math.round(y1 * k); fy++) {
+      for (let fx = Math.round(x0 * k); fx < Math.round(x1 * k); fx++) this.paint((fx + 0.5) / k - 0.5, (fy + 0.5) / k - 0.5, c);
+    }
   }
 
   get(x: number, y: number): RGB | null {
@@ -87,7 +127,7 @@ export class Painter {
     along(r * 0.28, r * 0.42, tone(color, 0.16));
   }
 
-  /** A ball lit from the upper left: highlight, base, shade and a deeper rim, with dithered seams. */
+  /** A ball lit from the upper left: a highlight, the base, a shade and a deeper rim, in clear bands. */
   ball(
     cx: number,
     cy: number,
@@ -96,35 +136,53 @@ export class Painter {
     color: RGB,
     opts: { clip?: (x: number, y: number) => boolean; flat?: boolean } = {},
   ): void {
-    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
-      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-        const a = (x + 0.5 - cx) / rx, b = (y + 0.5 - cy) / ry;
+    const k = this.k;
+    for (let fy = Math.floor((cy - ry) * k); fy <= Math.ceil((cy + ry) * k); fy++) {
+      for (let fx = Math.floor((cx - rx) * k); fx <= Math.ceil((cx + rx) * k); fx++) {
+        const x = (fx + 0.5) / k, y = (fy + 0.5) / k;
+        const a = (x - cx) / rx, b = (y - cy) / ry;
         const d = a * a + b * b;
-        if (d > 1 || (opts.clip && !opts.clip(x, y))) continue;
+        if (d > 1 || (opts.clip && !opts.clip(x - 0.5, y - 0.5))) continue;
         if (opts.flat) {
-          this.set(x, y, color);
+          this.paint(x - 0.5, y - 0.5, color);
           continue;
         }
         const lam = -0.45 * a - 0.6 * b + 0.55 * Math.sqrt(1 - d);
-        // Hard bands, no dithering: a crisp pixel-art look with three clear tones.
-        this.set(x, y, lam > 0.5 ? tone(color, 0.14) : lam > -0.22 ? color : tone(color, -0.2));
+        this.paint(x - 0.5, y - 0.5, lam > 0.55 ? tone(color, 0.18) : lam > 0.3 ? tone(color, 0.08) : lam > -0.15 ? color : lam > -0.4 ? tone(color, -0.12) : tone(color, -0.24));
       }
     }
   }
 
   /** A box with rounded corners, a light left edge and top, a dark right edge and bottom. */
   block(x0: number, y0: number, x1: number, y1: number, color: RGB, radius = 1.5, shadeRight = true): void {
-    for (let y = Math.floor(y0); y < Math.ceil(y1); y++) {
-      for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
-        const cx = Math.max(x0 + radius, Math.min(x1 - radius, x + 0.5));
-        const cy = Math.max(y0 + radius, Math.min(y1 - radius, y + 0.5));
-        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > radius) continue;
+    const k = this.k;
+    const e = 2 / k;
+    for (let fy = Math.floor(y0 * k); fy < Math.ceil(y1 * k); fy++) {
+      for (let fx = Math.floor(x0 * k); fx < Math.ceil(x1 * k); fx++) {
+        const x = (fx + 0.5) / k, y = (fy + 0.5) / k;
+        const cx = Math.max(x0 + radius, Math.min(x1 - radius, x));
+        const cy = Math.max(y0 + radius, Math.min(y1 - radius, y));
+        if (Math.hypot(x - cx, y - cy) > radius) continue;
         let f = 0;
-        if (x < x0 + 1.5) f += 0.1;
-        if (y < y0 + 1.5) f += 0.08;
-        if (shadeRight && x >= x1 - 2.5) f -= 0.14;
-        if (y >= y1 - 1.5) f -= 0.1;
-        this.set(x, y, tone(color, f));
+        if (x < x0 + e) f += 0.1;
+        else if (x < x0 + e * 1.8) f += 0.04;
+        if (y < y0 + e) f += 0.08;
+        if (shadeRight && x >= x1 - e) f -= 0.14;
+        else if (shadeRight && x >= x1 - e * 1.8) f -= 0.05;
+        if (y >= y1 - 1 / k * 2 + 1 / k) f -= 0.1;
+        this.paint(x - 0.5, y - 0.5, tone(color, f));
+      }
+    }
+  }
+
+  /** Paints every canvas pixel (given as design pixel coordinates) where `colorAt` returns a colour. */
+  fill(x0: number, y0: number, x1: number, y1: number, colorAt: (x: number, y: number, fx: number, fy: number) => RGB | null): void {
+    const k = this.k;
+    for (let fy = Math.floor(y0 * k); fy < Math.ceil(y1 * k); fy++) {
+      for (let fx = Math.floor(x0 * k); fx < Math.ceil(x1 * k); fx++) {
+        const u = (fx + 0.5) / k - 0.5, v = (fy + 0.5) / k - 0.5;
+        const c = colorAt(u, v, fx, fy);
+        if (c) this.paint(u, v, c);
       }
     }
   }
@@ -219,49 +277,61 @@ function drawFace(p: Painter, look: Look, pal: Palette, blink: boolean): void {
   const darkSkin = isDark(skin);
   // The iris takes its colour from the hair: warm for brown, cold for blue, never the same grey.
   const iris = mix2(tone(pal.hair, -0.1), [90, 110, 170], 0.4);
+  const brow = tone(pal.hair, -0.25);
   for (const ex of EYE_X) {
     if (blink || look.eyes === 2) {
       // Closed, or sleepy: a line under a heavy lid, with a lash at the outer corner.
-      for (let dx = -1.8; dx <= 1.8; dx += 0.9) p.set(ex + dx, 19, dark);
+      p.rect(ex - 1.9, 18.8, ex + 1.9, 19.4, dark);
       if (look.eyes === 2) {
-        for (let dx = -1.8; dx <= 1.8; dx += 0.9) p.set(ex + dx, 18, tone(skin, -0.18));
-        p.set(ex + (ex < 15 ? -2.6 : 2.6), 18.6, dark);
+        p.rect(ex - 1.9, 17.6, ex + 1.9, 18.8, tone(skin, -0.16));
+        p.rect(ex + (ex < 15 ? -2.5 : 2), 18.4, ex + (ex < 15 ? -2 : 2.5), 19.2, dark);
       }
     } else if (look.eyes === 1) {
       // Laughing eyes: little arches.
-      for (const [dx, dy] of [[-2, 1], [-1, 0], [0, -0.4], [1, 0], [2, 1]] as const) p.set(ex + dx, 19 + dy, dark);
+      for (let t = -2; t <= 1.6; t += 0.4) p.rect(ex + t, 19.8 - (1 - (t / 2) ** 2) * 1.3, ex + t + 0.5, 20.3 - (1 - (t / 2) ** 2) * 1.3, dark);
     } else if (look.eyes === 3) {
-      // Bright eyes: a coloured iris with two lights.
-      p.block(ex - 2, 16.6, ex + 2, 20.6, iris, 0.6);
-      p.block(ex - 1, 17.4, ex + 1, 20, dark, 0.3);
-      p.set(ex - 1.5, 17, WHITE);
-      p.set(ex - 0.5, 17, WHITE);
-      p.set(ex + 1, 19.6, mix2(iris, WHITE, 0.5));
+      // Bright eyes: a big iris full of light.
+      p.ball(ex, 18.8, 2.2, 2.6, WHITE, { flat: true });
+      p.ball(ex, 18.9, 1.7, 2.2, iris, { flat: true });
+      p.ball(ex, 19.1, 0.95, 1.3, dark, { flat: true });
+      p.rect(ex - 1.1, 17.4, ex - 0.4, 18.1, WHITE);
+      p.rect(ex + 0.1, 17.4, ex + 0.5, 17.9, WHITE);
+      p.rect(ex + 0.5, 19.8, ex + 1.1, 20.4, mix2(iris, WHITE, 0.55));
+      p.rect(ex - 2.2, 16.6, ex + 2.2, 17.2, dark);
     } else {
-      // Round eyes: two small dark dots, a light pixel in the corner. As little as a face needs.
-      if (darkSkin) p.block(ex - 2, 16.6, ex + 2, 20.4, WHITE, 0.8);
-      p.block(ex - 1, 17, ex + 1, 20, dark, 0.3);
-      p.set(ex - 1, 17.5, WHITE);
+      // Round eyes: the white of the eye, a coloured iris, a pupil, a spark and a lash line.
+      p.ball(ex, 18.8, 1.8, 2.1, WHITE, { flat: true });
+      p.ball(ex + 0.1, 18.9, 1.2, 1.7, iris, { flat: true });
+      p.ball(ex + 0.1, 19.1, 0.65, 1, dark, { flat: true });
+      p.rect(ex - 0.5, 18, ex + 0.1, 18.6, WHITE);
+      p.rect(ex - 2, 16.7, ex + 2, 17.3, dark);
+      p.rect(ex + (ex < 15 ? -2.5 : 2), 17.2, ex + (ex < 15 ? -2 : 2.5), 17.8, dark);
     }
+    // Eyebrows: a thin arch.
+    p.rect(ex - 2, 15.2, ex + 2, 15.8, brow);
+    p.rect(ex + (ex < 15 ? -2.5 : 2), 15.6, ex + (ex < 15 ? -2 : 2.5), 16.2, brow);
   }
-  // Eyebrows, short and flat.
-  const brow = tone(pal.hair, -0.25);
-  for (const bx of EYE_X) for (let dx = -1.5; dx <= 1.5; dx++) p.set(bx + dx, 15.2, brow);
   // A soft blush and a small nose.
-  for (const cx of [8.6, 21.4]) p.set(cx, 21.4, mix2(skin, [244, 120, 130], 0.32));
-  p.set(15, 20.4, tone(skin, -0.24));
-  p.set(15, 21.4, tone(skin, -0.12));
+  for (const cx of [8.6, 21.4]) p.ball(cx, 21.8, 1.5, 0.9, mix2(skin, [244, 120, 130], 0.32), { flat: true });
+  p.rect(14.6, 20.4, 15.4, 21.4, tone(skin, -0.22));
+  p.rect(14.1, 21.4, 15.9, 21.9, tone(skin, -0.12));
+  p.rect(14.8, 19.8, 15.2, 20.3, tone(skin, 0.1));
   const mouth: RGB = darkSkin ? [0xd2, 0x6a, 0x72] : [0xa8, 0x3a, 0x3f];
+  const lip = mix2(skin, [244, 140, 150], 0.4);
   if (look.mouth === 1) {
-    p.block(12.6, 22.6, 17.4, 24.4, [0x7a, 0x2a, 0x35], 0.8);
-    for (let x = 13; x <= 17; x++) p.set(x, 22.8, WHITE);
+    p.ball(15, 23.6, 3, 1.6, [0x7a, 0x2a, 0x35], { flat: true });
+    p.rect(12.6, 22.2, 17.4, 23.1, WHITE);
+    p.rect(13.8, 24.2, 16.2, 24.8, [240, 120, 140]);
   } else if (look.mouth === 2) {
-    for (let x = 13.6; x <= 16.6; x++) p.set(x, 23.2, mouth);
+    p.rect(13.4, 23.3, 16.6, 23.9, mouth);
+    p.rect(13.9, 23.9, 16.1, 24.3, lip);
   } else if (look.mouth === 3) {
-    p.block(14, 22.4, 16, 24.6, [0x7a, 0x2a, 0x35], 0.6);
+    p.ball(15, 23.6, 1.3, 1.7, [0x7a, 0x2a, 0x35], { flat: true });
+    p.rect(14.6, 22.8, 15.4, 23.3, lip);
   } else {
-    // A small smile: a flat line with its corners turned up.
-    for (const [mx, my] of [[12.6, 22.4], [13.6, 23.2], [14.6, 23.2], [15.6, 23.2], [16.6, 23.2], [17.6, 22.4]] as const) p.set(mx, my, mouth);
+    // A small smile: a curved line with its corners turned up, and a light lip under it.
+    for (let t = -2.6; t <= 2.6; t += 0.4) p.rect(15 + t - 0.25, 23.9 - 0.16 * t * t, 15 + t + 0.25, 24.4 - 0.16 * t * t, mouth);
+    p.rect(13.8, 24.5, 16.2, 25, lip);
   }
 }
 
@@ -273,31 +343,24 @@ const insideHead = (x: number, y: number, grow = 0.4) => {
   return Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= rad;
 };
 
-/** Fills the hair where `inside` says so: a light top, a darker right side, a few strands. */
+/** Fills the hair where `inside` says so: a light top, a glossy arc, thin strands, a darker lower right. */
 function cap(p: Painter, hair: RGB, inside: (x: number, y: number) => boolean, skin?: RGB): void {
-  for (let y = 2; y < 27; y++) {
-    for (let x = 2; x < 28; x++) {
-      if (!inside(x, y)) continue;
-      // A glossy arc follows the round of the skull; strands run down from the crown; the lower right is in shade.
-      const arc = Math.hypot((x + 0.5 - HX) * 0.95, y + 0.5 - 13.4);
-      let f = 0;
-      if (arc > 8.6 && arc < 10.2 && x < 19 && y < 13) f += 0.2;
-      else if (arc > 7 && arc <= 8.6 && x < 19 && y < 13) f += 0.07;
-      if (x >= 22 || (y > 14 && x + y > 36)) f -= 0.14;
-      if ((x * 7 + (y >> 1) * 3) % 11 === 0 && y > 8) f -= 0.09;
-      // The hair just above the edge of the fringe is a little darker: it is thicker there.
-      if (!inside(x, y + 1) && y > 9) f -= 0.12;
-      p.set(x, y, tone(hair, f));
-    }
-  }
+  const e = 1 / p.k;
+  p.fill(2, 2, 28, 27, (x, y, fx, fy) => {
+    if (!inside(x, y)) return null;
+    // A glossy arc follows the round of the skull; strands run down from the crown; the lower right is in shade.
+    const arc = Math.hypot((x + 0.5 - HX) * 0.95, y + 0.5 - 13.4);
+    let f = 0;
+    if (arc > 8.7 && arc < 10 && x < 19 && y < 13) f += 0.2;
+    else if (arc > 7.4 && arc <= 8.7 && x < 19 && y < 13) f += 0.07;
+    if (x >= 22 || (y > 14 && x + y > 36)) f -= 0.13;
+    if (y > 7.5 && (fx * 5 + Math.floor(fy / 5) * 3) % 8 === 0) f -= 0.09;
+    // The hair just above the edge of the fringe is a little darker: it is thicker there.
+    if (!inside(x, y + e * 1.5) && y > 9) f -= 0.12;
+    return tone(hair, f);
+  });
   // The fringe casts a thin shadow on the forehead.
-  if (skin) {
-    for (let x = HL; x < HR; x++) {
-      for (let y = HT; y < 22; y++) {
-        if (inside(x, y - 1) && !inside(x, y) && insideHead(x, y, 0)) p.set(x, y, tone(skin, -0.16));
-      }
-    }
-  }
+  if (skin) p.fill(HL, HT, HR, 22, (x, y) => (inside(x, y - e) && !inside(x, y) && insideHead(x, y, 0) ? tone(skin, -0.16) : null));
 }
 
 /** A lock of hair hanging from y0 to y1, swaying a little: the pieces of long hair, braids and bobs are made of these. */
@@ -613,58 +676,58 @@ function drawGlasses(p: Painter, look: Look): void {
   const dark = rgb(OUTLINE);
   if (look.glasses === 1) {
     for (const ex of EYE_X) {
-      for (let a = 0; a < 24; a++) {
-        const t = (a / 24) * Math.PI * 2;
-        p.set(ex + Math.cos(t) * 3.4, 18.4 + Math.sin(t) * 3.4, dark);
+      for (let a = 0; a < 64; a++) {
+        const t = (a / 64) * Math.PI * 2;
+        p.dot(ex + Math.cos(t) * 3.4, 18.4 + Math.sin(t) * 3.4, dark);
       }
-      p.set(ex - 1.4, 16.6, WHITE);
+      p.dot(ex - 1.4, 16.6, WHITE);
     }
-    for (let x = 14; x <= 16; x++) p.set(x, 17.6, dark);
+    for (let x = 14; x <= 16; x += 0.5) p.dot(x, 17.6, dark);
   } else if (look.glasses === 2) {
     for (const ex of EYE_X) {
       for (let x = ex - 3.2; x <= ex + 3.2; x += 0.5) {
-        p.set(x, 15.8, dark);
-        p.set(x, 21, dark);
+        p.dot(x, 15.8, dark);
+        p.dot(x, 21, dark);
       }
       for (let y = 15.8; y <= 21; y += 0.5) {
-        p.set(ex - 3.2, y, dark);
-        p.set(ex + 3.2, y, dark);
+        p.dot(ex - 3.2, y, dark);
+        p.dot(ex + 3.2, y, dark);
       }
-      p.set(ex - 1.8, 17, WHITE);
+      p.dot(ex - 1.8, 17, WHITE);
     }
-    for (let x = 14; x <= 16; x++) p.set(x, 16.8, dark);
+    for (let x = 14; x <= 16; x += 0.5) p.dot(x, 16.8, dark);
   } else if (look.glasses === 3) {
     for (const ex of EYE_X) {
       p.block(ex - 3.6, 16, ex + 3.6, 21, [34, 28, 58], 1.2);
-      p.set(ex - 2, 17.2, [150, 190, 255]);
-      p.set(ex - 1, 16.8, [150, 190, 255]);
+      p.dot(ex - 2, 17.2, [150, 190, 255]);
+      p.dot(ex - 1, 16.8, [150, 190, 255]);
     }
-    for (let x = 14; x <= 16; x++) p.set(x, 16.6, dark);
+    for (let x = 14; x <= 16; x += 0.5) p.dot(x, 16.6, dark);
   } else if (look.glasses === 4) {
     const pink: RGB = [255, 110, 160];
     const shape = ['.#.#.', '#####', '.###.', '..#..'];
     for (const ex of EYE_X) {
       shape.forEach((row, ry) =>
         [...row].forEach((ch, rx) => {
-          if (ch === '#') p.set(ex - 2.5 + rx, 16.4 + ry * 1.3, ry === 0 && rx === 1 ? [255, 190, 210] : pink);
+          if (ch === '#') p.dot(ex - 2.5 + rx, 16.4 + ry * 1.3, ry === 0 && rx === 1 ? [255, 190, 210] : pink);
         }),
       );
     }
-    for (let x = 14; x <= 16; x++) p.set(x, 17.8, dark);
+    for (let x = 14; x <= 16; x += 0.5) p.dot(x, 17.8, dark);
   } else if (look.glasses === 5) {
     // Aviators: big teardrop lenses in a thin golden frame.
     for (const ex of EYE_X) {
       p.block(ex - 3.8, 15.6, ex + 3.8, 22, GOLD, 2.4);
       p.block(ex - 3, 16.4, ex + 3, 21.2, [86, 130, 160], 2);
-      p.set(ex - 1.8, 17.2, [200, 230, 250]);
-      p.set(ex - 0.8, 16.8, [200, 230, 250]);
+      p.dot(ex - 1.8, 17.2, [200, 230, 250]);
+      p.dot(ex - 0.8, 16.8, [200, 230, 250]);
     }
-    for (let x = 14; x <= 16; x++) p.set(x, 16.6, GOLD);
+    for (let x = 14; x <= 16; x += 0.5) p.dot(x, 16.6, GOLD);
   } else if (look.glasses === 6) {
     // An eyepatch over one eye, held by a strap across the head.
-    for (let x = 5; x < 25; x++) p.set(x, 14 + (x - 5) * 0.06, [34, 28, 58]);
+    for (let x = 5; x < 25; x++) p.dot(x, 14 + (x - 5) * 0.06, [34, 28, 58]);
     p.block(EYE_X[0] - 3.2, 15.4, EYE_X[0] + 3.2, 21.6, [34, 28, 58], 1.8);
-    p.set(EYE_X[0] - 1.6, 17, [90, 84, 120]);
+    p.dot(EYE_X[0] - 1.6, 17, [90, 84, 120]);
   }
 }
 
@@ -676,14 +739,13 @@ function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: b
   }
   p.block(HL, HT, HR, HB, pal.skin, 4.6);
   // The light comes from the upper left: a soft cheek, a shaded jaw and a shaded right side.
-  for (let y = 12; y <= HB; y++) {
-    for (let x = HL; x < HR; x++) {
-      if (!insideHead(x, y, 0)) continue;
-      if (y >= 23.4) p.set(x, y, tone(pal.skin, -0.12));
-      else if (x >= 22.6 && y > 14) p.set(x, y, tone(pal.skin, -0.09));
-      else if (x >= 6 && x < 10 && y >= 19 && y < 23) p.set(x, y, tone(pal.skin, 0.05));
-    }
-  }
+  p.fill(HL, 12, HR, HB + 1, (x, y) => {
+    if (!insideHead(x, y, 0)) return null;
+    if (y >= 23.4) return tone(pal.skin, -0.12);
+    if (x >= 22.6 && y > 14) return tone(pal.skin, -0.09);
+    if (x >= 6 && x < 10 && y >= 19 && y < 23) return tone(pal.skin, 0.05);
+    return null;
+  });
   if (facing === 'side') p.block(11.4, 16.4, 14.8, 21.8, tone(pal.skin, -0.14), 1.2);
   if (showsFace(facing)) {
     turnHead(p, facing);
@@ -1212,8 +1274,8 @@ function drawLying(p: Painter, look: Look, pal: Palette): void {
 
 /** Turns the body below the neck: the same drawing, squeezed toward its middle, reads as a body seen at an angle. */
 function squeezeBody(p: Painter, from: number, k: number): void {
-  const mid = HX + p.ox;
-  for (let y = Math.max(0, Math.round(from + p.oy)); y < p.h; y++) {
+  const mid = (HX + p.ox) * p.k;
+  for (let y = Math.max(0, Math.round((from + p.oy) * p.k)); y < p.h; y++) {
     const row = p.px.slice(y * p.w, (y + 1) * p.w);
     for (let x = 0; x < p.w; x++) {
       const sx = Math.round(mid + (x - mid) / k);
@@ -1224,7 +1286,7 @@ function squeezeBody(p: Painter, from: number, k: number): void {
 
 function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: boolean, pose: Pose): Painter {
   const { w, h } = avatarSize(pose);
-  const p = new Painter(w, h);
+  const p = new Painter(w / RES, h / RES, RES);
   const pal = paletteOf(look, tint);
   if (pose === 'lie') {
     // The body is drawn lower on the canvas than the head; drawLying moves the head itself.

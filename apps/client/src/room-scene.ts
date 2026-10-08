@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
-import { ANCHOR_X, ANCHOR_Y, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
+import { ANCHOR_X, ANCHOR_Y, RES, catalogueEntry, isSwitchable, parseLook } from '@coloxel/render';
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
 import { createShapeEditor } from './room-shape';
@@ -27,7 +27,9 @@ const STEP_MS = 480;
 /** Screen pixels per millisecond: one cell (about 36 px) per server step, a touch faster so that the avatar never waits for the next step. */
 const WALK_SPEED = (Math.hypot(TW / 2, TH / 2) / STEP_MS) * 1.08;
 /** Avatars are drawn at the same two screen pixels per unit as the furniture: about 1.4 cells tall. */
-const BODY_SCALE = 1.5;
+/** Screen pixels of the world for one pixel of the avatar's design grid; the sprite itself has RES times finer pixels. */
+const PX = 1.5;
+const BODY_SCALE = PX / RES;
 const cellKey = (i: number, j: number) => `${i},${j}`;
 
 export type RoomTarget = { kind: 'hall' } | { kind: 'apartment'; ownerId: string };
@@ -518,7 +520,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     shadow.fill({ color: 0x1b1530, alpha: 0.2 });
     const body = new Sprite(avatarTexture(look, 'front', 0));
     body.anchor.set(0.5, 1);
-    body.position.set(0, 10 * BODY_SCALE);
+    body.position.set(0, 10 * PX);
     body.scale.set(BODY_SCALE);
     const label = new Text({
       text: p.nickname,
@@ -673,11 +675,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
-        view.body.position.set(8 * BODY_SCALE, -17 * BODY_SCALE);
+        view.body.position.set(8 * PX, -17 * PX);
       } else {
         view.body.anchor.set(0.5, 1);
         // Seated, the avatar sits a little forward of the middle of the seat.
-        view.body.position.set(pose === 'sit' ? 3 * BODY_SCALE : 0, (pose === 'sit' ? 4 : 10) * BODY_SCALE - Math.round(bob) - (pose === 'stand' ? breath * BODY_SCALE : 0));
+        view.body.position.set(pose === 'sit' ? 3 * PX : 0, (pose === 'sit' ? 4 : 10) * PX - Math.round(bob) - (pose === 'stand' ? breath * PX : 0));
       }
       view.shadow.visible = pose === 'stand';
       view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -71 : -64 - Math.round(bob));
