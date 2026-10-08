@@ -361,16 +361,23 @@ const nightstand: Recipe = {
 const tv: Recipe = {
   name: 'Télé rétro',
   parts: [
-    box(-4, 4, -8, 8, 0, 8, '#5a3a22'),
-    box(-4, 4, -8, 8, 7, 8.6, '#7a4a2a'),
-    quad('#6e4a2c', [4, -7, 1.2], [4, 7, 1.2], [4, 7, 6], [4, -7, 6]),
-    box(-1.5, 1.5, -7, 7, 8.6, 9.6, INK),
-    box(-1, 1, -7.4, 7.4, 9.6, 23, '#1b1530'),
-    quad('#3e6fb0', [1, -6.4, 10.4], [1, 6.4, 10.4], [1, 6.4, 22], [1, -6.4, 22]),
-    quad('#6aa6ee', [1, -5.6, 14], [1, 0, 14], [1, 0, 21], [1, -5.6, 21]),
-    quad('#8ec0f5', [1, -5, 18], [1, -3, 18], [1, -3, 21], [1, -5, 21]),
-    pix(1, 5.4, 11, 1, 1, '#5fc46a'),
-    pix(-1, -6, 23, 3, 1, '#4a3f7a'),
+    // A low cabinet: two doors with knobs, a drawer line, a lighter top.
+    box(-4, 4, -8, 8, 0, 1.2, '#3e2716'),
+    box(-4, 4, -8, 8, 1.2, 8, '#6a4428'),
+    box(-4.2, 4.2, -8.2, 8.2, 8, 8.8, '#8a5a34'),
+    quad('#5a3a22', [4, -7.2, 1.8], [4, -0.3, 1.8], [4, -0.3, 6.8], [4, -7.2, 6.8]),
+    quad('#5a3a22', [4, 0.3, 1.8], [4, 7.2, 1.8], [4, 7.2, 6.8], [4, 0.3, 6.8]),
+    pix(4, -1.4, 4.6, 0.5, 0.5, '#ffc857'),
+    pix(4, 1.2, 4.6, 0.5, 0.5, '#ffc857'),
+    // The screen on its foot: a dark bezel, a blue picture, a diagonal glare.
+    box(-1.2, 1.2, -2, 2, 8.8, 9.6, INK),
+    box(-0.4, 0.4, -0.6, 0.6, 9.6, 11, INK),
+    box(-1, 1, -7.6, 7.6, 11, 23.4, '#1b1530'),
+    quad('#3e6fb0', [1, -6.8, 12], [1, 6.8, 12], [1, 6.8, 22.4], [1, -6.8, 22.4]),
+    quad('#5a8fd8', [1, -6.8, 12], [1, 6.8, 12], [1, 6.8, 15], [1, -6.8, 15]),
+    quad('#8ec0f5', [1, -5.6, 21.6], [1, -3.6, 21.6], [1, 0.6, 13], [1, -1.4, 13]),
+    quad('#b8d8fa', [1, -2.6, 21.6], [1, -1.8, 21.6], [1, 2.4, 13], [1, 1.6, 13]),
+    pix(1, 6, 11.4, 1, 0.5, '#5fc46a'),
   ],
 };
 
@@ -705,20 +712,35 @@ const lavaLamp: Recipe = {
   ],
 };
 
+/**
+ * Pointed leaves rising from (0, 0, z0) all around: each leaf is a flat diamond from its base to its tip, bent up.
+ * `count` leaves of length `reach`, starting at angle `turn`; drawn from the back (small x + y) to the front.
+ */
+function crownOfLeaves(count: number, z0: number, reach: number, rise: number, width: number, turn: number, greens: string[]): Part[] {
+  const leaves = Array.from({ length: count }, (_, k) => {
+    const a = turn + (k / count) * Math.PI * 2;
+    const [cx, cy] = [Math.cos(a), Math.sin(a)];
+    const tip: [number, number, number] = [cx * reach, cy * reach, z0 + rise];
+    const mid: [number, number] = [cx * reach * 0.5, cy * reach * 0.5];
+    const midZ = z0 + rise * 0.75;
+    const side = (s: number): [number, number, number] => [mid[0] - cy * width * s, mid[1] + cx * width * s, midZ];
+    return { depth: tip[0] + tip[1], part: quad(greens[k % greens.length]!, [cx * 0.6, cy * 0.6, z0], side(1), tip, side(-1)) };
+  });
+  return leaves.sort((p, q) => p.depth - q.depth).map((l) => l.part);
+}
+
 const monstera: Recipe = {
   name: 'Monstera géante',
   parts: [
-    cyl(0, 0, 5, 0, 10, '#e6e0f0', '#5a3a22'),
-    cyl(0, 0, 5.4, 9, 11, '#fff3d6', '#6e4a2c'),
-    cyl(0, 0, 0.9, 11, 22, '#3f9b4b'),
-    ball(-4.4, 1, 24, 4.6, '#2f8a47'),
-    ball(4.4, -1, 27, 4.8, '#3f9b4b'),
-    ball(0, 3, 30, 4.4, '#4fb35a'),
-    ball(-2, -3, 35, 4, '#5fc46a'),
-    ball(2.4, 1, 39, 3.2, '#7ad778'),
-    pix(-5, -1, 26, 1, 2, '#a8f0a0'),
-    pix(3, -3, 30, 1, 2, '#a8f0a0'),
-    pix(0, 5, 33, 1, 2, '#a8f0a0'),
+    // A terracotta pot with a rim, and the soil.
+    cyl(0, 0, 4.6, 0, 9, '#c0683a', '#5a3a22'),
+    cyl(0, 0, 5.2, 8, 10.4, '#d88050', '#6e4a2c'),
+    cyl(0, 0, 4.4, 10.4, 10.8, '#4a2f1c', '#5a3a22'),
+    pix(-3.4, 3.4, 6, 0.5, 3, '#a85a30'),
+    // Two crowns of big pointed leaves, the lower one wide and dark, the upper one shorter and lighter.
+    ...crownOfLeaves(8, 10.8, 9.5, 5, 2.8, 0.3, ['#276b34', '#2f7a3a', '#3f9a46']),
+    ...crownOfLeaves(7, 12, 7, 11, 2.6, 0.75, ['#3f9a46', '#58b552', '#4aa84c']),
+    ...crownOfLeaves(5, 14, 4.2, 15, 2, 0.1, ['#6fca62', '#58b552']),
   ],
 };
 
