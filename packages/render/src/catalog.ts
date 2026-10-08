@@ -1,3 +1,4 @@
+import { bigPieces } from './catalog-big';
 import type { Part, Recipe } from './types';
 
 // The base catalogue: free, unlimited furniture drawn by hand, in the same
@@ -775,6 +776,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('horloge', 'decor', clock),
   entry('coffre', 'storage', chest),
   ...newEntries(),
+  ...bigPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
 ];
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));

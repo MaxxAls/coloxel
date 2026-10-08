@@ -3,12 +3,13 @@ import {
   CATALOGUE,
   FLOORS,
   LIMITS,
-  SPRITE_H,
-  SPRITE_W,
+  frameFor,
+  normalizeSize,
+  rotatedSize,
   STARTER_KIT,
   WALLS,
   catalogueEntry,
-  renderSprite,
+  renderRecipe,
   spriteHash,
 } from '@coloxel/render';
 import { validateRecipe } from '../src';
@@ -27,7 +28,7 @@ describe('base catalogue', () => {
 
   it('passes through validateRecipe untouched, like any other recipe', () => {
     for (const e of CATALOGUE) {
-      const r = validateRecipe({ nom: e.name, parts: e.recipe.parts });
+      const r = validateRecipe({ nom: e.name, parts: e.recipe.parts, size: e.recipe.size });
       expect(r.ok, e.key).toBe(true);
       if (r.ok) expect(r.recipe.parts, e.key).toEqual(e.recipe.parts.map((p) => expect.objectContaining({ t: p.t })));
       expect(e.recipe.parts.length, e.key).toBeLessThanOrEqual(LIMITS.maxParts);
@@ -37,19 +38,32 @@ describe('base catalogue', () => {
   it('renders every piece as a distinct, non-empty sprite that stays inside the frame', () => {
     const hashes = new Set<string>();
     for (const e of CATALOGUE) {
-      const sprite = renderSprite(e.recipe.parts);
-      expect(sprite.width).toBe(SPRITE_W);
-      expect(sprite.height).toBe(SPRITE_H);
+      const sprite = renderRecipe(e.recipe);
+      const frame = frameFor(normalizeSize(e.recipe.size));
+      const W = frame.width, H = frame.height;
+      expect(sprite.width).toBe(W);
+      expect(sprite.height).toBe(H);
       const opaque = sprite.mask.reduce((n, v) => n + v, 0);
       expect(opaque, e.key).toBeGreaterThan(80);
       // Nothing touches the border of the sprite: it would be clipped.
-      for (let x = 0; x < SPRITE_W; x++) {
+      for (let x = 0; x < W; x++) {
         expect(sprite.mask[x], `${e.key} top`).toBe(0);
-        expect(sprite.mask[(SPRITE_H - 1) * SPRITE_W + x], `${e.key} bottom`).toBe(0);
+        expect(sprite.mask[(H - 1) * W + x], `${e.key} bottom`).toBe(0);
       }
-      for (let y = 0; y < SPRITE_H; y++) {
-        expect(sprite.mask[y * SPRITE_W], `${e.key} left`).toBe(0);
-        expect(sprite.mask[y * SPRITE_W + SPRITE_W - 1], `${e.key} right`).toBe(0);
+      for (let y = 0; y < H; y++) {
+        expect(sprite.mask[y * W], `${e.key} left`).toBe(0);
+        expect(sprite.mask[y * W + W - 1], `${e.key} right`).toBe(0);
+      }
+      // A turned piece must stay in its frame too.
+      for (const turns of [1, 2, 3]) {
+        const turned = renderRecipe(e.recipe, turns);
+        const f = frameFor(rotatedSize(normalizeSize(e.recipe.size), turns));
+        expect([turned.width, turned.height], `${e.key} r${turns}`).toEqual([f.width, f.height]);
+        for (let x = 0; x < f.width; x++) expect(turned.mask[x], `${e.key} r${turns} top`).toBe(0);
+        for (let y = 0; y < f.height; y++) {
+          expect(turned.mask[y * f.width], `${e.key} r${turns} left`).toBe(0);
+          expect(turned.mask[y * f.width + f.width - 1], `${e.key} r${turns} right`).toBe(0);
+        }
       }
       hashes.add(spriteHash(sprite));
     }
@@ -58,7 +72,7 @@ describe('base catalogue', () => {
 
   it('draws the same pixels every time', () => {
     for (const e of CATALOGUE) {
-      expect(spriteHash(renderSprite(e.recipe.parts))).toBe(spriteHash(renderSprite(e.recipe.parts)));
+      expect(spriteHash(renderRecipe(e.recipe))).toBe(spriteHash(renderRecipe(e.recipe)));
     }
   });
 
