@@ -320,7 +320,7 @@ const T1 = 40.5;
 /** How a head turns: features are squeezed toward the side the face looks to. */
 function turnHead(p: Painter, facing: Facing): void {
   if (facing === 'front34') {
-    p.mapX = (x) => HX + (x - HX) * 0.8 + 2.2;
+    p.mapX = (x) => HX + (x - HX) * 0.72 + 3;
     p.keepX = null;
   } else if (facing === 'side') {
     p.mapX = (x) => HX + (x - HX) * 0.55 + 3.6;
@@ -1355,12 +1355,19 @@ function drawLying(p: Painter, look: Look, pal: Palette): void {
 }
 
 /** Turns the body below the neck: the same drawing, squeezed toward its middle, reads as a body seen at an angle. */
-function squeezeBody(p: Painter, from: number, k: number): void {
+/**
+ * Turns the body below the neck. The far half (left, before the mirror) is squeezed by `far`, the near half by
+ * `near`, and the whole moves `shift` units toward the way the player faces: a body seen at three quarters shows
+ * its near shoulder broad and its far one narrow, like a person turned along the floor's axis.
+ */
+function squeezeBody(p: Painter, from: number, far: number, near = far, shift = 0): void {
   const mid = (HX + p.ox) * p.k;
+  const to = mid + shift * p.k;
   for (let y = Math.max(0, Math.round((from + p.oy) * p.k)); y < p.h; y++) {
     const row = p.px.slice(y * p.w, (y + 1) * p.w);
     for (let x = 0; x < p.w; x++) {
-      const sx = Math.round(mid + (x - mid) / k);
+      const d = x + 0.5 - to;
+      const sx = Math.floor(mid + d / (d < 0 ? far : near));
       p.px[y * p.w + x] = sx >= 0 && sx < p.w ? (row[sx] ?? null) : null;
     }
   }
@@ -1392,7 +1399,7 @@ function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: bool
     p.warpY = null;
     p.spreadX = 1;
     if (facing === 'side') squeezeBody(p, T0 - 0.5, 0.55);
-    else if (facing === 'front34' || facing === 'back34') squeezeBody(p, T0 - 0.5, 0.86);
+    else if (facing === 'front34' || facing === 'back34') squeezeBody(p, T0 - 0.5, 0.6, 0.94, 1.2);
     drawHead(p, look, pal, facing, blink);
   }
   return p;

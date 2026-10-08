@@ -37,6 +37,13 @@ describe('findPath', () => {
     expect(findPath({ i: 2, j: 2 }, { i: 2, j: 2 }, free)).toEqual([]);
     expect(findPath({ i: 0, j: 0 }, { i: N, j: 0 }, free)).toEqual([]);
   });
+
+  it('goes diagonally first and ends straight along the floor, like the classic isometric games', () => {
+    expect(findPath({ i: 0, j: 0 }, { i: 4, j: 1 }, free)).toEqual([{ i: 1, j: 1 }, { i: 2, j: 1 }, { i: 3, j: 1 }, { i: 4, j: 1 }]);
+    expect(findPath({ i: 5, j: 5 }, { i: 3, j: 0 }, free)).toEqual([{ i: 4, j: 4 }, { i: 3, j: 3 }, { i: 3, j: 2 }, { i: 3, j: 1 }, { i: 3, j: 0 }]);
+    // The player's own cell does not stop them, even when it counts as taken (a seat they sit on).
+    expect(findPath({ i: 2, j: 2 }, { i: 2, j: 4 }, (i, j) => i === 2 && j === 2)).toEqual([{ i: 2, j: 3 }, { i: 2, j: 4 }]);
+  });
 });
 
 describe('inGrid', () => {
