@@ -139,4 +139,21 @@ describe('rotateParts', () => {
     const junk = { t: 'weird', x: 1 };
     expect(rotateParts([junk, { t: 'box' }], 1)).toEqual([junk, { t: 'box' }]);
   });
+
+  it('paints textures differently from a flat box, deterministically', () => {
+    const flat = [{ t: 'box', x0: -6, x1: 6, y0: -6, y1: 6, z0: 0, z1: 10, c: '#8b5e3c' }];
+    const base = spriteHash(renderSprite(flat));
+    for (const tex of ['wood', 'planks', 'logs', 'stone', 'brick', 'tile', 'fabric', 'weave', 'thatch', 'grass', 'leaves', 'metal', 'stripes', 'checker', 'dots', 'marble', 'glass', 'water']) {
+      const a = spriteHash(renderSprite([{ ...flat[0], tex }]));
+      expect(a, tex).not.toBe(base);
+      expect(a, tex).toBe(spriteHash(renderSprite([{ ...flat[0], tex }])));
+    }
+  });
+
+  it('a glow lights the object but does not grow its silhouette', () => {
+    const body = [{ t: 'box', x0: -3, x1: 3, y0: -3, y1: 3, z0: 0, z1: 6, c: '#556677' }];
+    const plain = renderSprite(body), lit = renderSprite([...body, { t: 'glow', x: 0, y: 0, z: 6, r: 14, c: '#ffd070' }]);
+    expect(spriteHash(lit)).not.toBe(spriteHash(plain));
+    expect(lit.mask.reduce((n, v) => n + v, 0)).toBe(plain.mask.reduce((n, v) => n + v, 0));
+  });
 });

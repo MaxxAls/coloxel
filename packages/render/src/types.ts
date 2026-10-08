@@ -1,12 +1,22 @@
 /** A 3D point in recipe space: x and y on the floor (one tile spans -8..8), z up. */
 export type Vec3 = [number, number, number];
 
+/** Surface materials a box or a quad can wear: the engine paints the pattern, the recipe only names it. */
+export const TEXTURES = [
+  'wood', 'planks', 'stone', 'brick', 'tile', 'fabric', 'weave', 'thatch', 'logs',
+  'grass', 'leaves', 'metal', 'stripes', 'checker', 'dots', 'marble', 'glass', 'water',
+] as const;
+export type Texture = (typeof TEXTURES)[number];
+export const isTexture = (v: unknown): v is Texture => typeof v === 'string' && (TEXTURES as readonly string[]).includes(v);
+
 export interface BoxPart {
   t: 'box';
   x0: number; x1: number; y0: number; y1: number; z0: number; z1: number;
   /** Base colour; side faces are shaded automatically unless overridden. */
   c: string;
   top?: string; left?: string; right?: string;
+  /** Material pattern drawn over every face (shaded from the face colours). */
+  tex?: Texture;
 }
 
 export interface CylPart {
@@ -34,6 +44,16 @@ export interface QuadPart {
   t: 'quad';
   pts: Vec3[];
   c: string;
+  tex?: Texture;
+}
+
+/** A soft halo of light (lamp, window, fire): brightens what is under it and fades out. */
+export interface GlowPart {
+  t: 'glow';
+  x: number; y: number; z: number; r: number;
+  c: string;
+  /** 0.1 to 1, default 0.6. */
+  a?: number;
 }
 
 /** A small block anchored at a projected point; w and h are in recipe units (0.5 to 8), SCALE pixels each. */
@@ -43,7 +63,7 @@ export interface PixPart {
   c: string;
 }
 
-export type Part = BoxPart | CylPart | SpherePart | CirclePart | QuadPart | PixPart;
+export type Part = BoxPart | CylPart | SpherePart | CirclePart | QuadPart | PixPart | GlowPart;
 
 export interface Recipe {
   name: string;
@@ -81,6 +101,6 @@ export const ANCHOR_Y = 88 * SCALE;
 export const LIMITS = {
   xy: 14,
   z: 70,
-  maxParts: 80,
+  maxParts: 200,
   maxQuadPoints: 6,
 } as const;

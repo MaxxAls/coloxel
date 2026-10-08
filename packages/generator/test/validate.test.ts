@@ -82,4 +82,20 @@ describe('prompt helpers', () => {
     expect(extractJson('Voici : {"nom":"B"} voilà')).toEqual({ nom: 'B' });
     expect(extractJson('rien')).toBeNull();
   });
+
+  it('keeps known textures and glows, drops unknown textures', () => {
+    const r = validateRecipe({
+      nom: 'Test',
+      parts: [
+        { t: 'box', x0: -4, x1: 4, y0: -4, y1: 4, z0: 0, z1: 6, c: '#8b5e3c', tex: 'wood' },
+        { t: 'box', x0: -4, x1: 4, y0: -4, y1: 4, z0: 6, z1: 8, c: '#8b5e3c', tex: 'lava<script>' },
+        { t: 'glow', x: 0, y: 0, z: 10, r: 999, c: '#ffd070', a: 5 },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.recipe.parts[0]).toMatchObject({ tex: 'wood' });
+    expect((r.recipe.parts[1] as { tex?: string }).tex).toBeUndefined();
+    expect(r.recipe.parts[2]).toMatchObject({ t: 'glow', r: 30, a: 1 });
+  });
 });

@@ -1,4 +1,4 @@
-import { LIMITS, isHex, type Part, type Recipe, type Vec3 } from '@coloxel/render';
+import { LIMITS, isHex, isTexture, type Part, type Recipe, type Vec3 } from '@coloxel/render';
 
 export type ValidationResult =
   | { ok: true; recipe: Recipe }
@@ -12,6 +12,7 @@ const clamp = (v: unknown, lo: number, hi: number): number | null => {
 const XY = (v: unknown) => clamp(v, -LIMITS.xy, LIMITS.xy);
 const Z = (v: unknown) => clamp(v, 0, LIMITS.z);
 const opt = (c: unknown) => (isHex(c) ? c : undefined);
+const tex = (t: unknown) => (isTexture(t) ? t : undefined);
 
 function cleanPart(p: unknown): Part | null {
   if (!p || typeof p !== 'object') return null;
@@ -22,7 +23,7 @@ function cleanPart(p: unknown): Part | null {
       const c = isHex(o.c) ? o.c : opt(o.top);
       if (x0 === null || x1 === null || y0 === null || y1 === null || z0 === null || z1 === null || !c) return null;
       if (x1 <= x0 || y1 <= y0 || z1 < z0) return null;
-      return { t: 'box', x0, x1, y0, y1, z0, z1, c, top: opt(o.top), left: opt(o.left), right: opt(o.right) };
+      return { t: 'box', x0, x1, y0, y1, z0, z1, c, top: opt(o.top), left: opt(o.left), right: opt(o.right), tex: tex(o.tex) };
     }
     case 'cyl': {
       const x = XY(o.x), y = XY(o.y), r = clamp(o.r, 0.5, 12), z0 = Z(o.z0), z1 = Z(o.z1);
@@ -49,13 +50,18 @@ function cleanPart(p: unknown): Part | null {
         if (x === null || y === null || z === null) return null;
         pts.push([x, y, z]);
       }
-      return { t: 'quad', pts, c: o.c };
+      return { t: 'quad', pts, c: o.c, tex: tex(o.tex) };
     }
     case 'pix': {
       const x = XY(o.x), y = XY(o.y), z = Z(o.z), w = clamp(o.w ?? 1, 0.5, 8), h = clamp(o.h ?? 1, 0.5, 8);
       if (x === null || y === null || z === null || w === null || h === null || !isHex(o.c)) return null;
       // Half units are allowed: the finest detail the renderer can draw.
       return { t: 'pix', x, y, z, w: Math.round(w * 2) / 2, h: Math.round(h * 2) / 2, c: o.c };
+    }
+    case 'glow': {
+      const x = XY(o.x), y = XY(o.y), z = Z(o.z), r = clamp(o.r, 1, 30), a = clamp(o.a ?? 0.6, 0.1, 1);
+      if (x === null || y === null || z === null || r === null || a === null || !isHex(o.c)) return null;
+      return { t: 'glow', x, y, z, r, c: o.c, a };
     }
     default:
       return null;

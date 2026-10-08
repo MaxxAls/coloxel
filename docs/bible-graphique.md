@@ -38,3 +38,11 @@ Un pixel, `#1b1530` (violet très sombre, jamais noir pur). Il est ajouté par l
 - 10 à 40 parties : assez pour du charme (coutures, boutons, reflets), pas de bruit.
 - Les objets absurdes ou humoristiques gardent leur idée centrale bien visible.
 - Ordre de dessin : de l'arrière et du bas vers l'avant et le haut.
+
+## Matières et lumière (niveau de détail)
+
+- Une recette peut avoir jusqu'à 200 parties. Un objet riche se compose en couches : structure, matières, objets posés dessus, petits détails, lumière.
+- `box` et `quad` acceptent `tex` : wood, planks, logs, stone, brick, tile, fabric, weave, thatch, grass, leaves, metal, stripes, checker, dots, marble, glass, water. Le motif suit les couleurs et l'éclairage de la recette.
+- `glow` : halo de lumière (lampe, bougie, écran, feu) en bandes pixel art. Il éclaircit les formes déjà dessinées et ne change pas la silhouette.
+- Aperçu des matières : `npx tsx apps/server/scripts/preview-textures.ts out.png`.
+

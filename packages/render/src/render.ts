@@ -1,6 +1,6 @@
 import {
   ANCHOR_X, ANCHOR_Y, LIMITS, SCALE, SPRITE_H, SPRITE_W,
-  type Part, type Sprite,
+  isTexture, type Part, type Sprite, type Texture,
 } from './types';
 
 type RGB = [number, number, number];
@@ -58,6 +58,124 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 /** Ordered-dither threshold in (0, 1) for a pixel: turns smooth gradients into pixel-art bands. */
 const bayer = (x: number, y: number) => (BAYER[((y & 3) << 2) | (x & 3)]! + 0.5) / 16;
 
+const fract = (v: number) => v - Math.floor(v);
+/** Smooth value noise: blotches bigger than a pixel. */
+function smooth(x: number, y: number): number {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const fx = x - xi, fy = y - yi;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = noise(xi, yi), b = noise(xi + 1, yi), c = noise(xi, yi + 1), d = noise(xi + 1, yi + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+/**
+ * Brightness offset of a material at a point of a face. (u, v) are the face
+ * coordinates in recipe units (v is height on a side face, depth on a top);
+ * (px, py) are sprite pixels, for grain. The result is added to the face tone,
+ * so a texture always follows the colours and the lighting of the recipe.
+ */
+function texture(t: Texture, u: number, v: number, px: number, py: number): number {
+  switch (t) {
+    case 'planks': {
+      const row = Math.floor(v / 2.5), rf = fract(v / 2.5);
+      const off = noise(row, 5) * 9, seg = Math.floor((u + off) / 9);
+      const joint = fract((u + off) / 9) * 9 < 0.5;
+      const base = (noise(row * 31 + seg, 2) - 0.5) * 0.16;
+      return rf < 0.1 || joint ? -0.3 : base + (noise(Math.floor(u * 5) + row * 7, row) - 0.5) * 0.06 + (rf > 0.8 ? 0.05 : 0);
+    }
+    case 'wood': {
+      const row = Math.floor(v / 4), rf = fract(v / 4);
+      const grainLine = noise(Math.floor((u + noise(row, 1) * 20) * 3), Math.floor(v * 1.2));
+      return (rf < 0.08 ? -0.26 : 0) + (grainLine - 0.5) * 0.14 + (noise(row, 4) - 0.5) * 0.1;
+    }
+    case 'logs': {
+      const row = Math.floor(v / 3.5), rf = fract(v / 3.5);
+      const round = rf < 0.15 ? -0.34 : rf < 0.42 ? 0.1 : rf > 0.8 ? -0.14 : 0;
+      const knot = noise(Math.floor(u / 12) + row, 8) < 0.12 && rf > 0.3 && rf < 0.7 ? -0.18 : 0;
+      return round + knot + (noise(Math.floor(u * 2) + row * 13, row) - 0.5) * 0.1;
+    }
+    case 'stone': {
+      const row = Math.floor(v / 3.5), rf = fract(v / 3.5);
+      const w = 5 + noise(row, 3) * 4, off = noise(row, 6) * 12, col = Math.floor((u + off) / w);
+      const cf = fract((u + off) / w);
+      if (rf < 0.12 || cf * w < 0.5) return -0.34;
+      const b = (noise(col * 17 + row, 5) - 0.5) * 0.22;
+      return b + (rf > 0.75 ? -0.06 : rf < 0.3 ? 0.07 : 0) + (noise(px, py) - 0.5) * 0.06;
+    }
+    case 'brick': {
+      const row = Math.floor(v / 2), rf = fract(v / 2);
+      const col = Math.floor((u + (row & 1) * 2) / 4), cf = fract((u + (row & 1) * 2) / 4);
+      if (rf < 0.2 || cf * 4 < 0.4) return -0.3;
+      return (noise(col * 13 + row, 9) - 0.5) * 0.2 + (rf > 0.7 ? -0.05 : 0.04);
+    }
+    case 'tile': {
+      const cu = fract(u / 4), cv = fract(v / 4);
+      if (cu < 0.07 || cv < 0.07) return -0.22;
+      return (noise(Math.floor(u / 4), Math.floor(v / 4)) - 0.5) * 0.1 + (cu < 0.2 && cv < 0.2 ? 0.08 : 0);
+    }
+    case 'fabric':
+      return ((px + py) & 1 ? 0.045 : -0.045) + (noise(px >> 1, py >> 1) - 0.5) * 0.04;
+    case 'weave':
+      return (((px >> 1) + (py >> 1)) & 1 ? 0.07 : -0.07) + ((px & 1) === (py & 1) ? 0.02 : -0.02);
+    case 'thatch': {
+      const row = Math.floor(v / 3), rf = fract(v / 3);
+      const straw = noise(Math.floor(u * 2.5) + row * 11, row);
+      return rf < 0.14 ? -0.32 : (straw - 0.5) * 0.26 + (1 - rf) * 0.1 - 0.04;
+    }
+    case 'grass': {
+      const blade = noise(px, py >> 1);
+      const clump = smooth(u / 3, v / 3);
+      return (blade - 0.5) * 0.2 + (clump - 0.5) * 0.24 + (blade > 0.88 ? 0.12 : 0);
+    }
+    case 'leaves': {
+      const a = smooth(u / 2.2 + 3, v / 2.2), b = smooth(u / 1.1, v / 1.1 + 9);
+      const m = a * 0.65 + b * 0.35;
+      const q = m < 0.36 ? -0.3 : m < 0.5 ? -0.12 : m < 0.64 ? 0.02 : 0.15;
+      return q + (noise(px, py) > 0.93 ? 0.12 : 0);
+    }
+    case 'metal': {
+      const streak = noise(Math.floor(u * 0.7), Math.floor(v * 5));
+      return (streak - 0.5) * 0.14 + (fract(v / 6) < 0.1 ? 0.1 : 0);
+    }
+    case 'stripes':
+      return fract(u / 6) < 0.5 ? 0.08 : -0.1;
+    case 'checker':
+      return (Math.floor(u / 3) + Math.floor(v / 3)) & 1 ? 0.12 : -0.1;
+    case 'dots': {
+      const du = fract(u / 4) - 0.5, dv = fract(v / 4) - 0.5;
+      return du * du + dv * dv < 0.07 ? 0.2 : -0.02;
+    }
+    case 'marble': {
+      const vein = Math.abs(smooth(u / 5, v / 5) - 0.5), fine = Math.abs(smooth(u / 2 + 7, v / 2) - 0.5);
+      return (vein < 0.035 ? -0.2 : fine < 0.02 ? -0.1 : 0) + (smooth(u / 9, v / 9) - 0.5) * 0.14;
+    }
+    case 'glass': {
+      const d = fract((u + v) / 9);
+      return d < 0.08 ? 0.28 : d > 0.14 && d < 0.2 ? 0.12 : 0;
+    }
+    case 'water': {
+      const wave = Math.sin(u * 0.9 + smooth(u / 4, v / 2) * 5 + v * 1.7);
+      return wave > 0.8 ? 0.22 : wave < -0.7 ? -0.12 : (noise(px, py) - 0.5) * 0.04;
+    }
+    default:
+      return 0;
+  }
+}
+
+/** Face coordinates (u, v) of a sprite pixel, for each kind of box face. */
+function faceUV(face: 'r' | 'l' | 't', px: number, py: number, x1: number, y1: number, z1: number): [number, number] {
+  const a = (px + 0.5 - ANCHOR_X) / SCALE, b = (py + 0.5 - ANCHOR_Y) / SCALE;
+  if (face === 'r') {
+    const y = x1 - a;
+    return [y, (x1 + y) / 2 - b];
+  }
+  if (face === 'l') {
+    const x = y1 + a;
+    return [x, (x + y1) / 2 - b];
+  }
+  return [a / 2 + b + z1, b + z1 - a / 2];
+}
+
 type Paint = RGB | ((x: number, y: number) => RGB);
 
 class Canvas {
@@ -113,6 +231,30 @@ class Canvas {
     }
   }
 
+  /** Light that brightens what is already drawn and leaves a faint halo (alpha stays under the silhouette threshold). */
+  glow(cx: number, cy: number, r: number, c: RGB, strength: number): void {
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(SPRITE_H - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(SPRITE_W - 1, Math.ceil(cx + r)); x++) {
+        const d = Math.hypot(x + 0.5 - cx, (y + 0.5 - cy) * 1.15) / r;
+        if (d >= 1) continue;
+        // Four pixel-art bands instead of a smooth fade.
+        const k = Math.floor((1 - d) * (1 - d) * strength * 4 + bayer(x, y) * 0.9) / 4;
+        if (k <= 0) continue;
+        const i = (y * SPRITE_W + x) * 4;
+        const alpha = this.data[i + 3]!;
+        if (alpha > 40) {
+          for (let ch = 0; ch < 3; ch++) {
+            const v = this.data[i + ch]!;
+            this.data[i + ch] = Math.min(255, v + (255 - v) * k * 0.45 + c[ch]! * k * 0.35);
+          }
+        } else {
+          this.data[i] = c[0]; this.data[i + 1] = c[1]; this.data[i + 2] = c[2];
+          this.data[i + 3] = Math.max(alpha, Math.min(38, Math.round(k * 70)));
+        }
+      }
+    }
+  }
+
   ellipse(cx: number, cy: number, rx: number, ry: number, p: Paint): void {
     if (rx < 0.5 || ry < 0.5) return;
     for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
@@ -157,17 +299,32 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       const right = p.right ? rgb(hex(p.right)) : tone(base, -0.34);
 
       // Side faces: lit a little at the top, darker toward the floor (ambient occlusion), plus grain.
-      const side = (pts: [number, number][], color: RGB): void => {
+      const tx = isTexture(p.tex) ? p.tex : null;
+      const side = (pts: [number, number][], color: RGB, face: 'r' | 'l'): void => {
         const ys = pts.map((q) => q[1]);
         const yTop = Math.min(...ys), yBot = Math.max(...ys);
         const span = Math.max(1, yBot - yTop);
-        cv.poly(pts, (x, y) => tone(color, 0.07 - 0.17 * ((y - yTop) / span) + grain(x, y)));
+        cv.poly(pts, (x, y) => {
+          let f = 0.07 - 0.17 * ((y - yTop) / span) + grain(x, y);
+          if (tx) {
+            const [u, v] = faceUV(face, x, y, x1, y1, z1);
+            f += texture(tx, u, v, x, y);
+          }
+          return tone(color, f);
+        });
       };
-      side([P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], right);
-      side([P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], left);
+      side([P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], right, 'r');
+      side([P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], left, 'l');
       cv.poly(
         [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)],
-        (x, y) => tone(top, grain(x, y, 0.06)),
+        (x, y) => {
+          let f = grain(x, y, 0.06);
+          if (tx) {
+            const [u, v] = faceUV('t', x, y, x1, y1, z1);
+            f += texture(tx, u, v, x, y);
+          }
+          return tone(top, f);
+        },
       );
 
       // Edges: a light line where the top meets the sides, a dark one on the vertical corner.
@@ -188,7 +345,9 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       const c = rgb(hex(p.c));
       const ys = pts.map((q) => q[1]);
       const yTop = Math.min(...ys), span = Math.max(1, Math.max(...ys) - yTop);
-      cv.poly(pts, (x, y) => tone(c, 0.05 - 0.1 * ((y - yTop) / span) + grain(x, y, 0.05)));
+      const qt = isTexture(p.tex) ? p.tex : null;
+      // A quad is a flat sheet: texture it in screen units (2 pixels per unit) so any orientation reads the same.
+      cv.poly(pts, (x, y) => tone(c, 0.05 - 0.1 * ((y - yTop) / span) + grain(x, y, 0.05) + (qt ? texture(qt, x / SCALE, y / SCALE, x, y) : 0)));
       return;
     }
     case 'cyl': {
@@ -269,6 +428,11 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       const w = Math.max(1, Math.round(num(p.w, 0.5, 8, 1) * SCALE));
       const h = Math.max(1, Math.round(num(p.h, 0.5, 8, 1) * SCALE));
       cv.rect(x, y, w, h, rgb(hex(p.c)));
+      return;
+    }
+    case 'glow': {
+      const [x, y] = P(num(p.x, L, R, 0), num(p.y, L, R, 0), num(p.z, 0, Z, 0));
+      cv.glow(x, y, num(p.r, 1, 30, 8) * SCALE, rgb(hex(p.c)), num(p.a, 0.1, 1, 0.6));
       return;
     }
     default:
@@ -372,6 +536,7 @@ export function rotateParts<P extends { t?: unknown }>(parts: readonly P[], turn
       case 'cyl':
       case 'sphere':
       case 'circle':
+      case 'glow':
       case 'pix': {
         if (!num(p.x) || !num(p.y)) return raw;
         const [x, y] = spin(p.x, p.y);
