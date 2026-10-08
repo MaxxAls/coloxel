@@ -3,7 +3,13 @@
 // and the same function can be run in tests or a preview script.
 
 import type { FloorPattern, WallPattern } from './catalog';
-import { DEFAULT_LAYOUT, N, hasFloor, levelAt, type RoomLayout } from '@coloxel/world';
+import { DEFAULT_LAYOUT, HALL_LAYOUT, N, hasFloor, levelAt, type RoomLayout } from '@coloxel/world';
+
+/** Cells along each wall of the hall: its decor is spread over that length. */
+let hallSide = 0;
+while (hasFloor(HALL_LAYOUT, 0, hallSide)) hallSide++;
+/** Where the glass doors stand on the right wall of the hall (and where the red carpet starts): its middle. */
+const HALL_DOORS: [number, number] = [hallSide / 2 - 1.7, hallSide / 2 + 1.7];
 import { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H } from './room';
 
 type RGB = [number, number, number];
@@ -253,7 +259,7 @@ function wallColor(look: RoomLook, side: 'left' | 'right', u: number, v: number,
   const trim = rgb(look.wall.trim);
   const vf = v / WALL_H;
   // Lit from above, darker in the corner and low on the wall (ambient occlusion).
-  const light = 0.06 * vf - 0.09 * (1 - vf) * (1 - vf) - Math.max(0, 1 - u / 0.7) * 0.13 - Math.max(0, (u - 7) / 1) * 0.03;
+  const light = 0.09 * vf - 0.12 * (1 - vf) * (1 - vf) - Math.max(0, 1 - u / 0.7) * 0.13 - Math.max(0, (u - 7) / 1) * 0.03;
 
   // Cornice and skirting board.
   if (v >= WALL_H - 9) {
@@ -342,8 +348,9 @@ function apartmentDecor(side: 'left' | 'right', u: number, v: number, px: number
 
 function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py: number, wall: RGB): RGB | null {
   if (side === 'right') {
-    // Double glass doors with a lit sign.
-    const [u0, u1, v1] = [2.8, 6.2, 98];
+    // Double glass doors with a lit sign, in the middle of the wall.
+    const [u0, u1] = HALL_DOORS;
+    const v1 = 98;
     if (inRect(u, v, u0 - 0.15, u1 + 0.15, 0, v1 + 10)) {
       const f = (u - u0) / (u1 - u0);
       if (v > v1) return v > v1 + 5 ? tone([0xff, 0xc8, 0x57], 0.1) : tone([0xff, 0xc8, 0x57], -0.15);
@@ -359,8 +366,10 @@ function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py:
     }
     return null;
   }
-  // Pillars with flutes, and wall lamps with a pool of light.
-  for (const [p0, p1] of [[0.7, 1.45], [6.55, 7.3]] as const) {
+  // Pillars with flutes every few cells, and a wall lamp with a pool of light between two of them.
+  const pillars: [number, number][] = [];
+  for (let at = 0.7; at < hallSide - 0.5; at += 4.4) pillars.push([at, at + 0.75]);
+  for (const [p0, p1] of pillars) {
     if (inRect(u, v, p0, p1, 0, WALL_H - 9)) {
       const f = (u - p0) / (p1 - p0);
       const flute = Math.floor(f * 6);
@@ -370,7 +379,7 @@ function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py:
       return tone(c, (noise(px, py) - 0.5) * 0.04);
     }
   }
-  for (const lu of [3.4, 5.3]) {
+  for (const lu of pillars.slice(0, -1).map(([p0]) => p0 + 2.2)) {
     const d = Math.hypot((u - lu) * 32, v - 74);
     if (d < 4) return d < 2 ? [0xff, 0xf6, 0xcc] : [0xff, 0xd8, 0x70];
     if (d < 40) return tone(wall, 0.2 * (1 - d / 40) * (bayer(px, py) < 0.85 ? 1 : 0.4));
@@ -382,14 +391,23 @@ function hallDecor(side: 'left' | 'right', u: number, v: number, px: number, py:
 
 function floorDecor(look: RoomLook, c: RGB, u: number, v: number, px: number, py: number, wallDist: number): RGB {
   let out = c;
+  // Room lighting: bright toward the middle, falling off to the corners, and a soft sheen across glossy floors.
+  const mid = Math.hypot(u - N / 2, v - N / 2) / (N * 0.75);
+  out = tone(out, 0.075 - 0.2 * mid * mid);
+  if (look.floor.pattern === 'planks' || look.floor.pattern === 'tiles' || look.floor.pattern === 'checker' || look.floor.pattern === 'stone') {
+    const sheen = Math.max(0, 1 - Math.abs(u - v - 0.6) / 1.5);
+    out = tone(out, 0.07 * sheen * sheen);
+  }
   // Contact shadow along the walls.
   if (wallDist < 0.45) out = tone(out, -0.16 * (1 - wallDist / 0.45) * (bayer(px, py) < 0.8 ? 1 : 0.5));
 
   if (look.decor === 'hall') {
-    // A red carpet down the middle with a gold border and a woven pattern.
-    if (inRect(u, v, 0.9, 7.1, 3, 5)) {
-      const fu = u - 0.9, fv = v - 3;
-      const edge = Math.min(fv, 2 - fv, fu, 6.2 - fu);
+    // A red carpet from the glass doors to the front of the hall, with a gold border and a woven pattern.
+    const [c0, c1] = [HALL_DOORS[0] + 0.3, HALL_DOORS[1] - 0.3];
+    const length = hallSide - 1.2;
+    if (inRect(u, v, c0, c1, 0.2, 0.2 + length)) {
+      const fu = v - 0.2, fv = u - c0;
+      const edge = Math.min(fv, c1 - c0 - fv, fu, length - fu);
       let r: RGB = [0xc0, 0x44, 0x5a];
       r = tone(r, (noise(px, py) - 0.5) * 0.08);
       if (edge < 0.07) r = [0xe0, 0xa0, 0x30];

@@ -1,4 +1,5 @@
 import { catalogueEntry, isSwitchable } from '@coloxel/render';
+import { N } from '@coloxel/world';
 import { api, type FurnitureItem, type Rule, type RuleCell, type RuleCondition, type RuleEffect, type RuleTrigger } from './api';
 
 export interface RulesEditor {
@@ -153,8 +154,8 @@ export function createRulesEditor(options: RulesEditorOptions): RulesEditor {
   /** A cell: two numbers, or a click on the room. */
   function cellField(label: string): { element: HTMLElement; get(): RuleCell } {
     const box = el('span', 'cell-field');
-    const i = number(0, 7, 3, `${label} : colonne`);
-    const j = number(0, 7, 3, `${label} : ligne`);
+    const i = number(0, N - 1, 3, `${label} : colonne`);
+    const j = number(0, N - 1, 3, `${label} : ligne`);
     const pick = el('button', undefined, 'Choisir sur la salle');
     pick.type = 'button';
     pick.addEventListener('click', () => {

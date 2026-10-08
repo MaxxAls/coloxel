@@ -4,7 +4,7 @@ import { DEFAULT_LAYOUT, levelAt, type RoomLayout } from '@coloxel/world';
 import { tileAt as tileAtIn, tileCenter as tileCenterIn } from '@coloxel/render';
 
 export { N, findPath, type Cell } from '@coloxel/world';
-export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H } from '@coloxel/render';
+export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, roomBounds } from '@coloxel/render';
 
 // The shape of the room on screen. One room is shown at a time: the scene sets it when it enters a room and
 // whenever the owner changes it, and everything that places something on a cell (avatars, furniture, marks, clicks)

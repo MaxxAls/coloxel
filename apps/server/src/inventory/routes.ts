@@ -2,13 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { catalogueEntry, normalizeSize, rotatedSize, type Size } from '@coloxel/render';
-import { hasFloor, wallBehind } from '@coloxel/world';
+import { N, hasFloor, wallBehind } from '@coloxel/world';
 import { loadLayout } from '../apartments/layout';
 import type { NotifyApartment } from '../building/routes';
 import type { QuestRecorder } from '../quests/engine';
 import { itemMaskedSql } from '../moderation/masking';
 
-export const GRID_SIZE = 8;
+/** Cells along each side of the room grid (shared with the client and the rooms). */
+export const GRID_SIZE = N;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -48,7 +48,7 @@ describe('mechanisms: what a rule may be', () => {
       ['an unknown effect', rule({ effects: [{ type: 'give-pixels', amount: 1000 } as never] })],
       ['an extra field on a rule', { ...rule(), owner: 'x' }],
       ['an extra field on an effect', rule({ effects: [{ type: 'dance', times: 99 } as never] })],
-      ['a cell outside the room', rule({ trigger: { type: 'step', cell: { i: 8, j: 0 } } })],
+      ['a cell outside the room', rule({ trigger: { type: 'step', cell: { i: 16, j: 0 } } })],
       ['a cell that is not whole', rule({ trigger: { type: 'step', cell: { i: 1.5, j: 0 } } })],
       ['a periodic rule that is too quick', rule({ trigger: { type: 'every', seconds: 4 } })],
       ['a periodic rule that is too slow', rule({ trigger: { type: 'every', seconds: 3601 } })],
@@ -201,7 +201,7 @@ describe.skipIf(!available)('mechanisms: the owner’s rules (PostgreSQL)', () =
     const b = await signUp('ru_pieces_b');
     const theirs = await pieceOf(b, 'lampadaire');
     const mine = await pieceOf(a, 'lampadaire');
-    const plant = await pieceOf(a, 'ficus');
+    const plant = await pieceOf(a, 'monstera');
     const stranger = await save(a, [rule({ effects: [{ type: 'light', piece: theirs, mode: 'on' }] })]);
     expect(stranger.statusCode).toBe(400);
     expect(stranger.json().error).toMatch(/pas à toi/);

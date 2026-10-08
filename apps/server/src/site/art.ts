@@ -1,5 +1,8 @@
 import { PNG } from 'pngjs';
+import { LAYOUT_PRESETS } from '@coloxel/world';
 import {
+  OX,
+  OY,
   ROOM_H,
   RES,
   ROOM_W,
@@ -152,8 +155,14 @@ const roomLook = (floor: string, wall: string): RoomLook => {
   };
 };
 
-function drawRoom(scene: Canvas, plan: RoomPlan): void {
-  const room = paintRoom(roomLook(plan.floor, plan.wall));
+/** The shape of the rooms of the picture: 8 x 8 cells in the back corner of the grid. */
+const HERO_LAYOUT = LAYOUT_PRESETS.find((p) => p.key === 'studio')!.layout;
+
+function drawRoom(scene: Canvas, placed: RoomPlan): void {
+  // The plans place an 8 x 8 room whose back corner is at (300, 148) of its own picture: the room canvas now
+  // holds a bigger grid, so it is moved to put that corner in the same place.
+  const plan = { ...placed, x: placed.x - (OX - 300), y: placed.y - (OY - 148) };
+  const room = paintRoom(roomLook(plan.floor, plan.wall), HERO_LAYOUT);
   over(scene, room, ROOM_W, ROOM_H, plan.x, plan.y);
 
   // Furniture and people are drawn back to front, like in the game.

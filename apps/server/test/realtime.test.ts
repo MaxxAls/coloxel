@@ -1,13 +1,17 @@
 import type pg from 'pg';
 import { Client, type Room } from '@colyseus/sdk';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { SEEDS, lookFor, parseLook } from '@coloxel/render';
+import { SEEDS, STARTER_KIT, lookFor, parseLook } from '@coloxel/render';
 import type { RecipeModel } from '../src/creations/model';
 import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
 import { buildServer } from '../src/index';
 import { startRealtime, type Realtime } from '../src/realtime';
+import { DEFAULT_LAYOUT, N } from '@coloxel/world';
 import { SPAWN, STEP_MS } from '../src/realtime/rooms';
+
+/** Where a new apartment is entered (the hall has its own door, SPAWN). */
+const DOOR = DEFAULT_LAYOUT.door;
 import { forgetMaintenance } from '../src/site/settings';
 
 const url = process.env.DATABASE_URL ?? 'postgres://coloxel:coloxel@localhost:5432/coloxel';
@@ -152,7 +156,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     // Naming another player in the message moves nobody: the strict schema rejects it.
     a.send('move', { i: 2, j: 2, id: frank.id });
     a.send('move', { id: frank.id, i: 2, j: 2 });
-    for (const bad of [{ i: -1, j: 0 }, { i: 8, j: 0 }, { i: 1.5, j: 1 }, { i: 'x', j: 1 }, null, 'move', [1, 2]]) a.send('move', bad);
+    for (const bad of [{ i: -1, j: 0 }, { i: N, j: 0 }, { i: 1.5, j: 1 }, { i: 'x', j: 1 }, null, 'move', [1, 2]]) a.send('move', bad);
     await new Promise((r) => setTimeout(r, STEP_MS * 4));
     expect(playerOf(b, erin.id)).toMatchObject(SPAWN);
     expect(playerOf(b, frank.id)).toMatchObject(frankStart);
@@ -203,9 +207,14 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
 
     describe('sitting and lying down', () => {
-      // A new account's apartment holds the starter kit: the bed on (1, 1), the chair on (5, 4).
-      const CHAIR = { i: 5, j: 4 };
-      const BED = { i: 1, j: 1 };
+      // A new account's apartment holds the starter kit, with a chair and a double bed.
+      const kitCell = (key: string) => {
+        const piece = STARTER_KIT.find((k) => k.key === key)!;
+        return { i: piece.i, j: piece.j };
+      };
+      const CHAIR = kitCell('chaise');
+      // The foot of the double bed: its head is between the two bedside tables.
+      const BED = { i: kitCell('grandlit').i + 1, j: kitCell('grandlit').j };
       const poseOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { pose: number } | undefined)?.pose;
       const at = (room: AnyRoom, id: string, c: { i: number; j: number }) => {
         const p = playerOf(room, id);
@@ -232,7 +241,8 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
         await until(() => playerOf(room, jay.id));
         room.send('move', BED);
         await until(() => at(room, jay.id, BED) && poseOf(room, jay.id) === 2, walk);
-      });
+        // The bed stands in the far corner of the room: a long walk from the door.
+      }, 20000);
 
       it('lets only one player at a time sit on a chair', async () => {
         const kai = await signUp('kai');
@@ -448,7 +458,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await app.inject({
         method: 'PUT',
         url: '/api/placements',
-        payload: { itemId: created.json().item.id, i: SPAWN.i, j: SPAWN.j },
+        payload: { itemId: created.json().item.id, i: DOOR.i, j: DOOR.j },
         cookies: { coloxel_sid: uma.sid },
       });
       await setAccess(uma.id, 'building');
@@ -457,8 +467,8 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => playerOf(guest, uma.id) && playerOf(guest, vic.id));
       const a = playerOf(guest, uma.id)!;
       const b = playerOf(guest, vic.id)!;
-      expect(a).not.toMatchObject(SPAWN);
-      expect(b).not.toMatchObject(SPAWN);
+      expect(a).not.toMatchObject(DOOR);
+      expect(b).not.toMatchObject(DOOR);
       expect({ i: a.i, j: a.j }).not.toEqual({ i: b.i, j: b.j });
       await until(() => host.state?.players?.size === 2);
     });
@@ -475,18 +485,18 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await app.inject({
         method: 'PUT',
         url: '/api/placements',
-        payload: { itemId, i: 7, j: 1 },
+        payload: { itemId, i: DOOR.i, j: 1 },
         cookies: { coloxel_sid: rose.sid },
       });
       const room = await joinApartment(rose, rose.id);
       await until(() => playerOf(room, rose.id));
 
-      room.send('move', { i: 7, j: 1 }); // blocked cell
+      room.send('move', { i: DOOR.i, j: 1 }); // blocked cell
       await new Promise((r) => setTimeout(r, STEP_MS * 4));
-      expect(playerOf(room, rose.id)).toMatchObject(SPAWN);
+      expect(playerOf(room, rose.id)).toMatchObject(DOOR);
 
-      room.send('move', { i: 6, j: 1 });
-      await until(() => playerOf(room, rose.id)!.i === 6 && playerOf(room, rose.id)!.j === 1);
+      room.send('move', { i: DOOR.i - 1, j: 1 });
+      await until(() => playerOf(room, rose.id)!.i === DOOR.i - 1 && playerOf(room, rose.id)!.j === 1);
     });
   });
 
@@ -943,14 +953,15 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => heard.decor > 0, 3000);
       expect(await isLit(owner)).toBe(false);
       // The cell that was stepped on and the lamp itself light up for everybody.
-      expect(heard.fx).toEqual(expect.arrayContaining([{ i: 3, j: 3 }, { i: 3, j: 0 }]));
+      const lamp = STARTER_KIT.find((k) => k.key === 'lampadaire')!;
+      expect(heard.fx).toEqual(expect.arrayContaining([{ i: 3, j: 3 }, { i: lamp.i, j: lamp.j }]));
     }, 30000);
 
     it('sets a rule off for a visitor, who is the one it happens to', async () => {
       const owner = await signUp('mx_say');
       const guest = await signUp('mx_say_guest');
       await setAccess(owner.id, 'building');
-      await saveRules(owner, [rule({ type: 'say', word: 'Abracadabra' }, [{ type: 'teleport', cell: { i: 0, j: 7 } }, { type: 'message', text: 'Sésame, ouvre-toi !' }])]);
+      await saveRules(owner, [rule({ type: 'say', word: 'Abracadabra' }, [{ type: 'teleport', cell: { i: 2, j: 7 } }, { type: 'message', text: 'Sésame, ouvre-toi !' }])]);
       const host = await joinApartment(owner, owner.id);
       const visitor = await joinApartment(guest, owner.id);
       const heardHost = listen(host);
@@ -959,7 +970,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       const ownerCell = { ...playerOf(host, owner.id)! };
 
       visitor.send('chat', { text: 'abracadabra !' });
-      await until(() => at(host, guest.id, 0, 7), 4000);
+      await until(() => at(host, guest.id, 2, 7), 4000);
       await until(() => heardGuest.messages.length === 1, 3000);
       expect(heardGuest.messages).toEqual(['Sésame, ouvre-toi !']);
       // The owner is not moved, and does not hear the message meant for the visitor.
@@ -996,7 +1007,7 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       const room = await joinApartment(owner, owner.id);
       const heard = listen(room);
       await until(() => playerOf(room, owner.id));
-      // The table is not a button: the click does nothing.
+      // The rug is not a button: the click does nothing.
       room.send('use', { i: 4, j: 4 });
       await new Promise((r) => setTimeout(r, 600));
       expect(await isLit(owner)).toBe(true);
@@ -1824,19 +1835,19 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     const owner = await signUp('shapeowner');
     const setShape = (preset: string) =>
       app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { preset } }, cookies: { coloxel_sid: owner.sid } });
-    // A ring around a courtyard: the door is at (7, 0), the middle has no floor.
+    // A ring around a courtyard: the door is at (15, 0), the middle has no floor.
     expect((await setShape('ring')).statusCode).toBe(200);
     const room = await joinApartment(owner, owner.id);
     await until(() => playerOf(room, owner.id));
-    expect(playerOf(room, owner.id)).toMatchObject({ i: 7, j: 0 });
-    room.send('move', { i: 3, j: 3 });
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 15, j: 0 });
+    room.send('move', { i: 6, j: 6 });
     await new Promise((r) => setTimeout(r, 400));
-    expect(playerOf(room, owner.id)).toMatchObject({ i: 7, j: 0 });
-    room.send('move', { i: 7, j: 3 });
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 15, j: 0 });
+    room.send('move', { i: 15, j: 3 });
     await until(() => playerOf(room, owner.id)?.j === 3, 6000);
-    // The shape changes under the player's feet: a corridor has no floor at (7, 3).
+    // The shape changes under the player's feet: a corridor (rows 4 to 9) has no floor at (15, 3).
     expect((await setShape('corridor')).statusCode).toBe(200);
-    await until(() => playerOf(room, owner.id)?.i === 4, 3000);
-    expect(playerOf(room, owner.id)).toMatchObject({ i: 4, j: 0 });
+    await until(() => playerOf(room, owner.id)?.i === 9, 3000);
+    expect(playerOf(room, owner.id)).toMatchObject({ i: 9, j: 0 });
   }, 20000);
 });

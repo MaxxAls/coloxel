@@ -78,14 +78,15 @@ describe.skipIf(!available)('database schema', () => {
     await pool.query(`UPDATE items SET owner_id = $2 WHERE id = $1`, [id, b]);
   });
 
-  it('allows one item per cell and keeps cells inside the 8 x 8 grid', async () => {
+  it('allows one item per cell and keeps cells inside the 16 x 16 grid', async () => {
     const u = await newUser('placer');
     const [i1, i2, i3] = [await createItem(u), await createItem(u), await createItem(u)] as [string, string, string];
     const place = (item: string, i: number, j: number) =>
       pool.query('INSERT INTO placements (item_id, user_id, i, j) VALUES ($1, $2, $3, $4)', [item, u, i, j]);
     await place(i1, 3, 4);
     await expect(place(i2, 3, 4)).rejects.toThrow();
-    await expect(place(i3, 8, 0)).rejects.toThrow();
+    await expect(place(i3, 16, 0)).rejects.toThrow();
+    await place(i3, 15, 15);
   });
 
   it('rejects duplicate emails regardless of case', async () => {

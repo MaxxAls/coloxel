@@ -817,13 +817,39 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));
 export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey.get(key);
 
-/** What a new apartment starts with, and where (cells of the 8 x 8 room; the door side stays free). */
-export const STARTER_KIT: readonly { key: string; i: number; j: number }[] = [
-  { key: 'lit', i: 1, j: 1 },
-  { key: 'ficus', i: 0, j: 0 },
-  { key: 'lampadaire', i: 3, j: 0 },
-  { key: 'table', i: 4, j: 4 },
-  { key: 'chaise', i: 5, j: 4 },
+/**
+ * What a new apartment starts with, and where: a furnished room, so that a new player arrives somewhere that feels
+ * lived in. Cells of the 10 x 10 room of a new apartment; the door (9, 0) and the way in stay free. `rot` turns a
+ * piece; a wall piece hangs on the left wall (rot 0, cells with i = 0) or on the right wall (rot 1, cells with j = 0).
+ */
+export const STARTER_KIT: readonly { key: string; i: number; j: number; rot?: number }[] = [
+  // The sleeping corner, against the left wall.
+  { key: 'grandlit', i: 0, j: 1 },
+  { key: 'chevet', i: 0, j: 0 },
+  { key: 'chevet', i: 0, j: 2 },
+  { key: 'commode', i: 0, j: 7 },
+  { key: 'monstera', i: 0, j: 9 },
+  { key: 'horlogemurale', i: 0, j: 7 },
+  { key: 'cadresphoto', i: 0, j: 8 },
+  // Along the right wall: a lamp, shelves, the television, a window on the sea.
+  { key: 'lampadaire', i: 2, j: 0 },
+  { key: 'fenetremer', i: 1, j: 0, rot: 1 },
+  { key: 'etagere', i: 5, j: 0 },
+  { key: 'tele', i: 6, j: 0 },
+  { key: 'appliquelumineuse', i: 7, j: 0, rot: 1 },
+  // The living corner, on a rug.
+  { key: 'tapisrond', i: 4, j: 4 },
+  { key: 'canape', i: 4, j: 6 },
+  { key: 'tablebasse', i: 4, j: 3 },
+  { key: 'fauteuil', i: 2, j: 4 },
+  { key: 'pouf', i: 6, j: 4 },
+  // A desk by the door, and small things in the far corner.
+  { key: 'bureau', i: 8, j: 5 },
+  { key: 'chaise', i: 7, j: 5 },
+  { key: 'radio', i: 8, j: 8 },
+  { key: 'lampelave', i: 9, j: 9 },
+  { key: 'cactus', i: 9, j: 8 },
+  { key: 'ours', i: 3, j: 9 },
 ];
 
 // ----- Floors and wallpapers: settings of the apartment, not objects -----------------

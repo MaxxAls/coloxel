@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CATALOGUE, FLOORS, SEEDS, STARTER_KIT, WALLS } from '@coloxel/render';
+import { CATALOGUE, FLOORS, SEEDS, STARTER_KIT, WALLS, catalogueEntry, normalizeSize, rotatedSize } from '@coloxel/render';
+import { N } from '@coloxel/world';
 import type { RecipeModel } from '../src/creations/model';
 import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
@@ -95,9 +96,11 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     expect(inv.items).toEqual([]);
     expect(inv.furniture).toHaveLength(STARTER_KIT.length);
     for (const piece of STARTER_KIT) {
-      expect(inv.furniture).toContainEqual(
-        expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot: 0, w: 1, h: 1 } }),
-      );
+      // A big piece covers its footprint; a wall piece takes one place on its wall.
+      const entry = catalogueEntry(piece.key)!;
+      const rot = piece.rot ?? 0;
+      const [w, h] = entry.wall ? [1, 1] : rotatedSize(normalizeSize(entry.recipe.size), rot);
+      expect(inv.furniture).toContainEqual(expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot, w, h } }));
     }
     // The kit is not a creation: nothing was numbered.
     expect(await lastSerial()).toBe(before);
@@ -166,7 +169,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const kit = STARTER_KIT[0]!;
       expect((await place(gina.sid, other.id, kit.i, kit.j)).statusCode).toBe(409);
       // Out of the grid, and someone else's furniture.
-      expect((await place(gina.sid, other.id, 8, 0)).statusCode).toBe(400);
+      expect((await place(gina.sid, other.id, N, 0)).statusCode).toBe(400);
       const hugoPiece = (await inventory(hugo.sid)).furniture[0]!;
       expect((await place(gina.sid, hugoPiece.id, 4, 1)).statusCode).toBe(404);
       expect((await place(gina.sid, '00000000-0000-4000-8000-000000000000', 4, 1)).statusCode).toBe(404);
@@ -314,7 +317,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const dan = await signUp('light_dan');
       await app.inject({ method: 'PUT', url: '/api/apartment', payload: { access: 'building' }, cookies: as(cat.sid) });
       const lamp = await piece(cat.sid, 'lampadaire');
-      const plant = await piece(cat.sid, 'ficus');
+      const plant = await piece(cat.sid, 'monstera');
       // A visitor, even in an open apartment, cannot touch the switch.
       expect((await light(dan.sid, lamp.id, { on: false })).statusCode).toBe(404);
       expect(((await piece(cat.sid, 'lampadaire')) as Furniture & { on: boolean }).on).toBe(true);
@@ -439,9 +442,9 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const window = await own(bea.id, 'fenetremer');
       expect((await putAt(bea.sid, window, 0, 5)).statusCode).toBe(200);
       // Make (0, 5) a hole: there is no floor, so no wall, and the window goes back to the inventory.
-      const cells = '0'.repeat(64).split('');
-      cells[0 * 8 + 5] = 'x';
-      const res = await app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { cells: cells.join(''), door: { i: 7, j: 0 } } }, cookies: as(bea.sid) });
+      const cells = '0'.repeat(N * N).split('');
+      cells[0 * N + 5] = 'x';
+      const res = await app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { cells: cells.join(''), door: { i: N - 1, j: 0 } } }, cookies: as(bea.sid) });
       expect(res.statusCode, JSON.stringify(res.json())).toBe(200);
       expect(res.json().putAway).toBe(1);
       const inv = (await inventory(bea.sid)).furniture.find((f) => f.id === window)!;

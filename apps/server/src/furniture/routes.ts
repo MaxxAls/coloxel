@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, renderRecipe } from '@coloxel/render';
+import { CATALOGUE, FLOORS, STARTER_KIT, WALLS, catalogueEntry, isSwitchable, normalizeSize, renderRecipe, rotatedSize } from '@coloxel/render';
 import type { NotifyApartment } from '../building/routes';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 import { spriteToPng } from '../sprite-png';
@@ -26,11 +26,20 @@ export async function giveStarterKit(client: pg.PoolClient, userId: string): Pro
       'INSERT INTO furniture (owner_id, catalogue_key) VALUES ($1, $2) RETURNING id',
       [userId, piece.key],
     );
-    await client.query('INSERT INTO placements (furniture_id, user_id, i, j) VALUES ($1, $2, $3, $4)', [
+    // A wall piece hangs on the left (layer 1) or right (layer 2) wall; a big piece covers its turned footprint.
+    const entry = catalogueEntry(piece.key);
+    const rot = piece.rot ?? 0;
+    const onWall = !!entry?.wall;
+    const [w, h] = onWall ? [1, 1] : rotatedSize(normalizeSize(entry?.recipe.size), rot);
+    await client.query('INSERT INTO placements (furniture_id, user_id, i, j, rot, w, h, layer) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [
       rows[0]!.id,
       userId,
       piece.i,
       piece.j,
+      rot,
+      w,
+      h,
+      onWall ? 1 + rot : 0,
     ]);
   }
 }

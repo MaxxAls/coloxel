@@ -1,3 +1,4 @@
+import { N } from '@coloxel/world';
 import { z } from 'zod';
 import { filterText } from '../moderation/text-filter';
 
@@ -12,7 +13,7 @@ export const MIN_EVERY_SECONDS = 5;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const cell = z.object({ i: z.number().int().min(0).max(7), j: z.number().int().min(0).max(7) }).strict();
+const cell = z.object({ i: z.number().int().min(0).max(N - 1), j: z.number().int().min(0).max(N - 1) }).strict();
 const piece = z.string().regex(UUID, 'Meuble invalide').transform((s) => s.toLowerCase());
 
 const trigger = z.discriminatedUnion('type', [

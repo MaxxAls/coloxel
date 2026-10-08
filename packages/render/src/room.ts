@@ -3,17 +3,19 @@
 import { N, levelAt, type RoomLayout } from '@coloxel/world';
 
 export { N };
-// Rooms are drawn at twice the old resolution: one cell is 64 x 32 px on the canvas.
+// One cell is 64 x 32 px on the canvas, and the game shows the canvas at its real size: the pixels stay crisp.
 export const TW = 64;
 export const TH = 32;
-export const OX = 300;
-export const OY = 148;
-/** Height of the side walls, and the size of the room canvas. */
+/** Height of the side walls. */
 export const WALL_H = 116;
 /** How high one level of floor lifts a cell on the screen. */
 export const LEVEL_PX = 12;
-export const ROOM_W = 600;
-export const ROOM_H = 400;
+/** The room canvas holds the whole grid (N x N cells), its walls and the slab under it, with a small margin. */
+export const ROOM_W = N * TW + 32;
+export const ROOM_H = N * TH + WALL_H + 72;
+/** Where the back corner of the grid (the centre of cell 0, 0) is drawn on the canvas. */
+export const OX = ROOM_W / 2;
+export const OY = WALL_H + 36;
 
 /** Screen position of the center of a tile; a raised floor (level) lifts it. */
 export function tileCenter(i: number, j: number, level = 0): { x: number; y: number } {
@@ -44,4 +46,24 @@ export function tileAt(x: number, y: number, layout?: RoomLayout): { i: number; 
     }
   }
   return best;
+}
+
+/**
+ * The part of the canvas a room actually covers (its floor, its walls and the slab under it), so that the game can
+ * centre what there is to see rather than the whole grid.
+ */
+export function roomBounds(layout: RoomLayout): { x: number; y: number; w: number; h: number } {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      if (levelAt(layout, i, j) === null) continue;
+      const c = tileCenter(i, j);
+      x0 = Math.min(x0, c.x - TW / 2);
+      x1 = Math.max(x1, c.x + TW / 2);
+      y0 = Math.min(y0, c.y - TH / 2 - WALL_H - 8);
+      y1 = Math.max(y1, c.y + TH / 2 + 16);
+    }
+  }
+  if (x0 === Infinity) return { x: 0, y: 0, w: ROOM_W, h: ROOM_H };
+  return { x: x0 - 8, y: Math.max(0, y0), w: x1 - x0 + 16, h: Math.min(ROOM_H, y1) - Math.max(0, y0) };
 }

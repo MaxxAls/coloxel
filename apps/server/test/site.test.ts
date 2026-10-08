@@ -58,7 +58,8 @@ describe.skipIf(!available)('website, news and maintenance (PostgreSQL)', () => 
       )
     ).rows[0]!.id;
     await pool.query('UPDATE item_serial SET last_value = (SELECT max(serial) FROM items)');
-    await pool.query('INSERT INTO placements (item_id, user_id, i, j) VALUES ($1, $2, 6, $3)', [id, owner.id, j + 2]);
+    // A row of the grid that the starter kit leaves empty.
+    await pool.query('INSERT INTO placements (item_id, user_id, i, j) VALUES ($1, $2, 12, $3)', [id, owner.id, j + 2]);
     return id;
   }
   const announce = (staff: Account, payload: object) => app.inject({ method: 'POST', url: '/api/staff/announcements', payload, cookies: as(staff) });

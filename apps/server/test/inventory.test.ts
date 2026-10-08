@@ -126,7 +126,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     const sid = await signUp('jules');
     const id = await createItem(sid);
     for (const body of [
-      { itemId: id, i: 8, j: 0 },
+      { itemId: id, i: 16, j: 0 },
       { itemId: id, i: 0, j: -1 },
       { itemId: id, i: 1.5, j: 0 },
       { itemId: id, i: '1', j: 0 },
@@ -161,11 +161,12 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
   it('keeps a multi-tile piece inside the floor', async () => {
     const sid = await signUp('multib');
     const big = await createItem(sid, 'un immense lit');
-    expect((await place(sid, { itemId: big, i: 6, j: 0 })).statusCode).toBe(400); // 3 wide from i = 6 leaves the grid
-    expect((await place(sid, { itemId: big, i: 5, j: 7 })).statusCode).toBe(400); // 2 deep from j = 7 leaves the grid
-    expect((await place(sid, { itemId: big, i: 5, j: 6 })).statusCode).toBe(200);
-    // Turning it in place must not push it out of the grid.
-    expect((await place(sid, { itemId: big, i: 5, j: 6, rot: 1 })).statusCode).toBe(400);
+    // A new apartment is 10 x 10 cells: the floor ends at i = 9 and j = 9.
+    expect((await place(sid, { itemId: big, i: 8, j: 0 })).statusCode).toBe(400); // 3 wide from i = 8 leaves the floor
+    expect((await place(sid, { itemId: big, i: 5, j: 9 })).statusCode).toBe(400); // 2 deep from j = 9 leaves the floor
+    expect((await place(sid, { itemId: big, i: 5, j: 8 })).statusCode).toBe(200);
+    // Turning it in place must not push it off the floor.
+    expect((await place(sid, { itemId: big, i: 5, j: 8, rot: 1 })).statusCode).toBe(400);
   });
 
   it('removes a placement and frees the cell', async () => {

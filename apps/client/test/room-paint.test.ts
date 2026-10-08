@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LAYOUT_PRESETS } from '@coloxel/world';
 import { FLOORS, WALLS } from '@coloxel/render';
 import { ROOM_H, ROOM_W } from '../src/room';
 import { paintRoom, type RoomLook } from '../src/room-paint';
@@ -22,7 +23,7 @@ const opaque = (px: Uint8ClampedArray) => {
 
 describe('room painter', () => {
   it('paints a full room of the canvas size, transparent in the corners, solid in the middle', () => {
-    const px = paintRoom(lookOf('parquet', 'violet'));
+    const px = paintRoom(lookOf('parquet', 'violet'), LAYOUT_PRESETS.find((p) => p.key === 'large')!.layout);
     expect(px).toHaveLength(ROOM_W * ROOM_H * 4);
     for (const [x, y] of [[0, 0], [ROOM_W - 1, 0], [0, ROOM_H - 1], [ROOM_W - 1, ROOM_H - 1]] as const) {
       expect(alphaAt(px, x, y)).toBe(0);

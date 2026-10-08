@@ -3,7 +3,7 @@ import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
 import { CATALOGUE, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
-import { DEFAULT_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
+import { HALL_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadLayout } from '../apartments/layout';
 import { loadAppearance } from '../avatar/routes';
@@ -36,7 +36,7 @@ export const EXPELLED = 4005;
 export const KICKED = 4006;
 /** Presence topic carrying the changes of one apartment. */
 export const apartmentTopic = (ownerId: string) => `apartment:${ownerId.toLowerCase()}`;
-export const SPAWN: Cell = { i: 7, j: 0 };
+export const SPAWN: Cell = HALL_LAYOUT.door;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const Player = schema(
@@ -120,7 +120,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   /** The cells in the way, as of the last time somebody asked to move: followers walk around them. */
   private blockedCache = new Set<number>();
   /** The shape of the room as of the last look: followers climb the same steps as everybody. */
-  private shapeCache: RoomLayout = DEFAULT_LAYOUT;
+  private shapeCache: RoomLayout = HALL_LAYOUT;
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
 
@@ -132,10 +132,10 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
 
   /**
    * Cells nobody can walk onto (no floor, or something in the way), the seats and beds, and the shape
-   * of the room (levels, door). The hall is a plain square with nothing in it.
+   * of the room (levels, door). The hall is a plain square with nothing in it; the rest of the grid has no floor.
    */
   protected async layout(): Promise<RoomMap> {
-    return { blocked: new Set(), seats: new Map(), shape: DEFAULT_LAYOUT };
+    return { blocked: voidKeys(HALL_LAYOUT), seats: new Map(), shape: HALL_LAYOUT };
   }
 
   /** Is someone already sitting or lying on this cell? */

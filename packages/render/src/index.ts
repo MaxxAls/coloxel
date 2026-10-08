@@ -1,6 +1,7 @@
 export * from './types';
 export { renderRecipe, renderSprite, rotateParts, spriteHash, shade, project, isHex } from './render';
 export { SEEDS } from './seeds';
+export { seeded, skylineSvg } from './skyline';
 export { TRACKS, noteOf, stepMs, track, trackSteps, type Track } from './jukebox';
 export { HAND_ITEMS, handItem, type HandItem } from './hand';
 export {
@@ -81,5 +82,5 @@ export {
   type RGB,
   type Tint,
 } from './avatar';
-export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, tileAt, tileCenter } from './room';
+export { LEVEL_PX, OX, OY, ROOM_H, ROOM_W, TH, TW, WALL_H, roomBounds, tileAt, tileCenter } from './room';
 export { paintRoom, type RoomLook } from './room-paint';

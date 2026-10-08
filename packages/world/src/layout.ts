@@ -1,7 +1,8 @@
 // Shape of a room: which cells have a floor, how high each one is, and where the door is.
 // Pure logic shared by the client (drawing, hover) and the server (the only judge of what is valid).
 
-import { N, inGrid, type Cell } from './index';
+import { N, inGrid } from './grid';
+import type { Cell } from './index';
 
 /** Highest floor level. One level is `LEVEL_PX` px of height on screen. */
 export const MAX_LEVEL = 4;
@@ -101,7 +102,26 @@ export function layoutProblem(layout: unknown): string | null {
 
 export const isValidLayout = (layout: unknown): layout is RoomLayout => layoutProblem(layout) === null;
 
-const rows = (...r: string[]) => r.join('');
+/**
+ * A shape drawn on an 8 x 8 sketch, each sketch cell becoming 2 x 2 cells of the grid. The door is given on the
+ * sketch too and lands on the outer one of its four cells, so that it stays on the edge of the room.
+ */
+function sketch(rows8: string[], door: Cell): RoomLayout {
+  const half = N / 2;
+  const cells = rows8.flatMap((row) => {
+    const wide = [...row].map((c) => c + c).join('');
+    return [wide, wide];
+  });
+  const at = (k: number) => 2 * k + (k >= half / 2 ? 1 : 0);
+  return { cells: cells.join(''), door: { i: at(door.i), j: at(door.j) } };
+}
+
+/** A rectangle of flat floor (rows i0..i1, columns j0..j1, inclusive) in an empty grid, with its door. */
+function box(i0: number, i1: number, j0: number, j1: number, door: Cell): RoomLayout {
+  let cells = '';
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) cells += i >= i0 && i <= i1 && j >= j0 && j <= j1 ? '0' : VOID;
+  return { cells, door };
+}
 
 export interface LayoutPreset {
   key: string;
@@ -111,95 +131,59 @@ export interface LayoutPreset {
 
 /** The ready-made shapes offered when a player picks or changes the shape of an apartment. */
 export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
-  {
-    key: 'square',
-    name: 'Carré',
-    layout: {
-      cells: rows('00000000', '00000000', '00000000', '00000000', '00000000', '00000000', '00000000', '00000000'),
-      door: { i: 7, j: 0 },
-    },
-  },
-  {
-    key: 'studio',
-    name: 'Studio',
-    layout: {
-      cells: rows('xxxxxxxx', 'x000000x', 'x000000x', 'x000000x', 'x000000x', 'x000000x', 'x000000x', 'xxxxxxxx'),
-      door: { i: 6, j: 1 },
-    },
-  },
+  { key: 'square', name: 'Carré', layout: box(0, 9, 0, 9, { i: 9, j: 0 }) },
+  { key: 'large', name: 'Grand carré', layout: box(0, N - 1, 0, N - 1, { i: N - 1, j: 0 }) },
+  { key: 'loft', name: 'Loft', layout: box(0, 9, 0, 15, { i: 9, j: 0 }) },
+  { key: 'studio', name: 'Studio', layout: box(0, 7, 0, 7, { i: 7, j: 0 }) },
   {
     key: 'corridor',
     name: 'Couloir',
-    layout: {
-      cells: rows('xxxxxxxx', 'xxxxxxxx', '00000000', '00000000', '00000000', 'xxxxxxxx', 'xxxxxxxx', 'xxxxxxxx'),
-      door: { i: 4, j: 0 },
-    },
+    layout: sketch(['xxxxxxxx', 'xxxxxxxx', '00000000', '00000000', '00000000', 'xxxxxxxx', 'xxxxxxxx', 'xxxxxxxx'], { i: 4, j: 0 }),
   },
   {
     key: 'ell',
     name: 'En L',
-    layout: {
-      cells: rows('000xxxxx', '000xxxxx', '000xxxxx', '000xxxxx', '000xxxxx', '00000000', '00000000', '00000000'),
-      door: { i: 7, j: 7 },
-    },
+    layout: sketch(['000xxxxx', '000xxxxx', '000xxxxx', '000xxxxx', '000xxxxx', '00000000', '00000000', '00000000'], { i: 7, j: 7 }),
   },
   {
     key: 'cross',
     name: 'Croix',
-    layout: {
-      cells: rows('xx0000xx', 'xx0000xx', '00000000', '00000000', '00000000', '00000000', 'xx0000xx', 'xx0000xx'),
-      door: { i: 7, j: 2 },
-    },
+    layout: sketch(['xx0000xx', 'xx0000xx', '00000000', '00000000', '00000000', '00000000', 'xx0000xx', 'xx0000xx'], { i: 7, j: 2 }),
   },
   {
     key: 'ring',
     name: 'Anneau',
-    layout: {
-      cells: rows('00000000', '00000000', '00xxxx00', '00xxxx00', '00xxxx00', '00xxxx00', '00000000', '00000000'),
-      door: { i: 7, j: 0 },
-    },
+    layout: sketch(['00000000', '00000000', '00xxxx00', '00xxxx00', '00xxxx00', '00xxxx00', '00000000', '00000000'], { i: 7, j: 0 }),
   },
   {
     key: 'two-rooms',
     name: 'Deux pièces',
-    layout: {
-      cells: rows('xxxxxxxx', 'xxxxxxxx', '000xx000', '00000000', '000xx000', '000xx000', 'xxxxxxxx', 'xxxxxxxx'),
-      door: { i: 5, j: 0 },
-    },
+    layout: sketch(['xxxxxxxx', 'xxxxxxxx', '000xx000', '00000000', '000xx000', '000xx000', 'xxxxxxxx', 'xxxxxxxx'], { i: 5, j: 0 }),
   },
   {
     key: 'triangle',
     name: 'Triangle',
-    layout: {
-      cells: rows('0xxxxxxx', '00xxxxxx', '000xxxxx', '0000xxxx', '00000xxx', '000000xx', '0000000x', '00000000'),
-      door: { i: 7, j: 0 },
-    },
+    layout: sketch(['0xxxxxxx', '00xxxxxx', '000xxxxx', '0000xxxx', '00000xxx', '000000xx', '0000000x', '00000000'], { i: 7, j: 0 }),
   },
   {
     key: 'stage',
     name: 'Estrade',
-    layout: {
-      cells: rows('00001122', '00001122', '00001122', '00001122', '00000000', '00000000', '00000000', '00000000'),
-      door: { i: 7, j: 0 },
-    },
+    layout: sketch(['00001122', '00001122', '00001122', '00001122', '00000000', '00000000', '00000000', '00000000'], { i: 7, j: 0 }),
   },
   {
     key: 'stairs',
     name: 'Escalier',
-    layout: {
-      cells: rows('33333333', '33333333', '22222222', '22222222', '11111111', '11111111', '00000000', '00000000'),
-      door: { i: 7, j: 0 },
-    },
+    layout: sketch(['33333333', '33333333', '22222222', '22222222', '11111111', '11111111', '00000000', '00000000'], { i: 7, j: 0 }),
   },
   {
     key: 'ledge',
     name: 'Corniche',
-    layout: {
-      cells: rows('11111111', '10000000', '10000000', '10000000', '10000000', '10000000', '10000000', '10000000'),
-      door: { i: 7, j: 7 },
-    },
+    layout: sketch(['11111111', '10000000', '10000000', '10000000', '10000000', '10000000', '10000000', '10000000'], { i: 7, j: 7 }),
   },
 ];
+
+/** The hall of the building: a big open square where everybody meets. */
+export const HALL_LAYOUT: RoomLayout = box(0, 13, 0, 13, { i: 13, j: 0 });
 
 export const DEFAULT_LAYOUT: RoomLayout = LAYOUT_PRESETS[0]!.layout;
 

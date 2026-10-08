@@ -1,7 +1,9 @@
 // Room grid and pathfinding. Pure logic shared by the client (prediction, hover)
 // and the server (authoritative movement), so both agree on what a path is.
 
-export const N = 8;
+import { N, inGrid } from './grid';
+
+export { N, inGrid } from './grid';
 
 export * from './layout';
 
@@ -9,9 +11,6 @@ export interface Cell {
   i: number;
   j: number;
 }
-
-export const inGrid = (i: number, j: number) =>
-  Number.isInteger(i) && Number.isInteger(j) && i >= 0 && j >= 0 && i < N && j < N;
 
 /**
  * Eight ways to step. On screen the four axis steps go along the diagonals of the room and the

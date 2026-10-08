@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { LAYOUT_PRESETS } from '@coloxel/world';
+import { DEFAULT_LAYOUT, LAYOUT_PRESETS, N } from '@coloxel/world';
 import type { RecipeModel } from '../src/creations/model';
 import { migrate, migrateDownAll } from '../src/db/migrate';
 import { createPool } from '../src/db/pool';
@@ -45,14 +45,13 @@ describe.skipIf(!available)('apartment layouts (PostgreSQL)', () => {
   const mine = async (sid: string) => (await app.inject({ method: 'GET', url: '/api/apartment', cookies: as(sid) })).json();
   const inventory = async (sid: string) =>
     (await app.inject({ method: 'GET', url: '/api/inventory', cookies: as(sid) })).json() as {
-      furniture: { id: string; placement: { i: number; j: number } | null }[];
+      furniture: { id: string; key: string; placement: { i: number; j: number } | null }[];
     };
 
   it('starts as a flat square and serves its shape to the owner and to visitors', async () => {
     const { id, sid } = await signUp('alice');
     const body = await mine(sid);
-    expect(body.layout.door).toEqual({ i: 7, j: 0 });
-    expect(body.layout.cells).toBe('0'.repeat(64));
+    expect(body.layout).toEqual(DEFAULT_LAYOUT);
     const seen = await app.inject({ method: 'GET', url: `/api/apartments/${id}`, cookies: as(sid) });
     expect(seen.json().layout).toEqual(body.layout);
   });
@@ -67,7 +66,7 @@ describe.skipIf(!available)('apartment layouts (PostgreSQL)', () => {
     expect(res.json().layout).toEqual(ring.layout);
     const after = (await inventory(sid)).furniture.filter((f) => f.placement);
     // Nothing is left on a cell without floor.
-    for (const f of after) expect(ring.layout.cells[f.placement!.i * 8 + f.placement!.j]).not.toBe('x');
+    for (const f of after) expect(ring.layout.cells[f.placement!.i * N + f.placement!.j]).not.toBe('x');
     expect(after.length + res.json().putAway).toBe(before.length);
   });
 
@@ -75,33 +74,43 @@ describe.skipIf(!available)('apartment layouts (PostgreSQL)', () => {
     const { sid } = await signUp('carla');
     const original = (await mine(sid)).layout;
     expect((await put(sid, { preset: 'chateau' })).statusCode).toBe(400);
-    expect((await put(sid, { cells: 'x'.repeat(64), door: { i: 0, j: 0 } })).statusCode).toBe(400);
-    expect((await put(sid, { cells: '0'.repeat(63), door: { i: 7, j: 0 } })).statusCode).toBe(400);
-    // Two islands, a door in the middle, a cliff of two levels.
-    expect((await put(sid, { cells: '0000x000'.repeat(8), door: { i: 0, j: 0 } })).statusCode).toBe(400);
-    expect((await put(sid, { cells: '0'.repeat(64), door: { i: 3, j: 3 } })).statusCode).toBe(400);
-    expect((await put(sid, { cells: '00002222'.repeat(8), door: { i: 0, j: 0 } })).statusCode).toBe(400);
-    expect((await put(sid, { cells: '0'.repeat(64), door: { i: 7, j: 0 }, extra: 1 })).statusCode).toBe(400);
+    expect((await put(sid, { cells: 'x'.repeat(N * N), door: { i: 0, j: 0 } })).statusCode).toBe(400);
+    expect((await put(sid, { cells: '0'.repeat(N * N - 1), door: { i: N - 1, j: 0 } })).statusCode).toBe(400);
+    // The old 8 x 8 grid is not accepted any more.
+    expect((await put(sid, { cells: '0'.repeat(64), door: { i: 7, j: 0 } })).statusCode).toBe(400);
+    // Islands, a door in the middle, a cliff of two levels.
+    expect((await put(sid, { cells: '0000x0000000x000'.repeat(N), door: { i: 0, j: 0 } })).statusCode).toBe(400);
+    expect((await put(sid, { cells: '0'.repeat(N * N), door: { i: 3, j: 3 } })).statusCode).toBe(400);
+    expect((await put(sid, { cells: '0000000022222222'.repeat(N), door: { i: 0, j: 0 } })).statusCode).toBe(400);
+    expect((await put(sid, { cells: '0'.repeat(N * N), door: { i: N - 1, j: 0 }, extra: 1 })).statusCode).toBe(400);
     expect((await mine(sid)).layout).toEqual(original);
   });
 
   it('accepts a shape the player drew, with a raised platform', async () => {
     const { sid } = await signUp('dario');
-    const cells = ['xxxxxxxx', 'x000000x', 'x000000x', 'x001100x', 'x001100x', 'x000000x', 'x000000x', 'xxxxxxxx'].join('');
-    const res = await put(sid, { cells, door: { i: 6, j: 1 } });
+    // A floor with an empty border, and a platform of one level in the middle.
+    let cells = '';
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const border = i === 0 || j === 0 || i === N - 1 || j === N - 1;
+        cells += border ? 'x' : i >= 6 && i < 10 && j >= 6 && j < 10 ? '1' : '0';
+      }
+    }
+    const res = await put(sid, { cells, door: { i: N - 2, j: 1 } });
     expect(res.statusCode).toBe(200);
-    expect(res.json().layout).toEqual({ cells, door: { i: 6, j: 1 } });
+    expect(res.json().layout).toEqual({ cells, door: { i: N - 2, j: 1 } });
   });
 
   it('places only on a floor', async () => {
     const { sid } = await signUp('eloi');
     expect((await put(sid, { preset: 'studio' })).statusCode).toBe(200);
-    const piece = (await inventory(sid)).furniture[0]!;
+    // A piece that stands on the floor (the kit also hangs some on the walls).
+    const piece = (await inventory(sid)).furniture.find((f) => f.key === 'pouf')!;
     const place = (i: number, j: number) =>
       app.inject({ method: 'PUT', url: '/api/placements', payload: { itemId: piece.id, i, j }, cookies: as(sid) });
-    // Studio: the border is empty space.
-    expect((await place(0, 0)).statusCode).toBe(400);
-    expect((await place(7, 7)).statusCode).toBe(400);
+    // Studio: 8 x 8 cells in the back corner, the rest of the grid is empty space.
+    expect((await place(8, 0)).statusCode).toBe(400);
+    expect((await place(N - 1, N - 1)).statusCode).toBe(400);
     expect((await place(3, 3)).statusCode).toBe(200);
   });
 
@@ -109,7 +118,7 @@ describe.skipIf(!available)('apartment layouts (PostgreSQL)', () => {
     const a = await signUp('fanny');
     const b = await signUp('gilles');
     expect((await put(a.sid, { preset: 'cross' })).statusCode).toBe(200);
-    expect((await mine(b.sid)).layout.cells).toBe('0'.repeat(64));
+    expect((await mine(b.sid)).layout).toEqual(DEFAULT_LAYOUT);
     expect((await app.inject({ method: 'PUT', url: '/api/apartment', payload: { layout: { preset: 'cross' } }, cookies: {} })).statusCode).toBe(401);
   });
 });

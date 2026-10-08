@@ -12,6 +12,7 @@ import {
   renderRecipe,
   spriteHash,
 } from '@coloxel/render';
+import { DEFAULT_LAYOUT, hasFloor, wallBehind } from '@coloxel/world';
 import { validateRecipe } from '../src';
 
 describe('base catalogue', () => {
@@ -111,17 +112,39 @@ describe('base catalogue', () => {
 });
 
 describe('starter kit', () => {
-  it('is a bed, a table, a chair, a lamp and a plant on distinct cells of the room', () => {
-    expect(STARTER_KIT.map((k) => k.key).sort()).toEqual(['chaise', 'ficus', 'lampadaire', 'lit', 'table']);
-    const cells = new Set(STARTER_KIT.map((k) => `${k.i},${k.j}`));
-    expect(cells.size).toBe(STARTER_KIT.length);
-    for (const k of STARTER_KIT) {
-      expect(catalogueEntry(k.key), k.key).toBeDefined();
-      expect(k.i >= 0 && k.i < 8 && k.j >= 0 && k.j < 8).toBe(true);
-      // The door and the spawn point (7, 0) stay free.
-      expect(`${k.i},${k.j}`).not.toBe('7,0');
-      expect(k.i === 0 && k.j >= 4 && k.j <= 6, 'in front of the door').toBe(false);
+  it('furnishes the room of a new apartment, every piece on its own floor tiles or on a wall, the door left free', () => {
+    const keys = STARTER_KIT.map((k) => k.key);
+    // A lived-in room: somewhere to sleep, to sit, a light, a table and a plant at least.
+    expect(STARTER_KIT.length).toBeGreaterThanOrEqual(15);
+    for (const category of ['sleep', 'seat', 'light', 'table', 'decor'] as const) {
+      expect(keys.some((k) => catalogueEntry(k)?.category === category), category).toBe(true);
     }
+    const taken = new Set<string>();
+    for (const k of STARTER_KIT) {
+      const entry = catalogueEntry(k.key);
+      expect(entry, k.key).toBeDefined();
+      const rot = k.rot ?? 0;
+      if (entry!.wall) {
+        // A wall piece hangs on the left wall (turn 0) or the right one (turn 1), where there is a wall.
+        expect(rot === 0 || rot === 1, k.key).toBe(true);
+        expect(wallBehind(DEFAULT_LAYOUT, rot === 0 ? 'left' : 'right', k.i, k.j), k.key).toBe(true);
+        const key = `${k.i},${k.j},wall${rot}`;
+        expect(taken.has(key), key).toBe(false);
+        taken.add(key);
+        continue;
+      }
+      const [w, h] = rotatedSize(normalizeSize(entry!.recipe.size), rot);
+      for (let a = 0; a < w; a++) {
+        for (let b = 0; b < h; b++) {
+          const cell = `${k.i + a},${k.j + b}`;
+          expect(hasFloor(DEFAULT_LAYOUT, k.i + a, k.j + b), `${k.key} at ${cell}`).toBe(true);
+          expect(taken.has(cell), `${k.key} at ${cell}`).toBe(false);
+          taken.add(cell);
+        }
+      }
+    }
+    // The door, where players arrive, stays free.
+    expect(taken.has(`${DEFAULT_LAYOUT.door.i},${DEFAULT_LAYOUT.door.j}`)).toBe(false);
   });
 });
 
