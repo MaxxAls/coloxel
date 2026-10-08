@@ -162,8 +162,9 @@ const sign: Recipe = {
   ],
 };
 
-/** A jukebox: an arched cabinet, a lit window, a record on a turntable, rows of bulbs. */
-const jukebox: Recipe = {
+/** A jukebox: an arched cabinet, a lit window, a record on a turntable, rows of bulbs that chase each other. */
+const BULBS = ['#ff7aa8', '#ffe05a', '#6be2a3', '#7ac8ff', '#ff9a5a'];
+const jukeboxFrame = (k: number): Recipe => ({
   name: 'Juke-box',
   parts: [
     box(-7, 7, -6, 6, 0, 3, WOOD_DARK, 'wood'),
@@ -171,11 +172,43 @@ const jukebox: Recipe = {
     box(-6, 6, 6, 6.6, 8, 24, '#2a2140', 'metal'),
     box(-5, 5, 6.6, 7, 10, 22, '#ffe08a'),
     cyl(0, 6.9, 3.6, 12, 12.4, '#1b1530', '#2a2140'), cyl(0, 6.9, 1, 12.4, 12.8, '#ffc857', '#ffe08a'),
-    ...[0, 1, 2, 3, 4].map((k) => ball(-4 + k * 2, 6.9, 19.4, 0.7, ['#ff7aa8', '#ffe05a', '#6be2a3', '#7ac8ff', '#ff9a5a'][k]!)),
+    // The record turns: a bright mark goes round it.
+    pix(-3 + (k % 4) * 2, 6.9, 12.8 + (k % 2), 1, 1, '#ffffff'),
+    ...[0, 1, 2, 3, 4].map((n) => ball(-4 + n * 2, 6.9, 19.4, 0.7, BULBS[(n + k) % 5]!)),
     box(-7.4, 7.4, -6.4, 6.4, 28, 31, '#d8c08a', 'metal'), box(-5, 5, -5, 5, 31, 34, '#d8c08a', 'metal'), box(-2.5, 2.5, -2.5, 2.5, 34, 36, '#d8c08a'),
-    ...[-6, -3, 0, 3, 6].map((x) => ball(x, 6.6, 27, 0.9, '#ffe28a')),
-    glow(0, 7, 16, 18, '#ffd070', 0.45),
+    ...[-6, -3, 0, 3, 6].map((x, n) => ball(x, 6.6, 27, 0.9, (n + k) % 2 ? '#ffe28a' : '#ff9a5a')),
+    glow(0, 7, 16, 18, '#ffd070', 0.4 + (k % 2) * 0.12),
   ],
+});
+const jukebox: Recipe = jukeboxFrame(0);
+
+/** An aquarium on a stand: water, sand, a plant, and fish that swim from one frame to the next. */
+const aquariumFrame = (k: number): Recipe => {
+  const swim = (phase: number, y: number, z: number, c: string, c2: string): Part[] => {
+    const x = -4 + ((phase + k * 3) % 24);
+    return [ball(x, y, z, 1.7, c), box(x - 3, x - 1.6, y - 0.4, y + 0.4, z - 0.6, z + 0.6, c2), pix(x + 0.9, y, z + 0.4, 0.5, 0.5, '#1b1530')];
+  };
+  return {
+    name: 'Grand aquarium',
+    size: [2, 1],
+    parts: [
+      box(-7, 7, -5, 5, 0, 3, WOOD_DARK, 'wood'), box(17, 23, -5, 5, 0, 3, WOOD_DARK, 'wood'), box(-7, 23, -5, 5, 8, 11, WOOD_DARK, 'wood'),
+      box(-7, -5, -5, 5, 3, 8, WOOD), box(21, 23, -5, 5, 3, 8, WOOD),
+      // Tank: sand, water, glass.
+      box(-6, 22, -4, 4, 11, 13, '#e6d4a0', 'grass'),
+      box(-6, 22, -4, 4, 13, 31, '#3f9ad0', 'water'),
+      box(-6.4, -5.6, -4.4, 4.4, 11, 32, '#cfe8f4', 'glass'), box(21.6, 22.4, -4.4, 4.4, 11, 32, '#cfe8f4', 'glass'),
+      box(-6.4, 22.4, 3.6, 4.4, 11, 32, '#cfe8f4', 'glass'),
+      box(-7, 23, -5, 5, 31.4, 33.4, '#2a2140', 'metal'),
+      // Rocks, weed that sways, a plant.
+      ball(2, -1, 14, 2.4, '#8d8f94'), ball(5, 0, 13.4, 1.8, '#a0a2a8'),
+      box(14 + (k % 2) * 0.4, 14.6 + (k % 2) * 0.4, -1, 0, 13, 22, '#3f9a46'), box(15.4 - (k % 2) * 0.4, 16 - (k % 2) * 0.4, 0, 1, 13, 19, '#58b552'),
+      ...swim(0, 0, 24, '#ff9a2a', '#ffb860'), ...swim(11, 1, 19, '#ffd23a', '#fff08a'), ...swim(17 + k, -1, 27, '#7ac8ff', '#bfe8f8'),
+      // Bubbles rising.
+      pix(18, 0, 15 + ((k * 3) % 12), 0.5, 0.5, '#e6f6ff'), pix(18.6, 0.4, 17 + ((k * 3) % 11), 0.5, 0.5, '#e6f6ff'),
+      glow(8, 0, 22, 22, '#8fd0ff', 0.4),
+    ],
+  };
 };
 
 /** The board that starts the statues game: an ice-blue plaque with a frozen figure. */
@@ -224,7 +257,8 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'bacfleurs', category: 'decor', recipe: flowerBox, extras: { price: 40, pressable: true, vendor: 6 } },
     { key: 'mannequin', category: 'decor', recipe: mannequin, extras: { price: 80, mannequin: true } },
     { key: 'panneau', category: 'decor', recipe: sign, extras: { price: 30, sign: true } },
-    { key: 'jukebox', category: 'tech', recipe: jukebox, extras: { price: 150, pressable: true, jukebox: true } },
+    { key: 'jukebox', category: 'tech', recipe: jukebox, extras: { price: 150, pressable: true, jukebox: true, frames: [1, 2, 3, 4].map(jukeboxFrame), frameMs: 260 } },
+    { key: 'aquariumgrand', category: 'decor', recipe: aquariumFrame(0), extras: { price: 220, frames: [1, 2, 3, 4, 5].map(aquariumFrame), frameMs: 320 } },
     { key: 'tableaustatues', category: 'tech', recipe: statuesBoard, extras: { price: 90, pressable: true, game: 'freeze' } },
     { key: 'coupdenvoi', category: 'tech', recipe: kickoff, extras: { price: 90, pressable: true, game: 'soccer' } },
     { key: 'butrouge', category: 'decor', recipe: goalOf('But rouge', '#e0564f', '#a8302c'), extras: { price: 60, goal: 0 } },

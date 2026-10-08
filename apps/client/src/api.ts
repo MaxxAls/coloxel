@@ -600,4 +600,5 @@ export const api = {
 };
 
 export const itemSpriteUrl = (id: string, rot = 0) => `/api/items/${id}.png?v=${SPRITE_VERSION}${rot ? `&r=${rot}` : ''}`;
-export const furnitureSpriteUrl = (key: string, rot = 0, alt = false) => `/api/catalogue/${key}.png?v=${SPRITE_VERSION}${rot ? `&r=${rot}` : ''}${alt ? '&s=1' : ''}`;
+export const furnitureSpriteUrl = (key: string, rot = 0, alt = false, frame = 0) =>
+  `/api/catalogue/${key}.png?v=${SPRITE_VERSION}${rot ? `&r=${rot}` : ''}${alt ? '&s=1' : ''}${frame ? `&f=${frame}` : ''}`;

@@ -147,7 +147,8 @@ const bibliotheque: Recipe = {
   })(),
 };
 
-const fontaine: Recipe = {
+/** The fountain at a moment of its cycle: the jet rises and falls, ripples spread, a drop leaps from the bowl. */
+const fountainFrame = (k: number): Recipe => ({
   name: 'Grande fontaine',
   size: [2, 2],
   parts: [
@@ -161,14 +162,18 @@ const fontaine: Recipe = {
     box(20.6, 24.4, -4.6, 24.4, 9, 10.5, '#b4b6bc', 'stone'), box(-4.6, 20.6, 20.6, 24.4, 9, 10.5, '#b4b6bc', 'stone'),
     // Central column, two bowls, a jet.
     cyl(8, 8, 4.5, 7, 16, '#aeb0b6', '#c4c6cc'), cyl(8, 8, 9, 16, 19, '#b4b6bc', '#3f9ad0'), cyl(8, 8, 2, 19, 28, '#aeb0b6', '#c4c6cc'),
-    cyl(8, 8, 6, 28, 30.5, '#b4b6bc', '#4aa8d8'), ball(8, 8, 36, 3, '#bfe8f8'),
-    pix(7, 8, 31, 1, 7, '#e6f6ff'), pix(4, 8, 31, 0.5, 4, '#bfe8f8'), pix(11, 8, 31, 0.5, 4, '#bfe8f8'),
-    // Ripples and lily pads.
-    pix(-1, 4, 7.2, 3, 0.5, '#bfe8f8'), pix(14, 14, 7.2, 3, 0.5, '#bfe8f8'), pix(0, 16, 7.2, 3, 0.5, '#bfe8f8'),
-    ball(15, 2, 7.6, 2, '#4f9a5a'), pix(15, 1, 9, 1, 1, '#ffb6c8'), ball(1, 14, 7.6, 1.6, '#4f9a5a'),
+    cyl(8, 8, 6, 28, 30.5, '#b4b6bc', '#4aa8d8'),
+    ball(8, 8, 33 + k * 2.2, 3, '#bfe8f8'),
+    pix(7, 8, 31, 1, 2 + k * 2.2, '#e6f6ff'), pix(4 - k * 0.5, 8, 31, 0.5, 3 + (k % 2) * 1.5, '#bfe8f8'), pix(11 + k * 0.5, 8, 31, 0.5, 3 + ((k + 1) % 2) * 1.5, '#bfe8f8'),
+    // Drops falling back in the bowl.
+    pix(5 - k, 8, 31 - k * 1.5, 0.5, 0.5, '#e6f6ff'), pix(11 + k, 8, 30 - k * 1.5, 0.5, 0.5, '#e6f6ff'),
+    // Ripples spread out in the basin, and the lily pads drift a little.
+    ...[0, 1, 2].map((r) => pix(-1 + ((k * 3 + r * 6) % 17), 4 + r * 6 + ((k + r) % 2), 7.2, 3, 0.5, '#bfe8f8')),
+    ball(15 + (k % 3) * 0.6, 2, 7.6, 2, '#4f9a5a'), pix(15 + (k % 3) * 0.6, 1, 9, 1, 1, '#ffb6c8'), ball(1, 14 - (k % 3) * 0.6, 7.6, 1.6, '#4f9a5a'),
     glow(8, 8, 20, 30, '#8fd0ff', 0.35),
   ],
-};
+});
+const fontaine: Recipe = fountainFrame(0);
 
 const grandArbre: Recipe = {
   name: 'Grand chêne',
@@ -232,7 +237,7 @@ export function bigPieces(): BigPiece[] {
     { key: 'canapeangle', category: 'seat', recipe: canapeAngle, extras: { price: 180, interaction: 'sit' } },
     { key: 'pianosalon', category: 'decor', recipe: piano, extras: { price: 300 } },
     { key: 'bibliotheque', category: 'storage', recipe: bibliotheque, extras: { price: 150 } },
-    { key: 'fontaine', category: 'decor', recipe: fontaine, extras: { price: 240 } },
+    { key: 'fontaine', category: 'decor', recipe: fontaine, extras: { price: 240, frames: [1, 2, 3].map(fountainFrame), frameMs: 170 } },
     { key: 'grandchene', category: 'decor', recipe: grandArbre, extras: { price: 200, anim: 'sway' } },
     { key: 'banquet', category: 'table', recipe: tableBanquet, extras: { price: 140 } },
   ];

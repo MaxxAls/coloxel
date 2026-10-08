@@ -70,6 +70,33 @@ describe('base catalogue', () => {
     expect(hashes.size).toBe(CATALOGUE.length);
   });
 
+  it('animated pieces have frames of the same footprint that draw differently and stay in their frame', () => {
+    const animated = CATALOGUE.filter((e) => e.frames?.length);
+    expect(animated.map((e) => e.key)).toEqual(expect.arrayContaining(['fontaine', 'jukebox', 'aquariumgrand']));
+    for (const e of animated) {
+      expect(e.frameMs, e.key).toBeGreaterThanOrEqual(100);
+      const base = renderRecipe(e.recipe);
+      const seen = new Set([spriteHash(base)]);
+      for (const [k, frame] of e.frames!.entries()) {
+        expect(normalizeSize(frame.size), `${e.key} frame ${k + 1}`).toEqual(normalizeSize(e.recipe.size));
+        expect(frame.parts.length, `${e.key} frame ${k + 1}`).toBeLessThanOrEqual(LIMITS.maxParts);
+        const sprite = renderRecipe(frame);
+        expect([sprite.width, sprite.height]).toEqual([base.width, base.height]);
+        for (let x = 0; x < sprite.width; x++) {
+          expect(sprite.mask[x], `${e.key} f${k + 1} top`).toBe(0);
+          expect(sprite.mask[(sprite.height - 1) * sprite.width + x], `${e.key} f${k + 1} bottom`).toBe(0);
+        }
+        for (let y = 0; y < sprite.height; y++) {
+          expect(sprite.mask[y * sprite.width], `${e.key} f${k + 1} left`).toBe(0);
+          expect(sprite.mask[y * sprite.width + sprite.width - 1], `${e.key} f${k + 1} right`).toBe(0);
+        }
+        seen.add(spriteHash(sprite));
+      }
+      // Every frame is a different picture: otherwise it would not move.
+      expect(seen.size, e.key).toBe(e.frames!.length + 1);
+    }
+  });
+
   it('draws the same pixels every time', () => {
     for (const e of CATALOGUE) {
       expect(spriteHash(renderRecipe(e.recipe))).toBe(spriteHash(renderRecipe(e.recipe)));

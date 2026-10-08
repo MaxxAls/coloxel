@@ -1,4 +1,4 @@
-import { Container, Graphics, Sprite, Text, type Ticker } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, type Texture, type Ticker } from 'pixi.js';
 import { RES, catalogueEntry, frameFor, isSwitchable, normalizeSize, parseLook, rotatedSize } from '@coloxel/render';
 import { api, apartmentTitle, furnitureSpriteUrl, itemSpriteUrl, type FurnitureItem, type InventoryItem } from './api';
 import { createApartmentSettings } from './apartment-settings';
@@ -466,10 +466,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   /** Everything standing in the room: creations and base furniture alike, on the same rule of one object per cell. */
   const placedThings = () => [
     ...items.flatMap((it) =>
-      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, data: null as string | null, on: true, texture: (rot: number, _alt: boolean) => itemTexture(it.id, rot) }] : [],
+      it.placement ? [{ id: it.id, placement: it.placement, key: null as string | null, data: null as string | null, on: true, texture: (rot: number, _alt: boolean, _frame: number) => itemTexture(it.id, rot) }] : [],
     ),
     ...furniture.flatMap((f) =>
-      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, data: f.data ?? null, on: f.on !== false, texture: (rot: number, alt: boolean) => furnitureTexture(f.key, rot, alt) }] : [],
+      f.placement ? [{ id: f.id, placement: f.placement, key: f.key as string | null, data: f.data ?? null, on: f.on !== false, texture: (rot: number, alt: boolean, frame: number) => furnitureTexture(f.key, rot, alt, frame) }] : [],
     ),
   ];
 
@@ -482,6 +482,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     rot: number;
     /** The second look of a piece that has two (a gate standing open). */
     alt: boolean;
+    /** An animated piece: its looks in order (index 0 is the recipe itself), loaded after a turn, and which one shows. */
+    frames?: Texture[];
+    frameIdx?: number;
+    frameMs?: number;
     /** A mannequin wears a look: an avatar drawn on the piece. */
     dummy?: Sprite;
     dummyRaw?: string;
@@ -506,7 +510,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         const s = new Sprite();
         itemSprites.set(thing.id, s);
         world.addChild(s);
-        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6, rot: -1, alt: false };
+        prop = { on: true, sprite: s, anim: entry?.anim, phase: Math.random() * 6, rot: -1, alt: false, frameMs: entry?.frameMs };
         props.set(thing.id, prop);
         if (entry?.glow) {
           const halo = new Sprite(glowTexture());
@@ -527,7 +531,19 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         prop.rot = rot;
         prop.alt = alt;
         const s = prop.sprite;
-        thing.texture(rot, alt).then(
+        // The other looks of an animated piece load in the background; until they are there it stays on the first.
+        prop.frames = undefined;
+        prop.frameIdx = 0;
+        const count = entry?.frames?.length ?? 0;
+        if (count) {
+          void Promise.all(Array.from({ length: count + 1 }, (_, k) => thing.texture(rot, alt, k))).then(
+            (all) => {
+              if (!s.destroyed && prop!.rot === rot && prop!.alt === alt) prop!.frames = all;
+            },
+            () => {},
+          );
+        }
+        thing.texture(rot, alt, 0).then(
           (t) => {
             if (!s.destroyed && prop!.rot === rot && prop!.alt === alt) s.texture = t;
           },
@@ -1387,6 +1403,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
     if (!reduceMotion) {
       for (const prop of props.values()) {
+        // Animated pieces: water runs, lights chase, fish swim. Each piece has its own phase so that two never beat together.
+        if (prop.frames && prop.frames.length > 1) {
+          const idx = Math.floor(now / (prop.frameMs ?? 250) + prop.phase) % prop.frames.length;
+          if (idx !== prop.frameIdx) {
+            prop.frameIdx = idx;
+            prop.sprite.texture = prop.frames[idx]!;
+          }
+        }
         if (prop.anim === 'sway') prop.sprite.skew.x = Math.sin(now / 900 + prop.phase) * 0.035;
         else if (prop.anim === 'flicker' && prop.on) prop.sprite.tint = Math.sin(now / 90 + prop.phase) + Math.sin(now / 37) > 1.2 ? 0xd9e8ff : 0xffffff;
       }

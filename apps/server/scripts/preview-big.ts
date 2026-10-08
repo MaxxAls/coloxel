@@ -4,8 +4,12 @@ import { writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { CATALOGUE, renderRecipe } from '@coloxel/render';
 
-const pieces = CATALOGUE.filter((e) => e.recipe.size);
-const sprites = pieces.flatMap((e) => [renderRecipe(e.recipe, 0), renderRecipe(e.recipe, 1)]);
+// `frames` as the second argument draws the animated pieces, one row of frames each, instead of the multi-tile ones.
+const framesMode = process.argv[3] === 'frames';
+const pieces = framesMode ? CATALOGUE.filter((e) => e.frames?.length) : CATALOGUE.filter((e) => e.recipe.size);
+const sprites = framesMode
+  ? pieces.flatMap((e) => [e.recipe, ...e.frames!].slice(0, 4).map((r) => renderRecipe(r)))
+  : pieces.flatMap((e) => [renderRecipe(e.recipe, 0), renderRecipe(e.recipe, 1)]);
 const cols = 4;
 const cellW = Math.max(...sprites.map((s) => s.width)), cellH = Math.max(...sprites.map((s) => s.height));
 const rows = Math.ceil(sprites.length / cols);

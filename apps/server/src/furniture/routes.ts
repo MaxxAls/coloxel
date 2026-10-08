@@ -56,14 +56,17 @@ export function registerFurnitureRoutes(
   });
 
   // Same engine as every other sprite, drawn on demand from the catalogue.
-  app.get<{ Params: { key: string }; Querystring: { r?: string; s?: string } }>('/api/catalogue/:key.png', async (req, reply) => {
+  app.get<{ Params: { key: string }; Querystring: { r?: string; s?: string; f?: string } }>('/api/catalogue/:key.png', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const entry = catalogueEntry(req.params.key);
     if (!entry) return reply.code(404).send({ error: 'Meuble introuvable' });
     const turns = Number(req.query.r) | 0;
     // ?s=1 is the second look of a piece that has two, such as a gate that stands open.
-    const alt = req.query.s === '1' && entry.gate ? entry.gate.open : null;
-    const cacheKey = `${entry.key}:${((turns % 4) + 4) % 4}${alt ? ':open' : ''}`;
+    // ?f=k is frame k of a piece that is animated (1 is the first after the recipe itself).
+    const frameNo = Number(req.query.f) | 0;
+    const frame = frameNo >= 1 && entry.frames ? entry.frames[frameNo - 1] : undefined;
+    const alt = frame ?? (req.query.s === '1' && entry.gate ? entry.gate.open : null);
+    const cacheKey = `${entry.key}:${((turns % 4) + 4) % 4}${alt ? (frame ? `:f${frameNo}` : ':open') : ''}`;
     let png = pngCache.get(cacheKey);
     if (!png) {
       png = spriteToPng(renderRecipe(alt ?? entry.recipe, turns));

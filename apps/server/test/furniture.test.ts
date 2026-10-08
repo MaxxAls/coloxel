@@ -381,4 +381,22 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       expect((await put(cleo.sid, sign, 'dress')).statusCode).toBe(400);
     });
   });
+
+  describe('animated pieces', () => {
+    it('serves each frame of an animated piece as its own picture, and ignores a frame that does not exist', async () => {
+      const { sid } = await signUp('anim_ada');
+      const get = async (path: string) => app.inject({ method: 'GET', url: path, cookies: as(sid) });
+      const base = await get('/api/catalogue/fontaine.png');
+      const one = await get('/api/catalogue/fontaine.png?f=1');
+      const two = await get('/api/catalogue/fontaine.png?f=2');
+      expect([base.statusCode, one.statusCode, two.statusCode]).toEqual([200, 200, 200]);
+      expect(one.rawPayload.equals(base.rawPayload)).toBe(false);
+      expect(one.rawPayload.equals(two.rawPayload)).toBe(false);
+      // Frame 0, a frame past the end, nonsense: the plain picture, never an error.
+      for (const f of ['0', '99', 'x', '-3']) expect((await get(`/api/catalogue/fontaine.png?f=${f}`)).rawPayload.equals(base.rawPayload), f).toBe(true);
+      // A piece that does not animate ignores the parameter.
+      const lamp = await get('/api/catalogue/lampadaire.png');
+      expect((await get('/api/catalogue/lampadaire.png?f=1')).rawPayload.equals(lamp.rawPayload)).toBe(true);
+    });
+  });
 });
