@@ -247,6 +247,55 @@ const goalOf = (name: string, c: string, dark: string): Recipe => ({
   ],
 });
 
+const quad = (c: string, ...pts: [number, number, number][]): Part => ({ t: 'quad', pts, c });
+
+/** A moving belt between two rails, chevrons pointing the way it carries (+x before the turn). */
+const roller: Recipe = {
+  name: 'Tapis roulant',
+  parts: [
+    box(-8, 8, -7.6, 7.6, 0, 2.6, '#4a4f60'),
+    box(-8, 8, -7.6, -6.6, 2.6, 4, '#6a7080'),
+    box(-7.6, 7.6, -6.6, 6.6, 2.6, 3, '#2e3240'),
+    ...[-6, -1, 4].map((x) => quad('#ffc857', [x, -3.4, 3.1], [x + 3, 0, 3.1], [x, 3.4, 3.1], [x + 1.4, 0, 3.1])),
+    box(-8, 8, 6.6, 7.6, 2.6, 4, '#6a7080'),
+    pix(7.6, -5, 1, 1, 1, '#7dffb0'),
+  ],
+};
+
+/** A booth open on the viewer's side: posts, a lit back, a roof with a sign. */
+const teleportBooth: Recipe = {
+  name: 'Cabine de téléportation',
+  parts: [
+    box(-7.4, 7.4, -7.4, 7.4, 0, 1.6, '#2e3250'),
+    box(-7.4, -5.8, -7.4, 7.4, 1.6, 34, '#4a5590'),
+    quad('#8ee8ff', [-5.8, -5.4, 4], [-5.8, 5.4, 4], [-5.8, 5.4, 31], [-5.8, -5.4, 31]),
+    quad('#c8f6ff', [-5.8, -4, 6], [-5.8, -2.8, 6], [-5.8, -2.8, 29], [-5.8, -4, 29]),
+    box(-7.4, 7.4, -7.4, -5.8, 1.6, 34, '#4a5590'),
+    glow(-4, 0, 16, 14, '#8ee8ff', 0.7),
+    box(5.8, 7.4, -7.4, -5.8, 1.6, 34, '#5a66a8'),
+    box(-7.4, -5.8, 5.8, 7.4, 1.6, 34, '#5a66a8'),
+    box(5.8, 7.4, 5.8, 7.4, 1.6, 34, '#5a66a8'),
+    box(-7.8, 7.8, -7.8, 7.8, 34, 36.6, '#6c78c0'),
+    pix(7.8, -2, 35, 4, 1, '#ffc857'),
+    pix(-2, 7.8, 35, 4, 1, '#ffc857'),
+    box(-7.4, 7.4, -7.4, 7.4, 1.6, 1.9, '#8ee8ff'),
+  ],
+};
+
+/** A heavy wooden crate with iron corners and an arrow stencilled on it. */
+const pushCrate: Recipe = {
+  name: 'Caisse à pousser',
+  parts: [
+    box(-6, 6, -6, 6, 0, 11, '#b07a46', 'planks'),
+    box(-6.4, 6.4, -6.4, 6.4, 11, 12.4, '#c98f5e', 'planks'),
+    box(5.4, 6.2, 5.4, 6.2, 0, 12.4, IRON),
+    box(5.4, 6.2, -6.2, -5.4, 0, 12.4, IRON),
+    box(-6.2, -5.4, 5.4, 6.2, 0, 12.4, IRON),
+    quad('#6a4628', [6, -4, 3], [6, 0, 7.6], [6, 4, 3], [6, 0, 5.6]),
+    quad('#6a4628', [-4, 6, 3], [0, 6, 7.6], [4, 6, 3], [0, 6, 5.6]),
+  ],
+};
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
@@ -264,5 +313,8 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'butrouge', category: 'decor', recipe: goalOf('But rouge', '#e0564f', '#a8302c'), extras: { price: 60, goal: 0 } },
     { key: 'butbleu', category: 'decor', recipe: goalOf('But bleu', '#4f7fe0', '#2f509c'), extras: { price: 60, goal: 1 } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
+    { key: 'tapisroulant', category: 'tech', recipe: roller, extras: { price: 50, walkable: true, roller: true } },
+    { key: 'teleporteur', category: 'tech', recipe: teleportBooth, extras: { price: 120, walkable: true, teleport: true, glow: { z: 16, color: 0x8ee8ff, radius: 44 } } },
+    { key: 'caissepuzzle', category: 'decor', recipe: pushCrate, extras: { price: 30, pressable: true, pushable: true } },
   ];
 }

@@ -30,6 +30,12 @@ export interface CatalogueEntry {
    * piece placed on its cell stands on it instead of beside it.
    */
   surface?: number;
+  /** A moving belt: whoever stands on it is carried one cell along its turn (0 +i, 1 +j, 2 -i, 3 -j) every second. */
+  roller?: boolean;
+  /** A booth: whoever steps in comes out of the next booth of the apartment. */
+  teleport?: boolean;
+  /** A crate: a click from a cell next to it slides it one cell away, if there is room. */
+  pushable?: boolean;
   /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
@@ -498,7 +504,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'roller' | 'teleport' | 'pushable' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -880,7 +886,7 @@ export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey
  */
 export function stackable(entry: CatalogueEntry | undefined): boolean {
   if (!entry) return true;
-  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined;
+  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined && !entry.roller && !entry.teleport && !entry.pushable;
 }
 
 /**

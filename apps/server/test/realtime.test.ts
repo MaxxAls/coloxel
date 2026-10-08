@@ -840,37 +840,37 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     });
 
     it('lets a player sit or lie on the floor, stand up, walk backwards, and push or pull a neighbour', async () => {
-      const ida = await named('cm_ida');
-      const jo = await named('cm_jo');
-      const a = await joinHall(ida);
-      const b = await joinHall(jo);
+      const ivo = await named('cm_ivo');
+      const jul = await named('cm_jul');
+      const a = await joinHall(ivo);
+      const b = await joinHall(jul);
       await until(() => a.state?.players?.size === 2 && b.state?.players?.size === 2);
       const poseOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { pose: number } | undefined)?.pose;
       const dirOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { dir: number } | undefined)?.dir;
       // Sit down on the floor, lie down, get up.
       a.send('chat', { text: '/assis' });
-      await until(() => poseOf(b, ida.id) === 1);
+      await until(() => poseOf(b, ivo.id) === 1);
       a.send('chat', { text: '/allonge' });
-      await until(() => poseOf(b, ida.id) === 2);
+      await until(() => poseOf(b, ivo.id) === 2);
       a.send('chat', { text: '/debout' });
-      await until(() => poseOf(b, ida.id) === 0);
+      await until(() => poseOf(b, ivo.id) === 0);
       // Walking backwards: the body faces against the step (one step along +j, so the body faces -j).
-      const start = { ...playerOf(b, ida.id)! };
+      const start = { ...playerOf(b, ivo.id)! };
       a.send('chat', { text: '/reculons' });
       await new Promise((r) => setTimeout(r, 150));
       a.send('move', { i: start.i - 2, j: start.j });
-      await until(() => playerOf(b, ida.id)!.i === start.i - 2, 4000);
-      expect(dirOf(b, ida.id)).toBe((1 + 1) * 3 + (0 + 1));
-      // Jo comes next to Ida, then Ida pushes Jo one cell away and pulls them back.
+      await until(() => playerOf(b, ivo.id)!.i === start.i - 2, 4000);
+      expect(dirOf(b, ivo.id)).toBe((1 + 1) * 3 + (0 + 1));
+      // Jul comes next to Ivo, then Ivo pushes Jul one cell away and pulls them back.
       b.send('move', { i: start.i - 2, j: start.j + 1 });
-      await until(() => playerOf(a, jo.id)!.i === start.i - 2 && playerOf(a, jo.id)!.j === start.j + 1, 6000);
+      await until(() => playerOf(a, jul.id)!.i === start.i - 2 && playerOf(a, jul.id)!.j === start.j + 1, 6000);
       // Commands count as chat: five in eight seconds at most.
       await new Promise((r) => setTimeout(r, 4000));
-      a.send('chat', { text: '/pousser cm_jo' });
-      await until(() => playerOf(a, jo.id)!.j === start.j + 2, 3000);
+      a.send('chat', { text: '/pousser cm_jul' });
+      await until(() => playerOf(a, jul.id)!.j === start.j + 2, 3000);
       await new Promise((r) => setTimeout(r, 5000));
-      a.send('chat', { text: '/tirer cm_jo' });
-      await until(() => playerOf(a, jo.id)!.j === start.j + 1, 3000);
+      a.send('chat', { text: '/tirer cm_jul' });
+      await until(() => playerOf(a, jul.id)!.j === start.j + 1, 3000);
     }, 40000);
 
     it('lets a player follow a friend of the room, a step behind, and refuses strangers', async () => {
@@ -974,6 +974,35 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
     const at = (room: AnyRoom, id: string, i: number, j: number) => playerOf(room, id)?.i === i && playerOf(room, id)?.j === j;
     const emoteOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { emote: number } | undefined)?.emote;
     const walk = 12000;
+
+    it('carries players on belts, sends them from booth to booth, and lets them push a crate', async () => {
+      const owner = await signUp('mx_movers');
+      // Clear the starter room: these pieces need free cells.
+      await pool.query('DELETE FROM placements WHERE user_id = $1', [owner.id]);
+      await place(owner, 'tapisroulant', 5, 5);
+      await place(owner, 'teleporteur', 2, 2);
+      await place(owner, 'teleporteur', 7, 8);
+      await place(owner, 'caissepuzzle', 3, 6);
+      const room = await joinApartment(owner, owner.id);
+      await until(() => playerOf(room, owner.id));
+      // Onto the belt (turned 0: it carries along +i).
+      room.send('move', { i: 5, j: 5 });
+      await until(() => at(room, owner.id, 6, 5), walk);
+      // Into the first booth, out of the other one.
+      room.send('move', { i: 2, j: 2 });
+      await until(() => at(room, owner.id, 7, 8), walk);
+      // Next to the crate, a click pushes it one cell away.
+      room.send('move', { i: 3, j: 5 });
+      await until(() => at(room, owner.id, 3, 5), walk);
+      await new Promise((r) => setTimeout(r, 600));
+      room.send('use', { i: 3, j: 6 });
+      const crateJ = async () =>
+        (await pool.query<{ j: number }>("SELECT p.j FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND f.catalogue_key = 'caissepuzzle'", [owner.id])).rows[0]?.j;
+      for (let tries = 0; (await crateJ()) !== 7; tries++) {
+        if (tries > 60) throw new Error('the crate did not move');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }, 40000);
 
     it('lights and puts out a lamp when somebody steps on a cell, and shows the whole room', async () => {
       const owner = await signUp('mx_step');

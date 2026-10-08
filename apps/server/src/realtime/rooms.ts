@@ -27,7 +27,21 @@ export const STEP_MS = 480;
 /** How a player is posed: on their feet, sitting, or lying down. */
 export const POSE = { stand: 0, sit: 1, lie: 2 } as const;
 type Interaction = 'sit' | 'lie';
-type RoomMap = { blocked: Set<number>; seats: Map<number, Interaction>; shape: RoomLayout };
+type RoomMap = {
+  blocked: Set<number>;
+  seats: Map<number, Interaction>;
+  shape: RoomLayout;
+  /** Moving belts: cell -> the step they carry a player along. */
+  rollers?: Map<number, Cell>;
+  /** Booths, in the order they were put down: stepping into one takes a player out of the next. */
+  teleports?: Cell[];
+};
+/** The step a belt carries along, for each of its turns. */
+const ROLL: readonly Cell[] = [{ i: 1, j: 0 }, { i: 0, j: 1 }, { i: -1, j: 0 }, { i: 0, j: -1 }];
+/** A belt carries every this many steps of the clock (about a second). */
+const ROLL_EVERY = 2;
+/** How long a player stands in a booth before coming out of the other one. */
+const TELEPORT_MS = 600;
 /** Close code sent to a visitor when the owner closes the apartment on them. */
 export const CLOSED_BY_OWNER = 4003;
 /** Close code sent to a visitor the owner showed out. */
@@ -136,6 +150,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   /** Players walking backwards. */
   private moonwalkers = new Set<string>();
   private lastShove = new Map<string, number>();
+  private ticks = 0;
+  /** The room had belts the last time its layout was read: only then does the clock look at them. */
+  private hasRollers = false;
 
   /** Where this room is: the hall, or the apartment of its owner. */
   protected abstract location(): Location;
@@ -364,9 +381,10 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       this.following.delete(id);
       this.setEmote(id, 0);
       this.onFloor.delete(id);
-      const { blocked, seats, shape } = await this.layout();
+      const { blocked, seats, shape, rollers } = await this.layout();
       this.blockedCache = blocked;
       this.shapeCache = shape;
+      this.hasRollers = !!rollers?.size;
       const target = parsed.data;
       // A seat or a bed that is free can be walked onto: that is how one sits down. Everything else placed is in the way.
       const kind = seats.get(target.i * N + target.j);
@@ -780,9 +798,58 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
           player.pose = want.pose;
           needDeps().quest(id, 'sit');
         }
+        // Arrived in a booth: out of the next one in a moment.
+        setTimeout(() => void this.teleportFrom(id, next).catch(() => {}), TELEPORT_MS);
       }
     }
+    if (++this.ticks % ROLL_EVERY === 0) void this.roll().catch(() => {});
     this.onClock(now);
+  }
+
+  /** Belts carry whoever stands still on them one cell along, if there is room (never onto someone, or off the floor). */
+  private async roll() {
+    if (!this.hasRollers) return;
+    const { rollers, blocked, shape } = await this.layout();
+    this.hasRollers = !!rollers?.size;
+    if (!rollers?.size) return;
+    const taken = new Set<number>();
+    this.state.players.forEach((p) => taken.add(p.i * N + p.j));
+    this.state.players.forEach((p, id) => {
+      const along = rollers.get(p.i * N + p.j);
+      if (!along || p.pose !== POSE.stand || this.paths.has(id) || this.isFrozen(id)) return;
+      const to = { i: p.i + along.i, j: p.j + along.j };
+      const key = to.i * N + to.j;
+      if (!inGrid(to.i, to.j) || blocked.has(key) || taken.has(key) || !canStep(shape, { i: p.i, j: p.j }, to)) return;
+      taken.delete(p.i * N + p.j);
+      taken.add(key);
+      // Carried, not walking: the body keeps the way it faces.
+      p.i = to.i;
+      p.j = to.j;
+      this.onGameEvent({ type: 'step', who: id, cell: to });
+      if (rollers.has(key) === false) setTimeout(() => void this.teleportFrom(id, to).catch(() => {}), TELEPORT_MS);
+    });
+  }
+
+  /** A player standing in a booth comes out of the next free booth of the room. */
+  private async teleportFrom(id: string, at: Cell) {
+    const player = this.state.players.get(id);
+    if (!player || player.i !== at.i || player.j !== at.j || this.paths.has(id) || player.pose !== POSE.stand) return;
+    const { teleports } = await this.layout();
+    if (!teleports || teleports.length < 2) return;
+    const from = teleports.findIndex((c) => c.i === at.i && c.j === at.j);
+    if (from < 0) return;
+    for (let k = 1; k < teleports.length; k++) {
+      const to = teleports[(from + k) % teleports.length]!;
+      let free = true;
+      this.state.players.forEach((p) => {
+        if (p.i === to.i && p.j === to.j) free = false;
+      });
+      if (!free) continue;
+      this.broadcast('fx', { kind: 'pulse', i: at.i, j: at.j, color: 0x8ee8ff });
+      this.moveInstantly(id, to);
+      this.broadcast('fx', { kind: 'pulse', i: to.i, j: to.j, color: 0x8ee8ff });
+      return;
+    }
   }
 }
 
@@ -954,6 +1021,35 @@ export class ApartmentRoom extends BuildingRoom {
     return this.football.start(players, now, { goals, kickoff });
   }
 
+  /** A crate clicked from a cell next to it slides one cell away from the player, onto free floor. */
+  private async pushCrate(pieceId: string, cell: Cell, who: string) {
+    const player = this.state.players.get(who);
+    if (!player) return;
+    const di = Math.sign(cell.i - player.i), dj = Math.sign(cell.j - player.j);
+    if (Math.max(Math.abs(cell.i - player.i), Math.abs(cell.j - player.j)) !== 1) {
+      return this.sendTo(who, 'rule-message', { text: 'Approche-toi de la caisse pour la pousser.' });
+    }
+    const to = { i: cell.i + di, j: cell.j + dj };
+    const { shape } = await this.layout();
+    let someone = false;
+    this.state.players.forEach((p) => {
+      if (p.i === to.i && p.j === to.j) someone = true;
+    });
+    if (!inGrid(to.i, to.j) || !hasFloor(shape, to.i, to.j) || someone || !canStep(shape, cell, to)) return;
+    const { pool } = needDeps();
+    // The cell must be free of anything placed, and the crate must still be where it was clicked.
+    const moved = await pool.query(
+      `UPDATE placements SET i = $3, j = $4
+        WHERE furniture_id = $1 AND user_id = $2 AND i = $5 AND j = $6 AND layer = 0 AND z = 0
+          AND NOT EXISTS (SELECT 1 FROM placements o WHERE o.user_id = $2 AND o.layer = 0
+                            AND $3 >= o.i AND $3 < o.i + o.w AND $4 >= o.j AND $4 < o.j + o.h)`,
+      [pieceId, this.ownerId, to.i, to.j, cell.i, cell.j],
+    );
+    if (!moved.rowCount) return;
+    this.layoutCache = null;
+    this.broadcast('decor');
+  }
+
   /** The piece under a click, if it is base furniture: what it is, which placement, and whether it is lit (a gate: open). */
   private async pieceAt(cell: Cell) {
     const { rows } = await needDeps().pool.query<{ id: string; key: string; lit: boolean }>(
@@ -969,6 +1065,7 @@ export class ApartmentRoom extends BuildingRoom {
     const piece = await this.pieceAt(cell);
     const entry = piece?.entry;
     if (!piece || !entry) return;
+    if (entry.pushable) return this.pushCrate(piece.id, cell, who);
     if (entry.gate) {
       // Only the owner decides who gets through.
       if (who.toLowerCase() !== this.ownerId.toLowerCase()) return this.sendTo(who, 'rule-message', { text: 'Seul le propriétaire ouvre et ferme ce portillon.' });
@@ -1142,12 +1239,15 @@ export class ApartmentRoom extends BuildingRoom {
 
   private async readLayout(): Promise<RoomMap> {
     const shape = await loadLayout(needDeps().pool, this.ownerId);
-    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; lit: boolean; layer: number; key: string | null }>(
-      `SELECT p.i, p.j, p.w, p.h, p.lit, p.layer, f.catalogue_key AS key
+    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; rot: number; lit: boolean; layer: number; key: string | null }>(
+      `SELECT p.i, p.j, p.w, p.h, p.rot, p.lit, p.layer, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
-        WHERE p.user_id = $1`,
+        WHERE p.user_id = $1
+        ORDER BY p.placed_at, p.i, p.j`,
       [this.ownerId],
     );
+    const rollers = new Map<number, Cell>();
+    const teleports: Cell[] = [];
     // No floor: nobody walks there.
     const blocked = voidKeys(shape);
     const seats = new Map<number, Interaction>();
@@ -1164,9 +1264,11 @@ export class ApartmentRoom extends BuildingRoom {
           if (!entry?.walkable && !(entry?.gate && r.lit)) blocked.add(cell);
           // Only base furniture can be used: a creation is whatever its maker invented.
           if (entry?.interaction) seats.set(cell, entry.interaction);
+          if (entry?.roller && !r.layer) rollers.set(cell, ROLL[r.rot & 3]!);
         }
       }
+      if (entry?.teleport) teleports.push({ i: r.i, j: r.j });
     }
-    return { blocked, seats, shape };
+    return { blocked, seats, shape, rollers, teleports };
   }
 }
