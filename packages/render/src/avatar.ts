@@ -1,4 +1,4 @@
-// The avatar: a big head on a short, sturdy body, in flat tones with a hard outline.
+// The avatar: a person with a slender body and long legs, in shaded tones with a hard outline.
 // A look (packages/render/src/look.ts) says what they wear; this file draws it
 // from shaded shapes, then outlines it with the style guide's 1 px #1b1530.
 // Pure pixels, no DOM: the room, the wardrobe and the shop all use it.
@@ -19,16 +19,38 @@ export const showsFace = (f: Facing) => f === 'front' || f === 'front34' || f ==
 export type Frame = 0 | 1 | 2;
 
 /**
- * The avatar is designed on a 30 x 58 grid and drawn at RES times that resolution: the pixels are finer than
- * the ones of a sprite drawn on the design grid itself, and the room shows the sprite at 1 / RES of the zoom.
+ * The drawing code places the body on a compact 30 x 58 sketch; a vertical warp then stretches it into a person
+ * (see `BODY_WARP`): the head keeps its size, the torso and arms grow by a quarter, the legs almost double.
+ * The avatar is drawn at RES times the resolution of its design grid: the room shows it at 1 / RES of the zoom.
  */
 export const RES = 2;
+/** Where the torso starts and ends on the sketch, where the legs end (the top of a planted shoe), and how much each part grows. */
+const WARP_TORSO = [25.5, 40.5, 1.25] as const;
+const WARP_LEGS = [40.5, 49, 1.9] as const;
+/** Sketch y to design y: identity above the torso, stretched over the torso and the legs, shifted below. */
+export function BODY_WARP(y: number): number {
+  const [t0, t1, kt] = WARP_TORSO;
+  const [, l1, kl] = WARP_LEGS;
+  if (y <= t0) return y;
+  if (y <= t1) return t0 + (y - t0) * kt;
+  const torsoEnd = t0 + (t1 - t0) * kt;
+  if (y <= l1) return torsoEnd + (y - t1) * kl;
+  return torsoEnd + (l1 - t1) * kl + (y - l1);
+}
+/** How much broader the body is than the sketch, around its middle: shoulders nearly as wide as the head. */
+const BODY_SPREAD = 1.22;
+/** How much taller the person is than the sketch. */
+const GROWTH = BODY_WARP(58) - 58;
+/** How much the torso alone grows: a seated person keeps the legs of the sketch. */
+const TORSO_GROWTH = BODY_WARP(WARP_TORSO[1]) - WARP_TORSO[1];
+/** The warp of a seated person: the torso grows, the legs (folded at the knee) are only moved down. */
+const SIT_WARP = (y: number) => (y <= WARP_TORSO[1] ? BODY_WARP(y) : y + TORSO_GROWTH);
 export const AVATAR_W = 30 * RES;
 /** Tall enough for the head of a seated player to sit above the seat, and for the legs to reach the floor. */
-export const AVATAR_H = 58 * RES;
+export const AVATAR_H = Math.ceil(58 + GROWTH) * RES;
 /** A player lying down, drawn along the iso axis: wider and flatter. */
-export const LIE_W = 66 * RES;
-export const LIE_H = 50 * RES;
+export const LIE_W = 84 * RES;
+export const LIE_H = 60 * RES;
 
 /** How the avatar is posed: standing (or walking), sitting, or lying down. */
 export type Pose = 'stand' | 'sit' | 'lie';
@@ -73,6 +95,26 @@ export class Painter {
   /** While set, what is drawn is moved sideways by this function (a turned head), and dropped where `keepX` says no. */
   mapX: ((x: number) => number) | null = null;
   keepX: ((x: number) => boolean) | null = null;
+  /**
+   * While set, every y given to a shape goes through this warp (the body of the sketch becomes a taller person).
+   * `rigidAt` keeps a part at its own size, only moved as much as the warp moves that point (shoes), and `postY`
+   * moves everything after the warp (a foot lifted in a step).
+   */
+  warpY: ((y: number) => number) | null = null;
+  rigidAt: number | null = null;
+  postY = 0;
+  /** While set, every x given to a shape is spread around the middle of the body by this factor (broader shoulders). */
+  spreadX = 1;
+
+  private wx(x: number): number {
+    return this.spreadX === 1 ? x : HX + (x - HX) * this.spreadX;
+  }
+
+  private wy(y: number): number {
+    if (!this.warpY) return y + this.postY;
+    const shift = this.rigidAt !== null ? this.warpY(this.rigidAt) - this.rigidAt : null;
+    return (shift !== null ? y + shift : this.warpY(y)) + this.postY;
+  }
 
   /** Writes one canvas pixel. */
   private put(fx: number, fy: number, c: RGB): void {
@@ -89,6 +131,8 @@ export class Painter {
 
   /** One whole design pixel (k x k canvas pixels): for the bold marks of a drawing. */
   set(x: number, y: number, c: RGB): void {
+    y = this.wy(y);
+    x = this.wx(x);
     if (this.keepX && !this.keepX(x)) return;
     if (this.mapX) x = this.mapX(x);
     const xi = Math.round(x + this.ox) * this.k, yi = Math.round(y + this.oy) * this.k;
@@ -97,11 +141,15 @@ export class Painter {
 
   /** One canvas pixel (the finest mark there is): for the fine details of a face, a strand, a lace. */
   dot(x: number, y: number, c: RGB): void {
-    this.paint(x, y, c);
+    this.paint(this.wx(x), this.wy(y), c);
   }
 
   /** A flat rectangle with exact edges, in design units. */
   rect(x0: number, y0: number, x1: number, y1: number, c: RGB): void {
+    x0 = this.wx(x0);
+    x1 = this.wx(x1);
+    y0 = this.wy(y0);
+    y1 = this.wy(y1);
     const k = this.k;
     for (let fy = Math.round(y0 * k); fy < Math.round(y1 * k); fy++) {
       for (let fx = Math.round(x0 * k); fx < Math.round(x1 * k); fx++) this.paint((fx + 0.5) / k - 0.5, (fy + 0.5) / k - 0.5, c);
@@ -136,6 +184,11 @@ export class Painter {
     color: RGB,
     opts: { clip?: (x: number, y: number) => boolean; flat?: boolean } = {},
   ): void {
+    // A clipped ball is cut along lines of the sketch: keep the clip in sketch space.
+    if (this.warpY && !opts.clip) {
+      cy = this.wy(cy);
+      cx = this.wx(cx);
+    }
     const k = this.k;
     for (let fy = Math.floor((cy - ry) * k); fy <= Math.ceil((cy + ry) * k); fy++) {
       for (let fx = Math.floor((cx - rx) * k); fx <= Math.ceil((cx + rx) * k); fx++) {
@@ -155,6 +208,10 @@ export class Painter {
 
   /** A box with rounded corners, a light left edge and top, a dark right edge and bottom. */
   block(x0: number, y0: number, x1: number, y1: number, color: RGB, radius = 1.5, shadeRight = true): void {
+    x0 = this.wx(x0);
+    x1 = this.wx(x1);
+    y0 = this.wy(y0);
+    y1 = this.wy(y1);
     const k = this.k;
     const e = 2 / k;
     for (let fy = Math.floor(y0 * k); fy < Math.ceil(y1 * k); fy++) {
@@ -816,7 +873,8 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
     p.block(x0, shoeTop - 1.6, x0 + 5.4, shoeTop, tone(bottom, -0.25), 0.4, false);
   }
 
-  // Shoes.
+  // Shoes keep their size: the warp only moves them down with the end of the leg.
+  p.rigidAt = shoeTop;
   const sx = x0 - 1;
   const shoe = pal.shoes;
   if (look.shoes === 3) {
@@ -865,6 +923,7 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
     p.set(x0 + 3, shoeTop + 1, WHITE);
     p.set(x0 + 4.4, shoeTop + 1, WHITE);
   }
+  p.rigidAt = null;
 }
 
 function drawArms(p: Painter, look: Look, pal: Palette, frame: Frame): void {
@@ -1214,10 +1273,17 @@ function drawOver(p: Painter, look: Look, pal: Palette, facing: Facing): void {
 
 function drawBody(p: Painter, look: Look, pal: Palette, facing: Facing, frame: Frame, seated = false): void {
   const o = swing(frame, facing === 'side' ? 3.2 : 1);
+  // Wings and capes already reach the edges of the canvas: they keep the width of the sketch.
+  const spread = p.spreadX;
+  p.spreadX = 1;
   drawBehind(p, look, pal, frame);
+  p.spreadX = spread;
 
+  // A leg is drawn planted, then lifted as a whole: the step does not stretch with the warp.
   for (const [x0, off] of seated ? ([[9.3, 0], [15.3, 0]] as const) : ([[9.3 + o.legLx, o.legL], [15.3 + o.legRx, o.legR]] as const)) {
-    drawLeg(p, look, pal, x0, off, seated);
+    p.postY = off;
+    drawLeg(p, look, pal, x0, 0, seated);
+    p.postY = 0;
   }
   // A skirt hangs from the waist, over the tops of the legs.
   if (look.bottom === 3 && look.top !== 8) {
@@ -1250,9 +1316,10 @@ function drawLying(p: Painter, look: Look, pal: Palette): void {
     from[1] + d[1] * dist + side[1] * across,
   ];
   const shoulders = at(head, 15);
-  const hips = at(shoulders, 13);
-  const knees = at(hips, 10);
-  const feet = at(knees, 8);
+  // The same person as standing: a longer torso and long legs.
+  const hips = at(shoulders, 14);
+  const knees = at(hips, 12);
+  const feet = at(knees, 10);
 
   // The far arm and leg first, then the body, then what is nearest the viewer.
   p.capsule(...at(shoulders, 1, -5), ...at(hips, -1, -5.5), 2, shirt);
@@ -1294,12 +1361,21 @@ function build(look: Look, tint: Tint, facing: Facing, frame: Frame, blink: bool
     p.oy = 7;
     drawLying(p, look, pal);
   } else if (pose === 'sit') {
-    // Hips at seat height: the upper body is raised, the legs hang from the knees down to the floor.
-    p.oy = 3;
+    // Hips at seat height: the upper body is raised, the legs hang from the knees down to the floor. Only the torso
+    // grows; the whole drawing goes down so that the hips stay as high above the bottom of the canvas as on the sketch.
+    p.warpY = SIT_WARP;
+    p.spreadX = BODY_SPREAD;
+    p.oy = 3 + (h / RES - 58) - (SIT_WARP(38.5) - 38.5);
     drawBody(p, look, pal, facing, 0, true);
+    p.warpY = null;
+    p.spreadX = 1;
     drawHead(p, look, pal, facing, blink);
   } else {
+    p.warpY = BODY_WARP;
+    p.spreadX = BODY_SPREAD;
     drawBody(p, look, pal, facing, frame);
+    p.warpY = null;
+    p.spreadX = 1;
     if (facing === 'side') squeezeBody(p, T0 - 0.5, 0.55);
     else if (facing === 'front34' || facing === 'back34') squeezeBody(p, T0 - 0.5, 0.86);
     drawHead(p, look, pal, facing, blink);
