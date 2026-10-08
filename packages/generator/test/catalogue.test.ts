@@ -149,10 +149,10 @@ describe('starter kit', () => {
 });
 
 describe('floors and wallpapers', () => {
-  it('offer ten styles each, with unique ids', () => {
-    expect(FLOORS).toHaveLength(10);
-    expect(WALLS).toHaveLength(10);
-    expect(new Set(FLOORS.map((f) => f.id)).size).toBe(10);
-    expect(new Set(WALLS.map((w) => w.id)).size).toBe(10);
+  it('offer at least ten styles each, with unique ids', () => {
+    expect(FLOORS.length).toBeGreaterThanOrEqual(10);
+    expect(WALLS.length).toBeGreaterThanOrEqual(10);
+    expect(new Set(FLOORS.map((f) => f.id)).size).toBe(FLOORS.length);
+    expect(new Set(WALLS.map((w) => w.id)).size).toBe(WALLS.length);
   });
 });

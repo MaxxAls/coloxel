@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CATALOGUE, FLOORS, SEEDS, STARTER_KIT, WALLS, catalogueEntry, normalizeSize, rotatedSize } from '@coloxel/render';
+import { CATALOGUE, DEFAULT_FLOOR, DEFAULT_WALL, FLOORS, SEEDS, STARTER_KIT, WALLS, catalogueEntry, normalizeSize, rotatedSize } from '@coloxel/render';
 import { N } from '@coloxel/world';
 import type { RecipeModel } from '../src/creations/model';
 import { migrate, migrateDownAll } from '../src/db/migrate';
@@ -65,7 +65,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
   const lastSerial = async () => (await pool.query('SELECT last_value FROM item_serial')).rows[0].last_value as number;
   const itemCount = async () => (await pool.query('SELECT count(*)::int AS n FROM items')).rows[0].n as number;
 
-  it('serves the catalogue to signed-in players only: free base pieces and priced ones, ten floors, ten wallpapers', async () => {
+  it('serves the catalogue to signed-in players only: free base pieces and priced ones, every floor and wallpaper', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/catalogue' })).statusCode).toBe(401);
     const { sid } = await signUp('alice');
     const res = await app.inject({ method: 'GET', url: '/api/catalogue', cookies: as(sid) });
@@ -261,7 +261,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const put = (payload: object) =>
         app.inject({ method: 'PUT', url: '/api/apartment', payload, cookies: as(quentin.sid) });
       const mine = async () => (await app.inject({ method: 'GET', url: '/api/apartment', cookies: as(quentin.sid) })).json();
-      expect(await mine()).toMatchObject({ floorStyle: 'parquet', wallStyle: 'violet' });
+      expect(await mine()).toMatchObject({ floorStyle: DEFAULT_FLOOR, wallStyle: DEFAULT_WALL });
       expect((await put({ floor: 'damier', wall: 'menthe' })).json()).toMatchObject({ floorStyle: 'damier', wallStyle: 'menthe' });
       expect((await put({ floor: 'lave' })).statusCode).toBe(400);
       expect((await put({ wall: 42 })).statusCode).toBe(400);

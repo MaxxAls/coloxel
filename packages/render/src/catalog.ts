@@ -1,4 +1,5 @@
 import { bigPieces } from './catalog-big';
+import { decorPieces } from './catalog-decor';
 import { mechanismPieces } from './catalog-mechanisms';
 import { wallPieces } from './catalog-walls';
 import type { Part, Recipe } from './types';
@@ -856,6 +857,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   ...bigPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
   ...mechanismPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
   ...wallPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
+  ...decorPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
 ];
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));
@@ -894,6 +896,12 @@ export const STARTER_KIT: readonly { key: string; i: number; j: number; rot?: nu
   { key: 'lampelave', i: 9, j: 9 },
   { key: 'cactus', i: 9, j: 8 },
   { key: 'ours', i: 3, j: 9 },
+  // Small things that make it lived in.
+  { key: 'pilelivres', i: 1, j: 9 },
+  { key: 'gueridon', i: 4, j: 7 },
+  { key: 'tapisgris', i: 5, j: 5 },
+  { key: 'corbeille', i: 8, j: 6 },
+  { key: 'guitare', i: 6, j: 9 },
 ];
 
 // ----- Floors and wallpapers: settings of the apartment, not objects -----------------
@@ -921,7 +929,7 @@ export interface WallStyle {
 }
 
 export const DEFAULT_FLOOR = 'parquet';
-export const DEFAULT_WALL = 'violet';
+export const DEFAULT_WALL = 'platre';
 
 export const FLOORS: readonly FloorStyle[] = [
   { id: 'parquet', name: 'Parquet miel', a: 0xb88b56, b: 0xc79a62, line: 0x8f6a3e, pattern: 'planks' },
@@ -934,6 +942,8 @@ export const FLOORS: readonly FloorStyle[] = [
   { id: 'pierre', name: 'Pierre grise', a: 0xa6a2b8, b: 0xb4b0c6, line: 0x7a7690, pattern: 'stone' },
   { id: 'herbe', name: 'Gazon', a: 0x5fb85a, b: 0x6cc666, line: 0x3f8a3c, pattern: 'grass' },
   { id: 'sable', name: 'Sable chaud', a: 0xe8cf94, b: 0xf0d9a4, line: 0xb89c62, pattern: 'sand' },
+  { id: 'parquetgris', name: 'Parquet gris', a: 0x8e8a92, b: 0x9c98a2, line: 0x625e6a, pattern: 'planks' },
+  { id: 'marbre', name: 'Marbre blanc', a: 0xe6e0d8, b: 0xf0ebe4, line: 0xbcb4a8, pattern: 'tiles' },
 ];
 
 export const WALLS: readonly WallStyle[] = [
@@ -947,6 +957,10 @@ export const WALLS: readonly WallStyle[] = [
   { id: 'bordeaux', name: 'Bordeaux', left: 0xa8485e, right: 0x883a4c, trim: 0xffd6de, pattern: 'damask' },
   { id: 'foret', name: 'Vert forêt', left: 0x4f9a6a, right: 0x3e7e56, trim: 0xd6f5e0, pattern: 'leaves' },
   { id: 'nuit', name: 'Bleu nuit', left: 0x3e4a8c, right: 0x2f3a72, trim: 0xb8c4f5, pattern: 'stars' },
+  { id: 'platre', name: 'Plâtre gris', left: 0xb4b0bc, right: 0x96929f, trim: 0xe6e3ec, pattern: 'plain' },
+  { id: 'beton', name: 'Béton', left: 0x86868f, right: 0x6c6c76, trim: 0xaeaeb8, pattern: 'panels' },
+  { id: 'pierresombre', name: 'Pierre sombre', left: 0x66626e, right: 0x514e5a, trim: 0x8c8896, pattern: 'brick' },
+  { id: 'boiserie', name: 'Boiserie', left: 0x8a5e3c, right: 0x6e4a2e, trim: 0xc49a6c, pattern: 'panels' },
 ];
 
 export const floorStyle = (id: string): FloorStyle => FLOORS.find((f) => f.id === id) ?? FLOORS[0]!;
