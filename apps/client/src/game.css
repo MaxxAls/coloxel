@@ -2664,3 +2664,6 @@ body.admin .staff .win-bar button.win-close {
 .ask-label input { padding: 6px 8px; font: inherit; }
 .ask-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* A creation on several tiles has a bigger sprite: shown whole in the same box, never stretched. */
+img[src*="/api/items/"], img[src*="/api/catalogue/"] { object-fit: contain; }
+
