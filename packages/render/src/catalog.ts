@@ -140,36 +140,54 @@ const table: Recipe = {
   ],
 };
 
+/**
+ * A padded block: the body, then a slightly smaller top layer, so that the edge reads as a rounded seam
+ * (the engine draws a line between the two). Used for cushions, armrests and seats.
+ */
+const padded = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, c: string, top: string): Part[] => [
+  box(x0, x1, y0, y1, z0, z1 - 0.9, c),
+  box(x0 + 0.4, x1 - 0.4, y0 + 0.4, y1 - 0.4, z1 - 0.9, z1, top),
+];
+
+const SOFA = { frame: '#2f5aa0', body: '#3f74c8', cushion: '#5a90e0', light: '#7fb0f2', wood: '#5e3d24' };
 const sofa: Recipe = {
   name: 'Canapé câlin',
   parts: [
-    box(-6, -2.5, -9, 9, 2, 17, '#3f78c4'),
-    box(-6, 6, -9, 9, 2, 8, '#4a8fe2'),
-    box(-6, 6, -9, -6.5, 8, 13, '#3f78c4'),
-    box(-6, 6, 6.5, 9, 8, 13, '#3f78c4'),
-    box(-2.5, 6, -6.5, -0.2, 8, 10.8, '#6aa6ee'),
-    box(-2.5, 6, 0.2, 6.5, 8, 10.8, '#6aa6ee'),
-    box(-5.5, -3, -6, -1, 12, 16, '#8ec0f5'),
-    box(-5.5, -3, 1, 6, 12, 16, '#8ec0f5'),
-    ...[[-7.5, -7.5], [-7.5, 7.5], [4.5, -7.5], [4.5, 7.5]].map(([x, y]) => box(x! - 0.7, x! + 0.7, y! - 0.7, y! + 0.7, 0, 2, WOOD_DARK)),
-    pix(2, -4, 10.8, 2, 1, '#cfe3fa'),
-    box(-1, 2, -8.4, -5.4, 8, 12.4, '#ffc857'),
-    box(-0.4, 1.4, -7.8, -6, 12.4, 12.9, '#ffe08a'),
-    box(-1, 2, 5.4, 8.4, 8, 12, '#ff8fb1'),
-    quad('#3f78c4', [6, -9, 2.6], [6, 9, 2.6], [6, 9, 3.6], [6, -9, 3.6]),
+    // Feet, then the frame that the cushions sit in.
+    ...[[-5.2, -7.2], [-5.2, 7.2], [5.2, -7.2], [5.2, 7.2]].map(([x, y]) => box(x! - 0.7, x! + 0.7, y! - 0.7, y! + 0.7, 0, 2, SOFA.wood)),
+    box(-6, 6, -8, 8, 2, 5, SOFA.frame),
+    // The back, against the far side, with its two cushions.
+    ...padded(-6, -3.4, -8, 8, 5, 16, SOFA.body, SOFA.cushion),
+    // The far armrest.
+    ...padded(-6, 6, -8, -6, 5, 11.5, SOFA.body, SOFA.light),
+    // Seat cushions, then the cushions of the back, plump and a little leaning.
+    ...padded(-3.4, 5.8, -6, -0.1, 5, 8.6, SOFA.cushion, SOFA.light),
+    ...padded(-3.4, 5.8, 0.1, 6, 5, 8.6, SOFA.cushion, SOFA.light),
+    ...padded(-3.4, -1.6, -5.8, -0.3, 8.6, 14.6, SOFA.cushion, SOFA.light),
+    ...padded(-3.4, -1.6, 0.3, 5.8, 8.6, 14.6, SOFA.cushion, SOFA.light),
+    // A yellow pillow in the corner.
+    ...padded(-1.6, 0.6, -5.6, -2.8, 8.6, 12.4, '#e9b23a', '#ffd46a'),
+    // The near armrest comes last: it hides the end of the seat.
+    ...padded(-6, 6, 6, 8, 5, 11.5, SOFA.body, SOFA.light),
+    // Piping along the front of the frame, and a stitch on each seat cushion.
+    quad(SOFA.light, [6, -8, 4.2], [6, 8, 4.2], [6, 8, 4.6], [6, -8, 4.6]),
+    pix(5.8, -3, 8.6, 0.5, 0.5, SOFA.frame),
+    pix(5.8, 3, 8.6, 0.5, 0.5, SOFA.frame),
   ],
 };
 
+const CHAIR_PINK = { frame: '#b8436f', body: '#d9608f', cushion: '#f285ab', light: '#ffadc7' };
 const armchair: Recipe = {
   name: 'Fauteuil rose',
   parts: [
-    box(-5.5, -2.5, -5.5, 5.5, 2, 16, '#e0608f'),
-    box(-5.5, 5.5, -5.5, 5.5, 2, 7, '#ff8fb1'),
-    box(-5.5, 5.5, -5.5, -3.5, 7, 11, '#e0608f'),
-    box(-5.5, 5.5, 3.5, 5.5, 7, 11, '#e0608f'),
-    box(-2.5, 5.5, -3.5, 3.5, 7, 10, '#ffadc7'),
-    ...[[-4, -4], [-4, 4], [4, -4], [4, 4]].map(([x, y]) => box(x! - 0.6, x! + 0.6, y! - 0.6, y! + 0.6, 0, 2, WOOD_DARK)),
-    pix(-2, 2, 14, 2, 1, '#ffd0e0'),
+    ...[[-4.4, -4.4], [-4.4, 4.4], [4.4, -4.4], [4.4, 4.4]].map(([x, y]) => box(x! - 0.6, x! + 0.6, y! - 0.6, y! + 0.6, 0, 2, WOOD_DARK)),
+    box(-5.5, 5.5, -5.5, 5.5, 2, 5, CHAIR_PINK.frame),
+    ...padded(-5.5, -2.8, -5.5, 5.5, 5, 16, CHAIR_PINK.body, CHAIR_PINK.cushion),
+    ...padded(-5.5, 5.5, -5.5, -3.6, 5, 11, CHAIR_PINK.body, CHAIR_PINK.light),
+    ...padded(-2.8, 5.3, -3.6, 3.6, 5, 8.4, CHAIR_PINK.cushion, CHAIR_PINK.light),
+    ...padded(-2.8, -1.2, -3.4, 3.4, 8.4, 14.2, CHAIR_PINK.cushion, CHAIR_PINK.light),
+    ...padded(-5.5, 5.5, 3.6, 5.5, 5, 11, CHAIR_PINK.body, CHAIR_PINK.light),
+    quad(CHAIR_PINK.light, [5.5, -5.5, 4.2], [5.5, 5.5, 4.2], [5.5, 5.5, 4.6], [5.5, -5.5, 4.6]),
   ],
 };
 
@@ -410,11 +428,15 @@ const mirror: Recipe = {
 const pouf: Recipe = {
   name: 'Pouf bonbon',
   parts: [
-    cyl(0, 0, 5.4, 0, 8.5, '#f2c230', '#ffd95a'),
-    cyl(0, 0, 5.8, 3, 4, '#e8a92a'),
-    ball(0, 0, 8.5, 3, '#ffe27a'),
-    pix(-3, 2, 6, 1, 2, '#fff3d6'),
-    pix(2, 4, 4, 1, 1, '#fff3d6'),
+    // A round cushion: a darker base band, the plump body, a soft top with a sunken button.
+    cyl(0, 0, 5.2, 0, 1.4, '#c98d1e', '#e8a92a'),
+    cyl(0, 0, 5.6, 1.4, 7.2, '#f2c230', '#ffd95a'),
+    cyl(0, 0, 4.8, 7.2, 8.4, '#ffd95a', '#ffe58a'),
+    cyl(0, 0, 0.9, 8.4, 8.6, '#d9a21f', '#c98d1e'),
+    // Seams down the side.
+    pix(-3.4, 3.4, 6.6, 0.5, 2.4, '#d9a21f'),
+    pix(0.4, 5.2, 5.8, 0.5, 2.4, '#d9a21f'),
+    pix(3.6, 3.4, 4.6, 0.5, 2.4, '#d9a21f'),
   ],
 };
 
@@ -482,10 +504,10 @@ const recolor = (base: Recipe, name: string, map: Record<string, string>): Recip
 });
 
 const mintSofa = recolor(sofa, 'Canapé menthe', {
-  '#3f78c4': '#2f9e7a', '#4a8fe2': '#3fbf94', '#6aa6ee': '#6fd8b0', '#8ec0f5': '#a6ecd0', '#cfe3fa': '#e0fbef',
+  [SOFA.frame]: '#1f7a5c', [SOFA.body]: '#2f9e7a', [SOFA.cushion]: '#3fbf94', [SOFA.light]: '#6fd8b0',
 });
 const sunArmchair = recolor(armchair, 'Fauteuil soleil', {
-  '#e0608f': '#e0a020', '#ff8fb1': '#ffc83d', '#ffadc7': '#ffdf7a', '#ffd0e0': '#fff1b8',
+  [CHAIR_PINK.frame]: '#b87a10', [CHAIR_PINK.body]: '#e0a020', [CHAIR_PINK.cushion]: '#ffc83d', [CHAIR_PINK.light]: '#ffdf7a',
 });
 const starBed = recolor(bed, 'Lit étoilé', {
   '#e2483d': '#4a8fe2', '#ff8a80': '#8ec0f5', '#d8382d': '#3f78c4', '#ffa8a0': '#cfe3fa', '#ffe4ec': '#e6f0ff',

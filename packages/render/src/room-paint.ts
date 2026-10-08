@@ -3,7 +3,7 @@
 // and the same function can be run in tests or a preview script.
 
 import type { FloorPattern, WallPattern } from './catalog';
-import { DEFAULT_LAYOUT, HALL_LAYOUT, N, hasFloor, levelAt, type RoomLayout } from '@coloxel/world';
+import { DEFAULT_LAYOUT, HALL_LAYOUT, N, hasFloor, levelAt, wallBehind, type RoomLayout } from '@coloxel/world';
 
 /** Cells along each wall of the hall: its decor is spread over that length. */
 let hallSide = 0;
@@ -254,7 +254,14 @@ function wallPattern(look: RoomLook, base: RGB, u: number, v: number, px: number
   }
 }
 
-function wallColor(look: RoomLook, side: 'left' | 'right', u: number, v: number, px: number, py: number): RGB {
+/** Where the door of an apartment is drawn: on the wall behind the cell players come in by, one cell wide. */
+interface DoorSpot {
+  side: 'left' | 'right';
+  u0: number;
+  u1: number;
+}
+
+function wallColor(look: RoomLook, side: 'left' | 'right', u: number, v: number, px: number, py: number, door: DoorSpot | null): RGB {
   const base = rgb(side === 'left' ? look.wall.left : look.wall.right);
   const trim = rgb(look.wall.trim);
   const vf = v / WALL_H;
@@ -266,6 +273,11 @@ function wallColor(look: RoomLook, side: 'left' | 'right', u: number, v: number,
     if (v >= WALL_H - 3) return tone(trim, side === 'left' ? 0.0 : -0.12);
     if (v >= WALL_H - 5) return tone(trim, side === 'left' ? -0.12 : -0.22);
     return tone(base, -0.22);
+  }
+  // The door goes through the skirting board, down to the floor.
+  if (door && door.side === side) {
+    const d = paintedDoor(u, v, door.u0, door.u1, px, py);
+    if (d) return d;
   }
   if (v < 15) {
     const t = tone(trim, side === 'left' ? -0.1 : -0.24);
@@ -323,7 +335,13 @@ function apartmentDecor(side: 'left' | 'right', u: number, v: number, px: number
     if (Math.hypot((f - 0.7) * 34, (h - 0.72) * 26) < 4) c = [0xff, 0xe2, 0x7a];
     return c;
   }
-  const [du0, du1, dv1] = [4.15, 5.85, 94];
+  void wall;
+  return null;
+}
+
+/** A panelled wooden door with a brass knob, between u0 and u1 on its wall; null outside it. */
+function paintedDoor(u: number, v: number, du0: number, du1: number, px: number, py: number): RGB | null {
+  const dv1 = 94;
   if (inRect(u, v, du0 - 0.1, du1 + 0.1, 0, dv1 + 4)) {
     const f = (u - du0) / (du1 - du0);
     if (f < 0 || f > 1 || v > dv1 || false) return tone([0x4a, 0x3f, 0x7a], f < 0.5 ? 0 : -0.12);
@@ -342,7 +360,6 @@ function apartmentDecor(side: 'left' | 'right', u: number, v: number, px: number
     if (k < 3.2) return k < 1.2 ? [0xff, 0xf0, 0xa8] : [0xe0, 0xa0, 0x30];
     return c;
   }
-  void wall;
   return null;
 }
 
@@ -470,6 +487,14 @@ export function paintRoom(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): 
     }
   }
 
+  // The door of an apartment is drawn in the wall behind the cell players come in by (if a wall stands there).
+  const { i: di, j: dj } = layout.door;
+  const door: DoorSpot | null =
+    look.decor !== 'apartment' ? null
+    : wallBehind(layout, 'right', di, dj) ? { side: 'right', u0: di + 0.14, u1: di + 0.86 }
+    : wallBehind(layout, 'left', di, dj) ? { side: 'left', u0: dj + 0.14, u1: dj + 0.86 }
+    : null;
+
   // Walls.
   for (const { i, j, level } of cells) {
     const lift = level * LEVEL_PX;
@@ -482,7 +507,7 @@ export function paintRoom(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): 
         for (let py = Math.floor(baseY - WALL_H); py < baseY - lift; py++) {
           const v = baseY - (py + 0.5);
           if (v < lift || v >= WALL_H) continue;
-          put(px, py, wallColor(look, 'left', j + t, v, px, py), LEFT | (v >= WALL_H - 2 ? TOP : 0));
+          put(px, py, wallColor(look, 'left', j + t, v, px, py, door), LEFT | (v >= WALL_H - 2 ? TOP : 0));
         }
       }
     }
@@ -495,7 +520,7 @@ export function paintRoom(look: RoomLook, layout: RoomLayout = DEFAULT_LAYOUT): 
         for (let py = Math.floor(baseY - WALL_H); py < baseY - lift; py++) {
           const v = baseY - (py + 0.5);
           if (v < lift || v >= WALL_H) continue;
-          put(px, py, wallColor(look, 'right', i + t, v, px, py), RIGHT | (v >= WALL_H - 2 ? TOP : 0));
+          put(px, py, wallColor(look, 'right', i + t, v, px, py, door), RIGHT | (v >= WALL_H - 2 ? TOP : 0));
         }
       }
     }

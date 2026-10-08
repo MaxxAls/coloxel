@@ -98,7 +98,7 @@ export const SCALE = 2;
  * never keep showing images drawn by an older engine (they are cached for long).
  * Bump it whenever the size or the look of rendered sprites changes.
  */
-export const SPRITE_VERSION = 2;
+export const SPRITE_VERSION = 3;
 export const SPRITE_W = 96 * SCALE;
 export const SPRITE_H = 112 * SCALE;
 /** Pixel of the sprite that sits on the centre of its floor tile. */

@@ -187,16 +187,23 @@ class Canvas {
   readonly width: number;
   readonly height: number;
 
+  /** Which part painted each pixel (1 + its index), so that the parts can be told apart once drawn. */
+  readonly owner: Uint16Array;
+  /** The part being drawn. */
+  part = 0;
+
   constructor(readonly frame: Frame) {
     this.width = frame.width;
     this.height = frame.height;
     this.data = new Uint8ClampedArray(this.width * this.height * 4);
+    this.owner = new Uint16Array(this.width * this.height);
   }
 
   put(x: number, y: number, c: RGB): void {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
     const i = (y * this.width + x) * 4;
     this.data[i] = c[0]; this.data[i + 1] = c[1]; this.data[i + 2] = c[2]; this.data[i + 3] = 255;
+    this.owner[y * this.width + x] = this.part;
   }
 
   private paint(x: number, y: number, p: Paint): void {
@@ -278,8 +285,40 @@ class Canvas {
   }
 }
 
-/** Grain: a tiny, deterministic brightness jitter that makes flat surfaces read as material. */
-const grain = (x: number, y: number, amount = 0.07) => (noise(x, y) - 0.5) * amount;
+/**
+ * Grain: a tiny, deterministic brightness jitter. Kept faint: surfaces read as clean flat tones, the way pixel art
+ * is drawn by hand, and the material comes from the textures.
+ */
+const grain = (x: number, y: number, amount = 0.07) => (noise(x, y) - 0.5) * amount * 0.3;
+
+/** Below this many pixels a part is a detail (a button, a knob, a spark): it is not ringed with a line. */
+const DETAIL_PX = 14;
+
+/**
+ * Lines between the parts: a pixel of a part that touches a part drawn after it (so in front of it) is darkened,
+ * which rings every piece of an object with a one pixel line, like hand-drawn pixel art. Tiny details are left alone.
+ */
+function drawPartLines(cv: Canvas): void {
+  const { width: W, height: H, owner, data } = cv;
+  const area = new Map<number, number>();
+  for (let i = 0; i < owner.length; i++) if (owner[i]) area.set(owner[i]!, (area.get(owner[i]!) ?? 0) + 1);
+  const marked: number[] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const a = owner[i]!;
+      if (!a || data[i * 4 + 3]! < 200) continue;
+      const front = (j: number) => {
+        const b = owner[j]!;
+        return b > a && data[j * 4 + 3]! >= 200 && (area.get(b) ?? 0) >= DETAIL_PX;
+      };
+      if ((x > 0 && front(i - 1)) || (x < W - 1 && front(i + 1)) || (y > 0 && front(i - W)) || (y < H - 1 && front(i + W))) marked.push(i);
+    }
+  }
+  for (const i of marked) {
+    for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(data[i * 4 + c]! * 0.45 + OUTLINE[c]! * 0.55);
+  }
+}
 
 /** Footprint of what stands on the floor, to cast a soft shadow under it. */
 interface Footprint {
@@ -489,9 +528,11 @@ export function renderSprite(parts: readonly unknown[], size?: Size): Sprite {
   const cv = new Canvas(frame);
   cv.size = footprint;
   const fp: Footprint = { x0: 0, x1: 0, y0: 0, y1: 0, height: 0, any: false };
-  for (const p of (Array.isArray(parts) ? parts : []).slice(0, LIMITS.maxParts)) {
+  (Array.isArray(parts) ? parts : []).slice(0, LIMITS.maxParts).forEach((p, k) => {
+    cv.part = k + 1;
     if (p && typeof p === 'object' && 't' in p) drawPart(cv, p as Part, fp);
-  }
+  });
+  drawPartLines(cv);
 
   const W = frame.width, H = frame.height;
   const d = cv.data, n = W * H;
