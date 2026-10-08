@@ -95,25 +95,39 @@ const CREAM = '#f4efe6';
 const GOLD = '#ffc857';
 const INK = '#2a2140';
 
+/**
+ * A padded block: the body, then a slightly smaller top layer, so that the edge reads as a rounded seam
+ * (the engine draws a line between the two). Used for cushions, armrests and seats.
+ */
+const padded = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, c: string, top: string): Part[] => [
+  box(x0, x1, y0, y1, z0, z1 - 0.9, c),
+  box(x0 + 0.4, x1 - 0.4, y0 + 0.4, y1 - 0.4, z1 - 0.9, z1, top),
+];
+
 const bed: Recipe = {
   name: 'Lit douillet',
   parts: [
-    ...legs(7, 6, 0.8, 3, WOOD_DARK, 1.6),
-    box(-7, 7, -6, 6, 3, 6, WOOD),
-    box(-8, -7, -6.5, 6.5, 3, 15, WOOD_DARK),
-    box(-7, 6.5, -5.4, 5.4, 6, 9, CREAM),
-    box(-1.5, 6.5, -5.4, 5.4, 9, 10.5, '#e2483d'),
-    box(-1.5, 6.5, -5.4, 5.4, 10.5, 10.8, '#ff8a80'),
-    box(-6.5, -2.5, -4.6, -0.2, 9, 11.5, '#fff3d6'),
-    box(-6.5, -2.5, 0.2, 4.6, 9, 11.5, '#ffe4ec'),
-    pix(-5, -3, 11.5, 3, 1, '#ffffff'),
-    pix(-5, 2, 11.5, 3, 1, '#fff6f9'),
-    quad('#d8382d', [-1.5, 5.4, 9.2], [6.5, 5.4, 9.2], [6.5, 5.4, 10.3], [-1.5, 5.4, 10.3]),
-    pix(2, 4, 10.5, 2, 1, GOLD),
-    pix(-1, -2, 11, 1, 1, '#ffa8a0'),
-    pix(3, 0, 11, 1, 1, '#ffa8a0'),
-    ball(-8, -5.8, 14.5, 0.9, GOLD),
-    ball(-8, 5.8, 14.5, 0.9, GOLD),
+    ...legs(7, 6, 0.8, 2.4, WOOD_DARK, 1.6),
+    box(-7, 7, -6.2, 6.2, 2.4, 5, WOOD),
+    // A panelled headboard with gilded knobs, a low footboard.
+    box(-8, -6.6, -6.6, 6.6, 2.4, 17, WOOD_DARK),
+    quad(WOOD, [-6.6, -5.6, 7], [-6.6, -0.6, 7], [-6.6, -0.6, 15], [-6.6, -5.6, 15]),
+    quad(WOOD, [-6.6, 0.6, 7], [-6.6, 5.6, 7], [-6.6, 5.6, 15], [-6.6, 0.6, 15]),
+    ball(-7.3, -6.4, 17.6, 0.9, GOLD),
+    ball(-7.3, 6.4, 17.6, 0.9, GOLD),
+    // A thick mattress, two plump pillows.
+    ...padded(-6.6, 6.6, -5.8, 5.8, 5, 8.4, CREAM, '#fffaf0'),
+    ...padded(-6.3, -3.2, -5.2, -0.4, 8.4, 10.8, '#fff3d6', '#ffffff'),
+    ...padded(-6.3, -3.2, 0.4, 5.2, 8.4, 10.8, '#ffe4ec', '#fff6f9'),
+    // The duvet, its turned-down edge, and a fold hanging over the side.
+    ...padded(-2.4, 6.9, -6.1, 6.1, 7.6, 10.4, '#e2483d', '#ff8a80'),
+    box(-2.8, -1.4, -6.1, 6.1, 8, 10.8, '#ffa8a0'),
+    quad('#d8382d', [-2.4, 6.1, 5.6], [6.9, 6.1, 5.6], [6.9, 6.1, 9.6], [-2.4, 6.1, 9.6]),
+    pix(2, -3, 10.4, 1, 1, GOLD),
+    pix(4.4, 1, 10.4, 1, 1, GOLD),
+    pix(1, 3.4, 10.4, 1, 1, GOLD),
+    box(6.6, 8, -6.6, 6.6, 2.4, 9, WOOD_DARK),
+    box(6.4, 8.2, -6.8, 6.8, 9, 9.8, WOOD),
   ],
 };
 
@@ -145,15 +159,6 @@ const table: Recipe = {
     pix(-2, 1.4, 13, 1, 1, '#ffc857'),
   ],
 };
-
-/**
- * A padded block: the body, then a slightly smaller top layer, so that the edge reads as a rounded seam
- * (the engine draws a line between the two). Used for cushions, armrests and seats.
- */
-const padded = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, c: string, top: string): Part[] => [
-  box(x0, x1, y0, y1, z0, z1 - 0.9, c),
-  box(x0 + 0.4, x1 - 0.4, y0 + 0.4, y1 - 0.4, z1 - 0.9, z1, top),
-];
 
 const SOFA = { frame: '#2f5aa0', body: '#3f74c8', cushion: '#5a90e0', light: '#7fb0f2', wood: '#5e3d24' };
 const sofa: Recipe = {
@@ -212,15 +217,15 @@ const lamp: Recipe = {
 const plant: Recipe = {
   name: 'Ficus joyeux',
   parts: [
-    cyl(0, 0, 4.2, 0, 8.5, '#d9774a', '#5a3a22'),
-    cyl(0, 0, 4.8, 8, 9.6, '#e8895a', '#6e4a2c'),
-    cyl(0, 0, 0.9, 9.6, 14, '#6e4a2c'),
-    ball(-2.2, 1.5, 15, 4.2, '#3f9b4b'),
-    ball(2.4, -1.5, 18, 4.4, '#4fb35a'),
-    ball(-1, -2, 22, 3.8, '#5fc46a'),
-    ball(1.2, 2.2, 24.5, 3, '#7ad778'),
-    pix(-3, 0, 17, 1, 1, '#a8f0a0'),
-    pix(2, -2, 21, 1, 1, '#a8f0a0'),
+    // A glazed pot, a slim trunk, and the leaves in layers, from the bottom up.
+    cyl(0, 0, 3.8, 0, 8, '#3f74c8', '#5a3a22'),
+    cyl(0, 0, 4.3, 7.4, 9, '#5a90e0', '#6e4a2c'),
+    cyl(0, 0, 3.6, 9, 9.3, '#4a2f1c', '#5a3a22'),
+    pix(-2.6, 2.6, 4, 0.5, 3, '#2f5aa0'),
+    cyl(0, 0, 0.7, 9.3, 18, '#6e4a2c', '#8b5e3c'),
+    ...crownOfLeaves(7, 15, 6.5, 6, 2.2, 0.2, ['#2f7a3a', '#3f9a46', '#357f3c']),
+    ...crownOfLeaves(6, 20, 5.2, 7, 2, 0.7, ['#3f9a46', '#58b552', '#4aa84c']),
+    ...crownOfLeaves(5, 25, 3.6, 7, 1.8, 0.1, ['#58b552', '#6fca62']),
   ],
 };
 
