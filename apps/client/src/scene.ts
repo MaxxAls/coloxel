@@ -41,6 +41,8 @@ export interface Scene {
   chatBar?: HTMLElement;
   /** Canvas size in game pixels; the application scales it to the window. */
   size: { w: number; h: number };
+  /** The part of the canvas worth seeing (a room's floor and walls): shown at its real size and centred. */
+  focus?(): { x: number; y: number; w: number; h: number };
   /** Reload what the scene shows from the server (after furniture or the look changed). */
   refresh?(): void | Promise<void>;
   /** I changed my look or my companion: tell the room so that everybody sees it. */

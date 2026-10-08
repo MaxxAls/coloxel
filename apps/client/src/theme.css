@@ -1,0 +1,550 @@
+/*
+ * Coloxel look: crisp pixel-art interface. Hard 2 px outlines, bevelled panels lit from the top left,
+ * coloured title bars, a pixel typeface for titles and buttons, a readable sans for everything else.
+ * Loaded after game.css: it re-skins the shell (hud, dock, windows, cards) through tokens and overrides.
+ */
+
+:root {
+  --bg: #0d0b17;
+  --card: #2b2448;
+  --line: #4a3f78;
+  --text: #f4f0ff;
+  --muted: #b3aad6;
+  --accent: #ffc857;
+  --error: #ff8a80;
+  --ink: #120e22;
+  --panel: #2b2448;
+  --panel-2: #231d3c;
+  --panel-3: #1a1530;
+  --edge: #0b0815;
+  --hi: rgba(255, 255, 255, 0.16);
+  --lo: rgba(0, 0, 0, 0.35);
+  --title: #5b4bb0;
+  --title-2: #43358f;
+  --gold: #ffc857;
+  --gold-d: #b8811a;
+  --green: #4fd18b;
+  --green-d: #1f7f52;
+  --ui-font: 'Ubuntu', 'Segoe UI', system-ui, sans-serif;
+  --px-font: 'Pixelify Sans', 'Press Start 2P', ui-monospace, monospace;
+  /* A bevel: light top-left edge, dark bottom-right edge, hard outline, a hard drop shadow. */
+  --bevel: inset 2px 2px 0 var(--hi), inset -2px -2px 0 var(--lo);
+}
+
+html,
+body {
+  font-family: var(--ui-font);
+  font-size: 14px;
+}
+button,
+input,
+select,
+textarea {
+  font-family: var(--ui-font);
+}
+body {
+  background: var(--bg);
+}
+::selection {
+  background: rgba(255, 200, 87, 0.4);
+}
+
+/* ---------- Behind the room: a dark night, a few stars, the far city ---------- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 70% at 50% 45%, #1d1838 0%, rgba(29, 24, 56, 0) 70%),
+    linear-gradient(#0b0915, #120e22 60%, #1a1230);
+}
+.backdrop .aurora,
+.backdrop .moon {
+  display: none;
+}
+.backdrop .stars,
+.backdrop .stars::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1px 1px at 8% 12%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 17% 31%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 27% 8%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 36% 22%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 47% 11%, #ffe9b0 50%, transparent 52%),
+    radial-gradient(1px 1px at 58% 27%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 66% 6%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 74% 19%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 83% 9%, #cfe6ff 50%, transparent 52%),
+    radial-gradient(1px 1px at 91% 28%, #fff 50%, transparent 52%),
+    radial-gradient(1px 1px at 96% 14%, #fff 50%, transparent 52%);
+  animation: twinkle 6s steps(3) infinite;
+}
+.backdrop .stars::after {
+  background-position: 13% 9%;
+  background-size: 70% 70%;
+  animation-delay: -3s;
+}
+@keyframes twinkle {
+  50% { opacity: 0.25; }
+}
+.backdrop .skyline {
+  position: absolute;
+  left: -2%;
+  right: -2%;
+  bottom: 0;
+  width: 104%;
+  height: 26vh;
+  opacity: 0.45;
+}
+.backdrop .bokeh {
+  display: none;
+}
+.game-canvas {
+  z-index: 1;
+}
+.vignette {
+  z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(4, 2, 12, 0.55) 100%);
+}
+
+/* ---------- Windows: hard outline, bevel, coloured title bar ---------- */
+
+.window {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 4px 0 rgba(0, 0, 0, 0.45);
+  animation: window-in 140ms steps(4);
+}
+.win-bar {
+  padding: 6px 6px 6px 12px;
+  background: linear-gradient(var(--title) 0 50%, var(--title-2) 50% 100%);
+  border-bottom: 2px solid var(--edge);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.22);
+}
+.win-title {
+  font-family: var(--px-font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 2px 0 var(--edge);
+}
+.win-bar button.win-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-family: var(--px-font);
+  font-size: 16px;
+  line-height: 1;
+  color: #fff;
+  background: linear-gradient(#ff7a6b 0 50%, #e0473a 50%);
+  border: 2px solid var(--edge);
+  border-radius: 4px;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.45);
+  transition: none;
+}
+.win-bar button.win-close:hover {
+  filter: brightness(1.12);
+  transform: none;
+  background: linear-gradient(#ff8f80 0 50%, #ef5446 50%);
+}
+.win-bar button.win-close:active {
+  transform: translateY(1px);
+}
+.win-body {
+  background: var(--panel);
+  padding: 12px;
+  gap: 10px;
+  scrollbar-color: var(--line) var(--panel-3);
+}
+
+/* Tabs: pixel folder tabs. */
+.window .tabs {
+  gap: 2px;
+  margin: -4px -12px 0;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--edge);
+  border-radius: 0;
+}
+.window .tabs button {
+  margin: 0 0 -2px;
+  padding: 7px 8px 5px;
+  font-family: var(--px-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.06);
+}
+.window .tabs button:hover:not(:disabled) {
+  color: #fff;
+  background: #322a55;
+}
+.window .tabs button.active {
+  color: var(--ink);
+  background: var(--gold);
+  border: 2px solid var(--edge);
+  border-bottom: 0;
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- Buttons: bevelled blocks that press down ---------- */
+
+button {
+  font-family: var(--px-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  background: #3d3366;
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  box-shadow: var(--bevel), 0 2px 0 var(--edge);
+  transition: none;
+}
+button:hover:not(:disabled) {
+  background: #4a3f7a;
+  filter: none;
+}
+button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: inset 2px 2px 0 var(--lo);
+}
+button.primary,
+.window button.primary:not(.tabs button) {
+  color: var(--ink);
+  background: var(--gold);
+  border: 2px solid var(--edge);
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.55), inset -2px -2px 0 var(--gold-d), 0 2px 0 var(--edge);
+}
+button.primary:hover:not(:disabled),
+.window button.primary:not(.tabs button):hover:not(:disabled) {
+  background: #ffd57a;
+}
+button.link {
+  font-family: var(--ui-font);
+  border: 0;
+  box-shadow: none;
+  background: none;
+}
+.window button:where(:not(.win-close, .link, .tabs button, .nav-row, .cat-tile, .cat-nav button, .swatch-card, .wd-tile, .wd-swatch, .promo, .pet-row button, .shop-side button, .wd-controls button, .daily-button)) {
+  background: #3d3366;
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  box-shadow: var(--bevel), 0 2px 0 var(--edge);
+}
+.window button:where(:not(.win-close, .link, .tabs button, .nav-row, .cat-tile, .cat-nav button, .swatch-card, .wd-tile, .wd-swatch, .promo, .pet-row button, .shop-side button, .wd-controls button, .daily-button)):hover:not(:disabled) {
+  background: #4a3f7a;
+}
+.window button:where(:not(.win-close, .link, .nav-row, .cat-tile, .cat-nav button, .swatch-card, .wd-tile, .wd-swatch, .promo, .tabs button)):active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: inset 2px 2px 0 var(--lo);
+}
+
+input,
+select,
+textarea {
+  color: var(--text);
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 4px;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.4);
+  padding: 7px 9px;
+}
+input:focus,
+select:focus,
+textarea:focus,
+input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 0;
+}
+input::placeholder {
+  color: #7d74a8;
+}
+
+/* ---------- Tiles and lists: sunken slots ---------- */
+
+.cat-nav {
+  background: var(--panel-3);
+  border-right: 2px solid var(--edge);
+}
+.cat-nav h3 {
+  font-family: var(--px-font);
+  font-size: 12px;
+  color: #9a90c9;
+}
+.cat-nav button {
+  font-family: var(--ui-font);
+  font-weight: 700;
+  font-size: 13px;
+  border: 2px solid transparent;
+  box-shadow: none;
+  background: transparent;
+}
+.cat-nav button:hover:not(:disabled) {
+  background: #2c2552;
+}
+.cat-nav button.active {
+  color: var(--ink);
+  background: var(--gold);
+  border-color: var(--edge);
+}
+.cat-banner {
+  border-bottom: 2px solid var(--edge);
+}
+.cat-tile,
+.wd-tile,
+.swatch-card,
+.nav-row,
+.inventory li {
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3), inset -2px -2px 0 rgba(255, 255, 255, 0.05);
+  transition: none;
+}
+.window .cat-tile:hover,
+.window .wd-tile:hover,
+.window .swatch-card:hover,
+.window .inventory li:hover {
+  background: #2c2552;
+  border-color: var(--gold);
+  transform: none;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3);
+}
+.cat-tile.active,
+.inventory li.selected {
+  border-color: var(--gold);
+  background: #3a2f5e;
+}
+.window .thumb {
+  background: #17122b;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+}
+
+/* ---------- HUD: the purse at the top ---------- */
+
+.hud {
+  top: 10px;
+  left: 10px;
+  gap: 6px;
+}
+.hud-balance {
+  padding: 4px 12px 4px 8px;
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 2px 0 var(--edge);
+}
+.hud-balance strong {
+  font-family: var(--px-font);
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 0 var(--edge);
+}
+.hud-balance span {
+  font-family: var(--px-font);
+  font-size: 13px;
+}
+.hud-vip {
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5);
+}
+.hud button {
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 2px solid var(--edge);
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.45), inset -2px -2px 0 rgba(0, 0, 0, 0.2), 0 2px 0 var(--edge);
+}
+.hud-daily {
+  color: var(--ink);
+  background: var(--gold);
+  animation: glow-pulse 1.4s steps(2) infinite;
+}
+.hud-credits {
+  color: #062517;
+  background: var(--green);
+}
+
+/* ---------- Room card ---------- */
+
+.info-slot {
+  top: 56px;
+  left: 10px;
+  width: 250px;
+}
+.room-info {
+  padding: 0;
+  gap: 0;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.room-info > * {
+  margin-left: 10px !important;
+  margin-right: 10px !important;
+}
+.room-info > :last-child {
+  margin-bottom: 10px !important;
+}
+.room-info > * + * {
+  margin-top: 8px !important;
+}
+.room-title {
+  margin: 0 !important;
+  padding: 7px 10px;
+  font-family: var(--px-font);
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 0 var(--edge);
+  background: linear-gradient(var(--title) 0 50%, var(--title-2) 50% 100%);
+  border-bottom: 2px solid var(--edge);
+}
+.room-info p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- The bar at the bottom ---------- */
+
+.dock {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  transform: none;
+  padding: 6px 10px;
+  gap: 10px;
+  background: linear-gradient(#2a2346 0 4px, #1b1630 4px);
+  border: 0;
+  border-top: 2px solid var(--edge);
+  border-radius: 0;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), 0 -4px 0 rgba(0, 0, 0, 0.25);
+}
+.dock-nav button,
+.dock-end > button {
+  min-width: 62px;
+  padding: 5px 6px 4px;
+  gap: 2px;
+  font-family: var(--px-font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.dock-nav button svg,
+.dock-end > button svg {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 2px 0 var(--edge));
+}
+.dock-nav button:hover:not(:disabled),
+.dock-end > button:hover:not(:disabled) {
+  color: #fff;
+  background: #2f2752;
+  border-color: var(--edge);
+  transform: none;
+}
+.dock-nav button:hover:not(:disabled) svg {
+  transform: translateY(-2px);
+}
+.dock-nav button.active,
+.dock-end > button.active {
+  color: var(--ink);
+  background: var(--gold);
+  border-color: var(--edge);
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5);
+}
+.dock-nav button.active svg,
+.dock-end > button.active svg {
+  filter: none;
+}
+.dock .chat-bar {
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  padding: 3px;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+.dock .chat-bar input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+}
+.dock .chat-bar input:focus {
+  outline: 0;
+}
+.account-button {
+  font-size: 13px;
+  border-radius: 6px;
+}
+.account-menu {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+.account-menu button {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-family: var(--ui-font);
+}
+
+/* ---------- Toast, tooltip ---------- */
+
+.toast {
+  font-family: var(--px-font);
+  font-size: 15px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.5), 0 0 0 2px var(--gold);
+}
+.tooltip {
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 4px;
+}
+
+.panel,
+.card {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--bevel), 0 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 760px) {
+  .dock {
+    padding: 4px 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .backdrop .stars,
+  .backdrop .stars::after {
+    animation: none;
+  }
+}

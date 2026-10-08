@@ -2,6 +2,7 @@ import { api } from './api';
 import { startApp } from './app';
 import './base.css';
 import './game.css';
+import './theme.css';
 
 // Accounts live on the website: whoever is not signed in is sent there to sign in or sign up,
 // and comes back here once done.

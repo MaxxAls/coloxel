@@ -1,6 +1,7 @@
 import { Application, Container } from 'pixi.js';
 import type { User } from './api';
 import { api } from './api';
+import { createBackdrop } from './backdrop';
 import { createBuildingScene } from './building-scene';
 import { appearance } from './appearance';
 import { createFriends } from './friends';
@@ -72,24 +73,84 @@ export async function startApp(user: User) {
   const chatSlot = make('div', 'dock-chat');
   const dockEnd = make('div', 'dock-end');
   dock.append(nav, chatSlot, dockEnd);
-  document.body.append(app.canvas, vignette, hud, infoSlot, dock, toast);
+  document.body.append(createBackdrop(), app.canvas, vignette, hud, infoSlot, dock, toast);
 
   let scene: Scene | null = null;
   let current: Target | null = null;
   let switching = 0;
 
-  /** Scale the scene as large as the free part of the window allows, and centre it there. */
+  /**
+   * Place the scene in the free part of the window. A room is shown at the real size of its pixels (or twice that,
+   * zoomed in), centred on the part the room covers, and can be dragged around; smaller only when it cannot fit.
+   * A scene without a focus (the building) is scaled as large as the window allows.
+   */
+  let zoom = 1;
+  const pan = { x: 0, y: 0 };
   function fit() {
     const { w, h } = scene?.size ?? { w: 600, h: 400 };
     const availW = innerWidth;
     const availH = innerHeight - DOCK_SPACE - TOP_SPACE;
-    const s = Math.min(availW / w, availH / h);
-    // Whole steps when there is room (crisp pixels), finer steps on a small window.
-    const scale = Math.max(0.5, s >= 2 ? Math.floor(s * 2) / 2 : Math.floor(s * 4) / 4);
+    const focus = scene?.focus?.();
+    if (!focus) {
+      const s = Math.min(availW / w, availH / h);
+      // Whole steps when there is room (crisp pixels), finer steps on a small window.
+      const scale = Math.max(0.5, s >= 2 ? Math.floor(s * 2) / 2 : Math.floor(s * 4) / 4);
+      stage.scale.set(scale);
+      stage.position.set(Math.round((availW - w * scale) / 2), Math.round(TOP_SPACE + (availH - h * scale) / 2));
+      return;
+    }
+    const room = Math.min(availW / focus.w, availH / focus.h);
+    const scale = zoom > 1 ? zoom : room >= 1 ? 1 : Math.max(0.5, Math.floor(room * 4) / 4);
     stage.scale.set(scale);
-    stage.position.set(Math.round((availW - w * scale) / 2), Math.round(TOP_SPACE + (availH - h * scale) / 2));
+    stage.position.set(
+      Math.round(availW / 2 - (focus.x + focus.w / 2) * scale + pan.x),
+      Math.round(TOP_SPACE + availH / 2 - (focus.y + focus.h / 2) * scale + pan.y),
+    );
   }
   addEventListener('resize', fit);
+
+  // Drag the room around; a drag is not a click. The mouse wheel zooms in and out.
+  let drag: { x: number; y: number; px: number; py: number; moved: boolean } | null = null;
+  app.canvas.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 || !scene?.focus) return;
+    drag = { x: ev.clientX, y: ev.clientY, px: pan.x, py: pan.y, moved: false };
+  });
+  addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+    drag.moved = true;
+    app.canvas.style.cursor = 'grabbing';
+    pan.x = drag.px + dx;
+    pan.y = drag.py + dy;
+    fit();
+  });
+  addEventListener('pointerup', () => {
+    app.canvas.style.cursor = '';
+    if (drag?.moved) setTimeout(() => (drag = null), 0);
+    else drag = null;
+  });
+  app.canvas.addEventListener(
+    'click',
+    (ev) => {
+      if (drag?.moved) ev.stopImmediatePropagation();
+    },
+    { capture: true },
+  );
+  app.canvas.addEventListener(
+    'wheel',
+    (ev) => {
+      if (!scene?.focus) return;
+      ev.preventDefault();
+      const next = ev.deltaY < 0 ? 2 : 1;
+      if (next === zoom) return;
+      pan.x *= next / zoom;
+      pan.y *= next / zoom;
+      zoom = next;
+      fit();
+    },
+    { passive: false },
+  );
 
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   const notify = (text: string) => {
@@ -434,6 +495,8 @@ export async function startApp(user: User) {
     }
     scene = created;
     current = target;
+    pan.x = 0;
+    pan.y = 0;
     fillWindows(created);
     fadeIn(stage, app);
     fit();

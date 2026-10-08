@@ -9,6 +9,7 @@ import { showAlert, showSummon } from './alerts';
 import { showNotice } from './notice-dialog';
 import { wallet } from './wallet';
 import { lookFor, showsFace, type Facing, type Frame, type Look, type Pose } from './avatar';
+import { createAura } from './aura';
 import { HALL_LOOK, apartmentLook, diamond, roomSprite } from './draw';
 import { createFurniCard, type FurniAction } from './furni-card';
 import { createInfoCard, type InfoCard } from './info-card';
@@ -17,8 +18,8 @@ import { showPlayerCard } from './player-card';
 import { showRing } from './bell';
 import { openReportDialog } from './report-dialog';
 import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, type BuildingRoom, type PlayerState } from './realtime';
-import { hasFloor, levelAt, wallBehind, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
-import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
+import { hasFloor, levelAt, wallBehind, DEFAULT_LAYOUT, HALL_LAYOUT, type RoomLayout } from '@coloxel/world';
+import { N, OY, ROOM_H, ROOM_W, TH, TW, roomBounds, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
 import { askText } from './ask-dialog';
 import { createMusic } from './music';
@@ -28,7 +29,6 @@ import { handTexture, avatarTexture, furnitureTexture, glowTexture, itemTexture,
 const STEP_MS = 480;
 /** Screen pixels per millisecond: one cell (about 36 px) per server step, a touch faster so that the avatar never waits for the next step. */
 const WALK_SPEED = (Math.hypot(TW / 2, TH / 2) / STEP_MS) * 1.08;
-/** Avatars are drawn at the same two screen pixels per unit as the furniture: about 1.4 cells tall. */
 /** Screen pixels of the world for one pixel of the avatar's design grid; the sprite itself has RES times finer pixels. */
 const PX = 1.5;
 const BODY_SCALE = PX / RES;
@@ -123,7 +123,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let items: InventoryItem[] = [];
   let furniture: FurnitureItem[] = [];
   let look = { floor: 'parquet', wall: 'violet' };
-  let shape: RoomLayout = DEFAULT_LAYOUT;
+  let shape: RoomLayout = target.kind === 'hall' ? HALL_LAYOUT : DEFAULT_LAYOUT;
   if (target.kind === 'apartment' && !mine) {
     const visit = await api.apartment(target.ownerId);
     if (!visit.ok) return { error: visit.status === 404 ? 'Cet appartement est fermé.' : visit.error };
@@ -153,6 +153,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   if (import.meta.env.DEV) (window as unknown as { __room: BuildingRoom }).__room = room;
 
   const abort = new AbortController();
+  const aura = createAura();
+  host.stage.addChild(aura.root);
   const world = new Container();
   world.sortableChildren = true;
   host.stage.addChild(world);
@@ -161,7 +163,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   let floor: Sprite | null = null;
   function drawFloor() {
     floor?.destroy();
-    floor = roomSprite(target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall), shape);
+    const roomLook = target.kind === 'hall' ? HALL_LOOK : apartmentLook(look.floor, look.wall);
+    aura.setColor(roomLook.wall.left);
+    aura.place(roomBounds(shape));
+    floor = roomSprite(roomLook, shape);
     floor.zIndex = -3;
     world.addChild(floor);
   }
@@ -812,7 +817,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
-        view.body.position.set(8 * PX, -17 * PX);
+        view.body.position.set(17 * PX, -12 * PX);
       } else {
         view.body.anchor.set(0.5, 1);
         // Seated, the avatar sits a little forward of the middle of the seat.
@@ -825,11 +830,11 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         if (tex) view.hand.texture = tex;
       }
       view.hand.visible = view.handId !== 0 && pose !== 'lie' && !!handTexture(view.handId);
-      if (view.hand.visible) view.hand.position.set(7 * PX * (pose === 'stand' ? turn : 1), (pose === 'sit' ? -9 : -14) * PX - Math.round(bob));
+      if (view.hand.visible) view.hand.position.set(8.5 * PX * (pose === 'stand' ? turn : 1), (pose === 'sit' ? -9 : -22) * PX - Math.round(bob));
       // A player frozen in the statues game is ice-blue.
       view.body.tint = race.frozen.has(p.id) ? 0x9fd8ff : 0xffffff;
       view.shadow.visible = pose === 'stand';
-      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -71 : -64 - Math.round(bob));
+      view.label.position.set(pose === 'lie' ? -10 : 0, pose === 'lie' ? -70 : pose === 'sit' ? -76 : -82 - Math.round(bob));
       view.zzz.forEach((zed, k) => {
         zed.visible = pose === 'lie' && !reduceMotion;
         if (!zed.visible) return;
@@ -988,7 +993,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     for (const [id, view] of views) {
       if (id === user.id) continue;
       // About one cell wide and as tall as an avatar standing, or lying on a bed.
-      if (Math.abs(x - view.x) > 15 || y < view.y - 62 || y > view.y + 8) continue;
+      if (Math.abs(x - view.x) > 17 || y < view.y - 82 || y > view.y + 8) continue;
       if (view.y < best && found) continue;
       best = view.y;
       found = { id, nickname: view.label.text };
@@ -1420,6 +1425,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
 
   const tick = (ticker: Ticker) => {
     const now = performance.now();
+    if (!reduceMotion) aura.tick(now);
     syncPlayers(ticker.deltaMS, now);
     layoutBubbles(now, ticker.deltaMS);
     drawFlashes(now);
@@ -1553,6 +1559,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     history: chat.log,
     chatBar: chat.bar,
     size: { w: ROOM_W, h: ROOM_H },
+    focus: () => roomBounds(shape),
     refresh: () => (mine ? refreshOwn() : undefined),
     refreshAppearance: () => room.refreshAppearance(),
     destroy() {
@@ -1568,6 +1575,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       app.ticker.remove(tick);
       void room.leave();
       world.destroy({ children: true });
+      aura.root.destroy({ children: true });
     },
   };
 }
