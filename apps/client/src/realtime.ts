@@ -62,6 +62,8 @@ export interface GameHandlers {
 export interface BuildingRoom {
   /** The team game of the room: it starts, tiles get painted, it ends. */
   onGame(handlers: GameHandlers): void;
+  /** The tune of the room changed (0 is silence); `elapsed` is how far into it we are. */
+  onMusic(callback: (track: number, elapsed: number) => void): void;
   /** A companion shows off a trick (the owner typed /compagnon <tour>). */
   onPetTrick(callback: (owner: string, trick: string) => void): void;
   /** Every player in the room, with the position the server last decided. */
@@ -137,6 +139,9 @@ function wrap(room: Room): BuildingRoom {
       room.onMessage('fx', (m: { kind?: string; i: number; j: number; color?: number }) => {
         if (m.kind === 'pulse') callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 });
       });
+    },
+    onMusic(callback) {
+      room.onMessage('music', (m: { track: number; elapsed: number }) => callback(m.track, m.elapsed));
     },
     onPetTrick(callback) {
       room.onMessage('pet-trick', (m: { id: string; trick: string }) => callback(m.id, m.trick));

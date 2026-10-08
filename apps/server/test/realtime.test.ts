@@ -1119,6 +1119,36 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => handOf() === 0, 3000);
     }, 40000);
 
+    it('plays a tune for the whole room, changes it at each click, and stops when the jukebox goes', async () => {
+      const owner = await signUp('mx_juke');
+      const guest = await signUp('mx_juke2');
+      await setAccess(owner.id, 'building');
+      const box = await place(owner, 'jukebox', 6, 6);
+      const host = await joinApartment(owner, owner.id);
+      const tunes: { track: number; elapsed: number }[] = [];
+      host.onMessage('music', (m: { track: number; elapsed: number }) => tunes.push(m));
+      await until(() => playerOf(host, owner.id));
+      host.send('use', { i: 6, j: 6 });
+      await until(() => tunes.length === 1, 3000);
+      expect(tunes[0]).toEqual({ track: 1, elapsed: 0 });
+      // Somebody arriving later is told which tune, and how far in.
+      await new Promise((r) => setTimeout(r, 300));
+      const late = await joinApartment(guest, owner.id);
+      const lateTunes: { track: number; elapsed: number }[] = [];
+      late.onMessage('music', (m: { track: number; elapsed: number }) => lateTunes.push(m));
+      await until(() => lateTunes.length === 1, 3000);
+      expect(lateTunes[0]!.track).toBe(1);
+      expect(lateTunes[0]!.elapsed).toBeGreaterThan(200);
+      // Clicking again right away is ignored (one change every few seconds).
+      host.send('use', { i: 6, j: 6 });
+      await new Promise((r) => setTimeout(r, 600));
+      expect(tunes).toHaveLength(1);
+      // The jukebox is thrown away: silence for everybody.
+      await app.inject({ method: 'DELETE', url: `/api/furniture/${box}`, cookies: { coloxel_sid: owner.sid } });
+      await until(() => tunes.length === 2, 3000);
+      expect(tunes[1]).toEqual({ track: 0, elapsed: 0 });
+    }, 40000);
+
     it('lets players walk over a pressure plate, and notices when they do', async () => {
       const owner = await signUp('mx_plate');
       await place(owner, 'plaque', 2, 5);

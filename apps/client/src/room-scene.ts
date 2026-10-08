@@ -20,6 +20,7 @@ import { CLOSED_BY_OWNER, EXPELLED, KICKED, SUSPENDED, joinApartment, joinHall, 
 import { hasFloor, levelAt, DEFAULT_LAYOUT, type RoomLayout } from '@coloxel/world';
 import { N, OY, ROOM_H, ROOM_W, TH, TW, setRoomLayout, tileAt, tileCenter } from './room';
 import { FONT, type Scene, type SceneHost } from './scene';
+import { createMusic } from './music';
 import { handTexture, avatarTexture, furnitureTexture, glowTexture, itemTexture, petTexture } from './textures';
 
 /** Same as the server's step: one cell every 480 ms. */
@@ -1189,6 +1190,29 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     },
   });
 
+  // ----- The jukebox -------------------------------------------------------------------
+  const music = createMusic();
+  const soundButton = document.createElement('button');
+  soundButton.type = 'button';
+  soundButton.className = 'sound-toggle';
+  soundButton.hidden = true;
+  const drawSound = () => {
+    soundButton.textContent = music.muted() ? '♪ ✕' : '♪';
+    soundButton.title = music.muted() ? 'Remettre le son' : 'Couper le son';
+    soundButton.setAttribute('aria-label', soundButton.title);
+  };
+  drawSound();
+  soundButton.addEventListener('click', () => {
+    music.setMuted(!music.muted());
+    drawSound();
+  });
+  document.body.append(soundButton);
+  room.onMusic((trackId, elapsed) => {
+    soundButton.hidden = trackId === 0;
+    if (trackId) music.play(trackId, elapsed);
+    else music.stop();
+  });
+
   // A companion shows off what it has learnt, at the word of its owner.
   room.onPetTrick((owner, kind) => {
     const view = views.get(owner);
@@ -1397,6 +1421,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       furniCard.destroy();
       banner.remove();
       hud.remove();
+      soundButton.remove();
+      music.destroy();
       abort.abort();
       app.ticker.remove(tick);
       void room.leave();

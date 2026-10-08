@@ -20,6 +20,7 @@ const cyl = (x: number, y: number, r: number, z0: number, z1: number, side: stri
 });
 const ball = (x: number, y: number, z: number, r: number, c: string): Part => ({ t: 'sphere', x, y, z, r, c });
 const pix = (x: number, y: number, z: number, w: number, h: number, c: string): Part => ({ t: 'pix', x, y, z, w, h, c });
+const glow = (x: number, y: number, z: number, r: number, c: string, a = 0.6): Part => ({ t: 'glow', x, y, z, r, c, a });
 
 const WOOD = '#9a6a3e';
 const WOOD_DARK = '#6a4628';
@@ -161,6 +162,22 @@ const sign: Recipe = {
   ],
 };
 
+/** A jukebox: an arched cabinet, a lit window, a record on a turntable, rows of bulbs. */
+const jukebox: Recipe = {
+  name: 'Juke-box',
+  parts: [
+    box(-7, 7, -6, 6, 0, 3, WOOD_DARK, 'wood'),
+    box(-7, 7, -6, 6, 3, 28, '#b8453a', 'wood'), box(-7.4, 7.4, -6.4, 6.4, 3, 6, '#8a2f28'),
+    box(-6, 6, 6, 6.6, 8, 24, '#2a2140', 'metal'),
+    box(-5, 5, 6.6, 7, 10, 22, '#ffe08a'),
+    cyl(0, 6.9, 3.6, 12, 12.4, '#1b1530', '#2a2140'), cyl(0, 6.9, 1, 12.4, 12.8, '#ffc857', '#ffe08a'),
+    ...[0, 1, 2, 3, 4].map((k) => ball(-4 + k * 2, 6.9, 19.4, 0.7, ['#ff7aa8', '#ffe05a', '#6be2a3', '#7ac8ff', '#ff9a5a'][k]!)),
+    box(-7.4, 7.4, -6.4, 6.4, 28, 31, '#d8c08a', 'metal'), box(-5, 5, -5, 5, 31, 34, '#d8c08a', 'metal'), box(-2.5, 2.5, -2.5, 2.5, 34, 36, '#d8c08a'),
+    ...[-6, -3, 0, 3, 6].map((x) => ball(x, 6.6, 27, 0.9, '#ffe28a')),
+    glow(0, 7, 16, 18, '#ffd070', 0.45),
+  ],
+};
+
 export function mechanismPieces(): MechanismPiece[] {
   return [
     { key: 'portillon', category: 'decor', recipe: gateClosed, extras: { price: 40, pressable: true, gate: { open: gateOpen } } },
@@ -171,6 +188,7 @@ export function mechanismPieces(): MechanismPiece[] {
     { key: 'bacfleurs', category: 'decor', recipe: flowerBox, extras: { price: 40, pressable: true, vendor: 6 } },
     { key: 'mannequin', category: 'decor', recipe: mannequin, extras: { price: 80, mannequin: true } },
     { key: 'panneau', category: 'decor', recipe: sign, extras: { price: 30, sign: true } },
+    { key: 'jukebox', category: 'tech', recipe: jukebox, extras: { price: 150, pressable: true, jukebox: true } },
     { key: 'canonconfettis', category: 'tech', recipe: cannon, extras: { price: 70, pressable: true, confetti: true } },
   ];
 }

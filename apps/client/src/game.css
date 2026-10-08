@@ -2644,3 +2644,17 @@ body.admin .staff .win-bar button.win-close {
 .pet-meter > span { display: block; height: 100%; background: #6be2a3; }
 .pet-meter-row:nth-child(2) .pet-meter > span { background: #ffc857; }
 
+/* Sound on or off, shown while the jukebox plays. */
+.sound-toggle {
+  position: fixed;
+  right: 12px;
+  top: 64px;
+  z-index: 50;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(27, 21, 48, 0.88);
+  color: #fff6e0;
+  font-size: 14px;
+  cursor: pointer;
+}
+

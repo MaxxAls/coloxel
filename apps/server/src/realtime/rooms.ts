@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, PET_TRICKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
+import { CATALOGUE, PET_TRICKS, TRACKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
 import { DEFAULT_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadLayout } from '../apartments/layout';
@@ -728,6 +728,8 @@ export class ApartmentRoom extends BuildingRoom {
   private onChange = (kind: unknown) => {
     if (kind === 'decor') {
       this.layoutCache = null;
+      // Take the jukebox away and the music stops.
+      if (this.tune.track) void this.stopMusicWithoutJukebox();
       void this.revalidatePoses().then(() => this.broadcast('decor'));
     }
     else if (kind === 'access') void this.sendOutUnwelcome();
@@ -758,9 +760,19 @@ export class ApartmentRoom extends BuildingRoom {
     sendTo: (id, type, data) => this.sendTo(id, type, data),
   });
 
+  // ----- Jukebox ---------------------------------------------------------------------
+  // The tune of the room: 0 is silence. Clients are told which tune and how long ago it started, and keep time themselves.
+  private tune = { track: 0, since: 0 };
+  private lastTune = 0;
+
+  private tuneMessage() {
+    return { track: this.tune.track, elapsed: this.tune.track ? Date.now() - this.tune.since : 0 };
+  }
+
   protected override onPlayerJoined(client: AuthedClient) {
     // Somebody arriving in the middle of a game sees the board, and watches.
     if (this.game.isRunning) client.send('game', this.game.snapshot());
+    if (this.tune.track) client.send('music', this.tuneMessage());
   }
 
   protected override onPlayerLeft(id: string) {
@@ -849,6 +861,16 @@ export class ApartmentRoom extends BuildingRoom {
       this.sendTo(who, 'rule-message', { text: `Tu tiens ${item.name}. Écris /poser pour le reposer.` });
       return;
     }
+    if (entry.jukebox) {
+      const now = Date.now();
+      // Not a way to flood the room with changes: one every few seconds.
+      if (now - this.lastTune < 3000) return;
+      this.lastTune = now;
+      // Each click moves to the next tune, and after the last one, to silence.
+      this.tune = { track: (this.tune.track + 1) % (TRACKS.length + 1), since: now };
+      this.broadcast('music', this.tuneMessage());
+      return;
+    }
     if (entry.game) {
       const players = [...this.state.players.keys()];
       const res = this.game.start(players, Date.now());
@@ -863,6 +885,16 @@ export class ApartmentRoom extends BuildingRoom {
       this.lastConfetti = now;
       this.broadcast('fx', { kind: 'confetti' });
     }
+  }
+
+  private async stopMusicWithoutJukebox() {
+    const { rows } = await needDeps().pool.query<{ key: string }>(
+      `SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1`,
+      [this.ownerId],
+    );
+    if (rows.some((r) => catalogueEntry(r.key)?.jukebox)) return;
+    this.tune = { track: 0, since: 0 };
+    this.broadcast('music', this.tuneMessage());
   }
 
   private async pieceLit(piece: string): Promise<boolean | undefined> {
