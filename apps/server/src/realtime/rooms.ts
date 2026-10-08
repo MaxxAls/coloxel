@@ -37,6 +37,9 @@ export const KICKED = 4006;
 /** Presence topic carrying the changes of one apartment. */
 export const apartmentTopic = (ownerId: string) => `apartment:${ownerId.toLowerCase()}`;
 export const SPAWN: Cell = HALL_LAYOUT.door;
+/** A step (di, dj), each -1, 0 or 1, as one number for the room's state: see Player.dir. */
+export const dirCode = (di: number, dj: number) => (di + 1) * 3 + (dj + 1);
+export const dirOf = (code: number) => ({ di: Math.floor(code / 3) - 1, dj: (code % 3) - 1 });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const Player = schema(
@@ -58,6 +61,11 @@ export const Player = schema(
     petLevel: t.uint8(),
     /** What the player holds in a hand (see packages/render/src/hand.ts): 0 nothing. */
     hand: t.uint8(),
+    /**
+     * The way the body faces, as the last step (di, dj) coded (di + 1) * 3 + (dj + 1): 0 to 8, 4 for no step yet.
+     * A player walking backwards faces against their steps.
+     */
+    dir: t.uint8(),
   },
   'Player',
 );
@@ -123,6 +131,11 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private shapeCache: RoomLayout = HALL_LAYOUT;
   /** A player walking to a seat or a bed takes the pose when they arrive. */
   private pending = new Map<string, { cell: Cell; pose: number }>();
+  /** Players sitting or lying on the floor (not on a seat): changing the decor does not stand them up. */
+  private onFloor = new Set<string>();
+  /** Players walking backwards. */
+  private moonwalkers = new Set<string>();
+  private lastShove = new Map<string, number>();
 
   /** Where this room is: the hall, or the apartment of its owner. */
   protected abstract location(): Location;
@@ -153,7 +166,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     this.shapeCache = shape;
     this.blockedCache = blocked;
     this.state.players.forEach((p, id) => {
-      if (p.pose !== POSE.stand && !seats.has(p.i * N + p.j)) {
+      if (p.pose !== POSE.stand && !seats.has(p.i * N + p.j) && !this.onFloor.has(id)) {
         p.pose = POSE.stand;
         this.pending.delete(id);
       }
@@ -350,6 +363,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       // Walking off ends a dance and stops following.
       this.following.delete(id);
       this.setEmote(id, 0);
+      this.onFloor.delete(id);
       const { blocked, seats, shape } = await this.layout();
       this.blockedCache = blocked;
       this.shapeCache = shape;
@@ -467,6 +481,64 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.following.delete(id);
         this.paths.delete(id);
         this.setEmote(id, 1);
+        return;
+      }
+      case 'sit':
+      case 'lie': {
+        // Anywhere on the floor, the way the body faces; turned along the floor's axis, like on a seat.
+        if (this.paths.has(id)) return say('Arrête-toi d’abord.');
+        if (player.pose !== POSE.stand && !this.onFloor.has(id)) return say('Tu es déjà installé.');
+        this.setEmote(id, 0);
+        this.following.delete(id);
+        const d = dirOf(player.dir);
+        if (d.di !== 0 && d.dj !== 0) player.dir = dirCode(d.di, 0);
+        player.pose = command.name === 'sit' ? POSE.sit : POSE.lie;
+        this.onFloor.add(id);
+        return;
+      }
+      case 'stand': {
+        if (player.pose === POSE.stand) return say('Tu es déjà debout.');
+        player.pose = POSE.stand;
+        this.onFloor.delete(id);
+        return;
+      }
+      case 'moonwalk': {
+        if (this.moonwalkers.delete(id)) return say('Tu marches de nouveau normalement.');
+        this.moonwalkers.add(id);
+        return say('Tu marches à reculons. Écris /reculons pour arrêter.');
+      }
+      case 'push':
+      case 'pull': {
+        const verb = command.name === 'push' ? 'pousser' : 'tirer';
+        if (!command.who) return say(`Qui veux-tu ${verb} ? Écris /${verb} <pseudo>.`);
+        const now = Date.now();
+        if (now - (this.lastShove.get(id) ?? 0) < 1500) return;
+        let target: Player | undefined;
+        let targetId = '';
+        this.state.players.forEach((p, pid) => {
+          if (p.nickname.toLowerCase() === command.who.toLowerCase()) {
+            target = p;
+            targetId = pid;
+          }
+        });
+        if (!target || targetId === id) return say('Cette personne n’est pas dans la salle.');
+        const gap = Math.max(Math.abs(target.i - player.i), Math.abs(target.j - player.j));
+        if (gap > (command.name === 'push' ? 1 : 3)) return say(command.name === 'push' ? 'Approche-toi d’abord : il faut être juste à côté.' : 'Cette personne est trop loin pour la tirer.');
+        if (target.pose !== POSE.stand || this.paths.has(targetId) || this.isFrozen(targetId)) return say('Cette personne ne peut pas bouger pour l’instant.');
+        const di = Math.sign(target.i - player.i), dj = Math.sign(target.j - player.j);
+        // Pushed one cell further away; pulled onto the cell next to us, on its side.
+        const to = command.name === 'push' ? { i: target.i + di, j: target.j + dj } : { i: player.i + di, j: player.j + dj };
+        if (to.i === target.i && to.j === target.j) return say('Cette personne est déjà tout contre toi.');
+        const { blocked, shape } = await this.layout();
+        const taken = [...this.state.players.values()].some((p) => p !== target && p.i === to.i && p.j === to.j);
+        if (!inGrid(to.i, to.j) || blocked.has(to.i * N + to.j) || taken || !canStep(shape, { i: target.i, j: target.j }, to)) {
+          return say('Il n’y a pas de place de ce côté.');
+        }
+        this.lastShove.set(id, now);
+        this.following.delete(targetId);
+        this.setEmote(targetId, 0);
+        this.paths.set(targetId, [to]);
+        this.broadcast('system', { text: `${player.nickname} ${command.name === 'push' ? 'pousse' : 'tire'} ${target.nickname}.` });
         return;
       }
       case 'follow': {
@@ -614,6 +686,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     player.pose = POSE.stand;
     player.emote = 0;
     player.hand = 0;
+    // Coming in, a player faces into the room along the floor.
+    player.dir = dirCode(1, 0);
+    this.onFloor.delete(user.id);
     this.paths.delete(user.id);
     this.pending.delete(user.id);
     this.state.players.set(user.id, player);
@@ -639,6 +714,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     this.clientsByUser.delete(id);
     this.lastRefresh.delete(id);
     this.lastTrick.delete(id);
+    this.onFloor.delete(id);
+    this.moonwalkers.delete(id);
+    this.lastShove.delete(id);
     this.chatLimiter.forget(id);
     this.following.delete(id);
     this.emoteUntil.delete(id);
@@ -687,6 +765,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.paths.delete(id);
         continue;
       }
+      // The body faces the step (against it, walking backwards).
+      const back = this.moonwalkers.has(id) ? -1 : 1;
+      player.dir = dirCode(Math.sign(next.i - player.i) * back, Math.sign(next.j - player.j) * back);
       player.i = next.i;
       player.j = next.j;
       this.onGameEvent({ type: 'step', who: id, cell: { i: next.i, j: next.j } });

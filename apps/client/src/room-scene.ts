@@ -75,6 +75,8 @@ interface PlayerView {
   cell: { i: number; j: number };
   facing: Facing;
   flip: 1 | -1;
+  /** The server's code of the way the body faces, as last applied. */
+  dir: number;
   moving: boolean;
   /** When the avatar last covered ground: it keeps its walking legs for a moment between two cells. */
   movedAt: number;
@@ -717,6 +719,7 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       y,
       cell: { i: p.i, j: p.j },
       facing: 'front34',
+      dir: 4,
       flip: 1,
       moving: false,
       movedAt: 0,
@@ -816,11 +819,13 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     for (const p of players) {
       seen.add(p.id);
       const view = views.get(p.id) ?? addView(p);
-      if (view.cell.i !== p.i || view.cell.j !== p.j) {
-        const f = facingFor(p.i - view.cell.i, p.j - view.cell.j);
+      if (view.cell.i !== p.i || view.cell.j !== p.j) view.cell = { i: p.i, j: p.j };
+      // The server says which way the body faces (the last step, or against it for a player walking backwards).
+      if (p.dir !== 4 && p.dir !== view.dir) {
+        view.dir = p.dir;
+        const f = facingFor(Math.floor(p.dir / 3) - 1, (p.dir % 3) - 1);
         view.facing = f.facing;
         view.flip = f.flip;
-        view.cell = { i: p.i, j: p.j };
       }
       view.pose = POSES[p.pose] ?? 'stand';
       if (view.lookRaw !== p.look) {
@@ -851,7 +856,8 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         view.facing = f.facing;
         view.flip = f.flip;
       }
-      const lieFlip: 1 | -1 = rest !== null && rest % 2 === 1 ? -1 : 1;
+      // On a bed, along the bed; on the floor, along the way the body faced.
+      const lieFlip: 1 | -1 = rest !== null ? (rest % 2 === 1 ? -1 : 1) : view.flip;
 
       const phase = Math.floor(now / (STEP_MS / 4)) % 4;
       const frame: Frame = view.moving ? WALK[phase]! : 0;

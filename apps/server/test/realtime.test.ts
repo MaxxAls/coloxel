@@ -839,6 +839,40 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => emoteOf(b, cat.id) === 0);
     });
 
+    it('lets a player sit or lie on the floor, stand up, walk backwards, and push or pull a neighbour', async () => {
+      const ida = await named('cm_ida');
+      const jo = await named('cm_jo');
+      const a = await joinHall(ida);
+      const b = await joinHall(jo);
+      await until(() => a.state?.players?.size === 2 && b.state?.players?.size === 2);
+      const poseOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { pose: number } | undefined)?.pose;
+      const dirOf = (room: AnyRoom, id: string) => (room.state?.players?.get(id) as { dir: number } | undefined)?.dir;
+      // Sit down on the floor, lie down, get up.
+      a.send('chat', { text: '/assis' });
+      await until(() => poseOf(b, ida.id) === 1);
+      a.send('chat', { text: '/allonge' });
+      await until(() => poseOf(b, ida.id) === 2);
+      a.send('chat', { text: '/debout' });
+      await until(() => poseOf(b, ida.id) === 0);
+      // Walking backwards: the body faces against the step (one step along +j, so the body faces -j).
+      const start = { ...playerOf(b, ida.id)! };
+      a.send('chat', { text: '/reculons' });
+      await new Promise((r) => setTimeout(r, 150));
+      a.send('move', { i: start.i - 2, j: start.j });
+      await until(() => playerOf(b, ida.id)!.i === start.i - 2, 4000);
+      expect(dirOf(b, ida.id)).toBe((1 + 1) * 3 + (0 + 1));
+      // Jo comes next to Ida, then Ida pushes Jo one cell away and pulls them back.
+      b.send('move', { i: start.i - 2, j: start.j + 1 });
+      await until(() => playerOf(a, jo.id)!.i === start.i - 2 && playerOf(a, jo.id)!.j === start.j + 1, 6000);
+      // Commands count as chat: five in eight seconds at most.
+      await new Promise((r) => setTimeout(r, 4000));
+      a.send('chat', { text: '/pousser cm_jo' });
+      await until(() => playerOf(a, jo.id)!.j === start.j + 2, 3000);
+      await new Promise((r) => setTimeout(r, 5000));
+      a.send('chat', { text: '/tirer cm_jo' });
+      await until(() => playerOf(a, jo.id)!.j === start.j + 1, 3000);
+    }, 40000);
+
     it('lets a player follow a friend of the room, a step behind, and refuses strangers', async () => {
       const eve = await named('cm_eve');
       const fay = await named('cm_fay');
