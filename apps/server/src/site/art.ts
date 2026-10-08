@@ -1,7 +1,5 @@
 import { PNG } from 'pngjs';
 import {
-  ANCHOR_X,
-  ANCHOR_Y,
   ROOM_H,
   RES,
   ROOM_W,
@@ -11,7 +9,7 @@ import {
   floorStyle,
   lookFor,
   paintRoom,
-  renderSprite,
+  renderRecipe,
   tileCenter,
   wallStyle,
   type Facing,
@@ -164,11 +162,11 @@ function drawRoom(scene: Canvas, plan: RoomPlan): void {
   for (const t of plan.things) {
     const entry = catalogueEntry(t.key);
     if (!entry) continue;
-    const sprite = renderSprite(entry.recipe.parts);
+    const sprite = renderRecipe(entry.recipe);
     const c = tileCenter(t.i, t.j);
     items.push({
       depth: t.i + t.j,
-      draw: () => over(scene, sprite.data, sprite.width, sprite.height, plan.x + c.x - ANCHOR_X, plan.y + c.y - ANCHOR_Y),
+      draw: () => over(scene, sprite.data, sprite.width, sprite.height, plan.x + c.x - sprite.ax, plan.y + c.y - sprite.ay),
     });
   }
   for (const p of plan.people) {

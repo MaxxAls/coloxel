@@ -24,8 +24,12 @@ export async function saveLayout(pool: pg.Pool, ownerId: string, layout: RoomLay
       await client.query('ROLLBACK');
       return null;
     }
-    const { rows } = await client.query<{ i: number; j: number }>('SELECT i, j FROM placements WHERE user_id = $1', [ownerId]);
-    const gone = rows.filter((r) => !hasFloor(layout, r.i, r.j));
+    const { rows } = await client.query<{ i: number; j: number; w: number; h: number }>('SELECT i, j, w, h FROM placements WHERE user_id = $1', [ownerId]);
+    // A big piece needs a floor under every tile it covers.
+    const gone = rows.filter((r) => {
+      for (let a = 0; a < r.w; a++) for (let b = 0; b < r.h; b++) if (!hasFloor(layout, r.i + a, r.j + b)) return true;
+      return false;
+    });
     for (const r of gone) await client.query('DELETE FROM placements WHERE user_id = $1 AND i = $2 AND j = $3', [ownerId, r.i, r.j]);
     await client.query('COMMIT');
     return gone.length;

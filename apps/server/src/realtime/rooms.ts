@@ -731,7 +731,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   protected override async pressableAt(cell: Cell): Promise<boolean> {
     const { rows } = await needDeps().pool.query<{ key: string }>(
-      `SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id WHERE p.user_id = $1 AND p.i = $2 AND p.j = $3`,
+      `SELECT f.catalogue_key AS key FROM placements p JOIN furniture f ON f.id = p.furniture_id
+        WHERE p.user_id = $1 AND $2 >= p.i AND $2 < p.i + p.w AND $3 >= p.j AND $3 < p.j + p.h`,
       [this.ownerId, cell.i, cell.j],
     );
     return !!rows[0] && !!catalogueEntry(rows[0].key)?.pressable;
@@ -835,8 +836,8 @@ export class ApartmentRoom extends BuildingRoom {
 
   private async readLayout(): Promise<RoomMap> {
     const shape = await loadLayout(needDeps().pool, this.ownerId);
-    const { rows } = await needDeps().pool.query<{ i: number; j: number; key: string | null }>(
-      `SELECT p.i, p.j, f.catalogue_key AS key
+    const { rows } = await needDeps().pool.query<{ i: number; j: number; w: number; h: number; key: string | null }>(
+      `SELECT p.i, p.j, p.w, p.h, f.catalogue_key AS key
          FROM placements p LEFT JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1`,
       [this.ownerId],
@@ -847,10 +848,15 @@ export class ApartmentRoom extends BuildingRoom {
     for (const r of rows) {
       const entry = r.key ? catalogueEntry(r.key) : undefined;
       // A rug, a pressure plate, a portal lies on the floor: one walks over it.
-      if (!entry?.walkable) blocked.add(r.i * N + r.j);
-      // Only base furniture can be used: a creation is whatever its maker invented.
-      const use = entry?.interaction;
-      if (use) seats.set(r.i * N + r.j, use);
+      // A big piece blocks (or is used from) every tile it covers.
+      for (let a = 0; a < r.w; a++) {
+        for (let b = 0; b < r.h; b++) {
+          const cell = (r.i + a) * N + (r.j + b);
+          if (!entry?.walkable) blocked.add(cell);
+          // Only base furniture can be used: a creation is whatever its maker invented.
+          if (entry?.interaction) seats.set(cell, entry.interaction);
+        }
+      }
     }
     return { blocked, seats, shape };
   }

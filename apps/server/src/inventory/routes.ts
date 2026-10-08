@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { catalogueEntry } from '@coloxel/render';
+import { catalogueEntry, normalizeSize, rotatedSize, type Size } from '@coloxel/render';
 import { hasFloor } from '@coloxel/world';
 import { loadLayout } from '../apartments/layout';
 import type { NotifyApartment } from '../building/routes';
@@ -38,6 +38,9 @@ interface InventoryRow {
   i: number | null;
   j: number | null;
   rot: number | null;
+  w: number | null;
+  h: number | null;
+  size: unknown;
   masked: boolean;
   listing_id: string | null;
   listing_price: number | null;
@@ -48,7 +51,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
     if (!req.user) return reply.code(401).send({ error: 'Non connecté' });
     const { rows } = await pool.query<InventoryRow>(
       `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
-              cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, ${itemMaskedSql('it')} AS masked,
+              cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, p.w, p.h, it.recipe->'size' AS size, ${itemMaskedSql('it')} AS masked,
               ls.id AS listing_id, ls.price AS listing_price
        FROM items it
        JOIN users cr ON cr.id = it.creator_id
@@ -58,8 +61,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
        ORDER BY it.serial`,
       [req.user.id],
     );
-    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null; rot: number | null; lit: boolean | null }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.lit
+    const owned = await pool.query<{ id: string; catalogue_key: string; i: number | null; j: number | null; rot: number | null; w: number | null; h: number | null; lit: boolean | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.w, p.h, p.lit
          FROM furniture f LEFT JOIN placements p ON p.furniture_id = f.id
         WHERE f.owner_id = $1
         ORDER BY f.created_at, f.id`,
@@ -71,7 +74,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         id: r.id,
         key: r.catalogue_key,
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
-        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0 },
+        size: normalizeSize(catalogueEntry(r.catalogue_key)?.recipe.size),
+        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0, w: r.w ?? 1, h: r.h ?? 1 },
         on: r.lit ?? true,
       })),
       items: rows.map((r) => ({
@@ -85,7 +89,8 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         createdAt: r.created_at,
         // Reported by several players, or hidden by the staff: only the owner still sees it, others do not.
         underReview: r.masked,
-        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0 },
+        size: normalizeSize(r.size),
+        placement: r.i === null || r.j === null ? null : { i: r.i, j: r.j, rot: r.rot ?? 0, w: r.w ?? 1, h: r.h ?? 1 },
         // On the market: in escrow, it cannot be placed until the offer ends.
         listing: r.listing_id && r.listing_price !== null ? { id: r.listing_id, price: r.listing_price } : null,
       })),
@@ -105,28 +110,58 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
 
     // A creation or a piece of base furniture: the same rule for both, and the
     // object must belong to the player.
-    const creation = await pool.query('SELECT 1 FROM items WHERE id = $1 AND owner_id = $2', [itemId, user.id]);
+    const creation = await pool.query<{ size: unknown }>("SELECT recipe->'size' AS size FROM items WHERE id = $1 AND owner_id = $2", [itemId, user.id]);
     const furniture =
       creation.rowCount === 0
-        ? await pool.query('SELECT 1 FROM furniture WHERE id = $1 AND owner_id = $2', [itemId, user.id])
+        ? await pool.query<{ catalogue_key: string }>('SELECT catalogue_key FROM furniture WHERE id = $1 AND owner_id = $2', [itemId, user.id])
         : null;
     if (creation.rowCount === 0 && furniture?.rowCount === 0) return reply.code(404).send({ error: 'Objet introuvable' });
     const column = creation.rowCount ? 'item_id' : 'furniture_id';
+    const baseSize: Size = creation.rowCount
+      ? normalizeSize(creation.rows[0]!.size)
+      : normalizeSize(catalogueEntry(furniture!.rows[0]!.catalogue_key)?.recipe.size);
 
-    // Only where there is a floor.
+    // Turned or not, the piece covers w x h tiles from (i, j): the new turn if given, else the one it already has.
+    const current = await pool.query<{ rot: number }>(`SELECT rot FROM placements WHERE ${column} = $1`, [itemId]);
+    const [w, h] = rotatedSize(baseSize, rot ?? current.rows[0]?.rot ?? 0);
+
+    // Every tile it covers needs a floor, inside the grid.
     const shape = await loadLayout(pool, user.id);
-    if (!hasFloor(shape, i, j)) return reply.code(400).send({ error: 'Il n’y a pas de sol ici' });
+    for (let a = 0; a < w; a++) {
+      for (let b = 0; b < h; b++) {
+        if (i + a > GRID_SIZE - 1 || j + b > GRID_SIZE - 1 || !hasFloor(shape, i + a, j + b)) {
+          return reply.code(400).send({ error: w * h > 1 ? 'Cet objet ne tient pas ici : il lui faut ' + w * h + ' cases de sol libres' : 'Il n’y a pas de sol ici' });
+        }
+      }
+    }
 
     let saved: { rows: { rot: number }[] };
+    const client = await pool.connect();
     try {
-      // The UNIQUE (user_id, i, j) constraint arbitrates concurrent requests.
-      saved = await pool.query<{ rot: number }>(
-        `INSERT INTO placements (${column}, user_id, i, j, rot) VALUES ($1, $2, $3, $4, COALESCE($5::smallint, 0))
-         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, rot = COALESCE($5::smallint, placements.rot), placed_at = now()
-         RETURNING rot`,
-        [itemId, user.id, i, j, rot ?? null],
+      await client.query('BEGIN');
+      // One placement at a time per apartment: the overlap check and the insert must not interleave.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`placements:${user.id}`]);
+      const clash = await client.query(
+        `SELECT 1 FROM placements
+          WHERE user_id = $1 AND ${column} IS DISTINCT FROM $2::uuid
+            AND i < $3::int + $5::int AND i + w > $3::int AND j < $4::int + $6::int AND j + h > $4::int
+          LIMIT 1`,
+        [user.id, itemId, i, j, w, h],
       );
+      if (clash.rowCount) {
+        await client.query('ROLLBACK');
+        return reply.code(409).send({ error: w * h > 1 ? 'Une case est déjà occupée' : 'Cette case est déjà occupée' });
+      }
+      // The UNIQUE (user_id, i, j) constraint still guards the first tile.
+      saved = await client.query<{ rot: number }>(
+        `INSERT INTO placements (${column}, user_id, i, j, rot, w, h) VALUES ($1, $2, $3, $4, COALESCE($5::smallint, 0), $6, $7)
+         ON CONFLICT (${column}) DO UPDATE SET i = EXCLUDED.i, j = EXCLUDED.j, rot = COALESCE($5::smallint, placements.rot), w = EXCLUDED.w, h = EXCLUDED.h, placed_at = now()
+         RETURNING rot`,
+        [itemId, user.id, i, j, rot ?? null, w, h],
+      );
+      await client.query('COMMIT');
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       if ((err as { code?: string }).code === '23505') {
         return reply.code(409).send({ error: 'Cette case est déjà occupée' });
       }
@@ -134,11 +169,13 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: pg.Pool, not
         return reply.code(409).send({ error: 'Cet objet est en vente sur le marché' });
       }
       throw err;
+    } finally {
+      client.release();
     }
     notify?.(user.id, 'decor');
     // Each object counts once, however often it is moved.
     quest?.(user.id, 'place', itemId);
-    return { placement: { itemId, i, j, rot: saved.rows[0]?.rot ?? 0 } };
+    return { placement: { itemId, i, j, rot: saved.rows[0]?.rot ?? 0, w, h } };
   });
 
   app.delete<{ Params: { itemId: string } }>('/api/placements/:itemId', async (req, reply) => {

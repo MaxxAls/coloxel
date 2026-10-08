@@ -95,7 +95,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
     expect(inv.furniture).toHaveLength(STARTER_KIT.length);
     for (const piece of STARTER_KIT) {
       expect(inv.furniture).toContainEqual(
-        expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot: 0 } }),
+        expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot: 0, w: 1, h: 1 } }),
       );
     }
     // The kit is not a creation: nothing was numbered.
@@ -178,7 +178,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       expect((await place(ines.sid, piece.id, 2, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
-      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6, rot: 0 });
+      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6, rot: 0, w: 1, h: 1 });
 
       const del = await app.inject({ method: 'DELETE', url: `/api/placements/${piece.id}`, cookies: as(ines.sid) });
       expect(del.statusCode).toBe(204);
@@ -277,7 +277,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
         id: expect.any(String),
         key: expect.any(String),
         name: expect.any(String),
-        placement: { i: expect.any(Number), j: expect.any(Number), rot: 0 },
+        placement: { i: expect.any(Number), j: expect.any(Number), rot: 0, w: 1, h: 1 },
         on: true,
       });
       // The building view takes the wall color.
