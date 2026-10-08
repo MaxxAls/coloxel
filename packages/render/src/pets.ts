@@ -74,3 +74,51 @@ export const petSpecies = (key: string): PetSpecies | undefined => PET_SPECIES.f
 
 /** Companions a player can own at once. */
 export const MAX_PETS = 3;
+
+// ----- Care ---------------------------------------------------------------------------------------------------
+// A companion's hunger and joy are not stored: they are worked out when read, from the time of the last meal and
+// the last game. They fall with real time, never below zero, and nothing bad happens at zero: a neglected
+// companion is only sad and does not show off. Feeding and playing cost nothing, but only work once the need is
+// there, and they earn experience that unlocks tricks.
+
+export const FED_SPAN_MS = 24 * 60 * 60 * 1000;
+export const JOY_SPAN_MS = 8 * 60 * 60 * 1000;
+/** A meal or a game only works once the need has dropped below 80. */
+export const CARE_THRESHOLD = 80;
+export const PET_XP_FEED = 5;
+export const PET_XP_PLAY = 4;
+export const MAX_PET_LEVEL = 10;
+
+/** 100 just after a meal (or a game), falling in a straight line to 0 over `spanMs`. */
+export const petNeed = (sinceMs: number, spanMs: number): number =>
+  Math.max(0, Math.min(100, Math.round(100 - (Math.max(0, sinceMs) / spanMs) * 100)));
+
+/** How long after the last meal (or game) the need is below the threshold, so that care works again. */
+export const careReadyAfterMs = (spanMs: number): number => Math.ceil(((100 - CARE_THRESHOLD) / 100) * spanMs);
+
+export type PetMood = 'happy' | 'ok' | 'sad';
+export const petMood = (hunger: number, joy: number): PetMood => {
+  const low = Math.min(hunger, joy);
+  return low < 25 ? 'sad' : low >= 60 ? 'happy' : 'ok';
+};
+/** Mood as the number stored in the room's state. */
+export const MOOD_CODE: Record<PetMood, number> = { happy: 0, ok: 1, sad: 2 };
+
+export const petLevel = (xp: number): number => Math.min(MAX_PET_LEVEL, 1 + Math.floor(Math.sqrt(Math.max(0, xp) / 12)));
+/** Experience needed to reach a level (1 needs none). */
+export const xpForLevel = (level: number): number => (level <= 1 ? 0 : (level - 1) * (level - 1) * 12);
+
+export interface PetTrick {
+  key: string;
+  name: string;
+  /** Level at which the companion learns it. */
+  level: number;
+}
+export const PET_TRICKS: readonly PetTrick[] = [
+  { key: 'assis', name: 'S’asseoir', level: 1 },
+  { key: 'viens', name: 'Venir près de toi', level: 1 },
+  { key: 'saute', name: 'Sauter', level: 2 },
+  { key: 'tourne', name: 'Tourner sur lui-même', level: 3 },
+];
+export const petTrick = (key: string): PetTrick | undefined => PET_TRICKS.find((t) => t.key === key);
+

@@ -1,4 +1,4 @@
-import { LOOK_ITEMS, MAX_PETS, PET_SPECIES, petSpecies, type Slot } from '@coloxel/render';
+import { LOOK_ITEMS, MAX_PETS, PET_SPECIES, PET_TRICKS, petSpecies, type Slot } from '@coloxel/render';
 import { api, type CatalogueData, type MyApartment, type PetData } from './api';
 import { appearance } from './appearance';
 import { lookCanvas, thumbCanvas } from './look-art';
@@ -557,7 +557,41 @@ export function createShop(options: {
           return { ok: true, message: `${pet.name} est parti(e) vers de nouvelles aventures.` };
         });
       });
-      row.append(thumb, label, withMe, rename, release);
+      // Care: hunger and joy fall with real time; feeding and playing are free once there is a need, and earn experience.
+      const care = el('div', 'pet-care');
+      const meter = (title: string, value: number) => {
+        const m = el('div', 'pet-meter');
+        const fill = el('span');
+        fill.style.width = `${value}%`;
+        m.title = `${title} : ${value}/100`;
+        m.append(fill);
+        const wrap = el('div', 'pet-meter-row');
+        wrap.append(el('span', 'small', title), m);
+        return wrap;
+      };
+      const xpLine = pet.nextLevelXp === null ? `Niveau ${pet.level} (maximum)` : `Niveau ${pet.level} · ${pet.xp}/${pet.nextLevelXp} XP`;
+      const mood = pet.mood === 'sad' ? 'Triste' : pet.mood === 'happy' ? 'Content' : 'Tranquille';
+      care.append(meter('Faim', pet.hunger), meter('Joie', pet.joy), el('span', 'muted small', `${mood} · ${xpLine}`));
+      const tricksKnown = pet.tricks.map((key) => PET_TRICKS.find((t) => t.key === key)?.key).filter(Boolean);
+      if (pet.active) care.append(el('span', 'muted small', `Tours (dans le chat) : ${tricksKnown.map((k) => `/compagnon ${k}`).join(', ')}`));
+      const careButton = (label: string, ok: boolean, why: string, done: string, run: () => ReturnType<typeof api.feedPet>) => {
+        const b = el('button', undefined, label);
+        b.type = 'button';
+        b.disabled = !ok;
+        if (!ok) b.title = why;
+        b.addEventListener('click', () =>
+          void spend(async () => {
+            const res = await run();
+            if (!res.ok) return { ok: false, message: res.error };
+            pets = res.data.pets;
+            return { ok: true, message: done };
+          }, b),
+        );
+        return b;
+      };
+      const feed = careButton('Nourrir', pet.hunger < 80, 'Il n’a pas faim pour l’instant.', `${pet.name} se régale !`, () => api.feedPet(pet.id));
+      const play = careButton('Jouer', pet.joy < 80, 'Il n’a pas envie de jouer pour l’instant.', `${pet.name} s’est bien amusé(e) !`, () => api.playWithPet(pet.id));
+      row.append(thumb, label, care, feed, play, withMe, rename, release);
       mineBox.append(row);
     }
     main.append(top, mineBox);

@@ -45,6 +45,10 @@ interface PetView {
   flip: 1 | -1;
   /** When the companion last moved, to sit down once it has been still for a while. */
   movedAt: number;
+  /** A trick it is doing: what, and until when (it started 900 ms or 6 s before). */
+  trick?: { kind: string; since: number; until: number };
+  /** A little "..." over a sad companion. */
+  mood?: Text;
 }
 
 /** A look from what the server broadcast: anything unreadable falls back to the player's default one. */
@@ -665,10 +669,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         const label = new Text({ text: name.join(':'), style: { fontFamily: FONT, fontSize: 7, fill: 0xfff3d6, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
         label.anchor.set(0.5, 0);
         label.position.set(0, 9);
-        box.addChild(shadow, sprite, label);
+        const mood = new Text({ text: '…', style: { fontFamily: FONT, fontSize: 9, fill: 0xbfc8ff, stroke: { color: 0x1b1530, width: 3 } }, resolution: 2 });
+        mood.anchor.set(0.5, 1);
+        mood.position.set(0, -14);
+        mood.visible = false;
+        box.addChild(shadow, sprite, label, mood);
         world.addChild(box);
         // It starts beside its owner.
-        view.pet = { box, sprite, label, species, color: Number(color) || 0, x: view.x - 22, y: view.y + 6, flip: 1, movedAt: now };
+        view.pet = { box, sprite, label, species, color: Number(color) || 0, x: view.x - 22, y: view.y + 6, flip: 1, movedAt: now, mood };
       }
     }
     const pet = view.pet;
@@ -688,10 +696,24 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       if (Math.abs(dx) > 2) pet.flip = dx > 0 ? 1 : -1;
     }
     const walking = now - pet.movedAt < 180;
-    const frame: 0 | 1 | 2 = walking && !reduceMotion ? ((Math.floor(now / 130) % 2) as 0 | 1) : now - pet.movedAt > 900 ? 2 : 0;
+    // A trick lasts a moment (sitting, six seconds); walking away ends a sit.
+    const trick = pet.trick && now < pet.trick.until && !(pet.trick.kind === 'assis' && walking) ? pet.trick : undefined;
+    const sad = p.petMood === 2;
+    let frame: 0 | 1 | 2 = walking && !reduceMotion ? ((Math.floor(now / 130) % 2) as 0 | 1) : now - pet.movedAt > 900 || sad ? 2 : 0;
+    if (trick?.kind === 'assis') frame = 2;
     pet.sprite.texture = petTexture(pet.species, pet.color, frame);
-    pet.sprite.scale.x = pet.flip;
-    const hop = walking && pet.species === 'lapin' && !reduceMotion ? Math.abs(Math.sin(now / 90)) * 3 : 0;
+    // A sad companion is paler and says nothing but "…".
+    pet.sprite.tint = sad ? 0x9aa0c0 : 0xffffff;
+    if (pet.mood) pet.mood.visible = sad;
+    let flip = pet.flip;
+    let jump = 0;
+    if (trick && !reduceMotion) {
+      const t = now - trick.since;
+      if (trick.kind === 'saute') jump = Math.abs(Math.sin(t / 150)) * 9;
+      if (trick.kind === 'tourne') flip = (Math.floor(t / 110) % 2 === 0 ? 1 : -1) as 1 | -1;
+    }
+    pet.sprite.scale.x = flip;
+    const hop = (walking && pet.species === 'lapin' && !reduceMotion ? Math.abs(Math.sin(now / 90)) * 3 : 0) + jump;
     pet.sprite.position.y = 5 - Math.round(hop);
     pet.box.position.set(Math.round(pet.x), Math.round(pet.y));
     pet.box.zIndex = (pet.y - OY) / (TH / 2) + 0.5;
@@ -1165,6 +1187,21 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         }
       }, 8000);
     },
+  });
+
+  // A companion shows off what it has learnt, at the word of its owner.
+  room.onPetTrick((owner, kind) => {
+    const view = views.get(owner);
+    const pet = view?.pet;
+    if (!view || !pet) return;
+    const now = performance.now();
+    if (kind === 'viens') {
+      pet.x = view.x - 22;
+      pet.y = view.y + 6;
+      pet.movedAt = now;
+      return;
+    }
+    pet.trick = { kind, since: now, until: now + (kind === 'assis' ? 6000 : 1000) };
   });
 
   /** A colour that goes round the wheel: hue in degrees. */

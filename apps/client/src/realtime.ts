@@ -33,6 +33,10 @@ export interface PlayerState {
   emote: number;
   /** What the player holds (see HAND_ITEMS in packages/render), 0 nothing. */
   hand: number;
+  /** The companion's mood: 0 happy, 1 fine, 2 sad. */
+  petMood: number;
+  /** Level of the companion, 0 without one. */
+  petLevel: number;
 }
 
 /** What the server says about the team game of the room (the colour race). */
@@ -58,6 +62,8 @@ export interface GameHandlers {
 export interface BuildingRoom {
   /** The team game of the room: it starts, tiles get painted, it ends. */
   onGame(handlers: GameHandlers): void;
+  /** A companion shows off a trick (the owner typed /compagnon <tour>). */
+  onPetTrick(callback: (owner: string, trick: string) => void): void;
   /** Every player in the room, with the position the server last decided. */
   players(): PlayerState[];
   /** "I click the button at (i, j)": the server checks there is one, and what it sets off. */
@@ -118,7 +124,7 @@ function wrap(room: Room): BuildingRoom {
     players() {
       const out: PlayerState[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '', emote: p.emote ?? 0, hand: p.hand ?? 0 }));
+      (room.state as any)?.players?.forEach((p: PlayerState) => out.push({ id: p.id, nickname: p.nickname, i: p.i, j: p.j, pose: p.pose ?? 0, look: p.look ?? '', pet: p.pet ?? '', emote: p.emote ?? 0, hand: p.hand ?? 0, petMood: p.petMood ?? 0, petLevel: p.petLevel ?? 0 }));
       return out;
     },
     moveTo(i, j) {
@@ -131,6 +137,9 @@ function wrap(room: Room): BuildingRoom {
       room.onMessage('fx', (m: { kind?: string; i: number; j: number; color?: number }) => {
         if (m.kind === 'pulse') callback({ i: m.i, j: m.j, color: m.color ?? 0xffc857 });
       });
+    },
+    onPetTrick(callback) {
+      room.onMessage('pet-trick', (m: { id: string; trick: string }) => callback(m.id, m.trick));
     },
     onGame(handlers) {
       room.onMessage('game', (m: GameSnapshot) => handlers.onStart(m));

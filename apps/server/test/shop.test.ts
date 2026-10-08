@@ -200,6 +200,60 @@ describe.skipIf(!available)('wallet, wardrobe, shop and companions (PostgreSQL)'
     const adopt = (sid: string, body: object = {}) =>
       send(sid, 'POST', '/api/shop/buy', { kind: 'pet', species: 'chat', color: 1, name: 'Minou', ...body });
 
+    describe('care', () => {
+      const pet = async (sid: string, id: string) => ((await get(sid, '/api/pets')).json().pets as { id: string; hunger: number; joy: number; mood: string; xp: number; level: number; tricks: string[] }[]).find((p) => p.id === id)!;
+      const adoptOne = async (nick: string) => {
+        const { id, sid } = await signUp(nick);
+        await topUp(id, 1000);
+        const petId = (await adopt(sid)).json().pet.id as string;
+        return { id, sid, petId };
+      };
+      const hoursAgo = (petId: string, column: 'fed_at' | 'played_at', hours: number) =>
+        pool.query(`UPDATE pets SET ${column} = now() - ($2 || ' hours')::interval WHERE id = $1`, [petId, String(hours)]);
+
+      it('starts full and happy, and falls with real time without ever going below zero', async () => {
+        const { sid, petId } = await adoptOne('care1');
+        expect(await pet(sid, petId)).toMatchObject({ hunger: 100, joy: 100, mood: 'happy', xp: 0, level: 1, tricks: ['assis', 'viens'] });
+        await hoursAgo(petId, 'fed_at', 12);
+        expect((await pet(sid, petId)).hunger).toBe(50);
+        await hoursAgo(petId, 'fed_at', 100);
+        await hoursAgo(petId, 'played_at', 100);
+        expect(await pet(sid, petId)).toMatchObject({ hunger: 0, joy: 0, mood: 'sad' });
+      });
+
+      it('is fed and played with for free once the need is there, earning experience and tricks', async () => {
+        const { id, sid, petId } = await adoptOne('care2');
+        const before = (await wallet(sid)).pixels;
+        // Full: nothing to do yet.
+        expect((await send(sid, 'POST', `/api/pets/${petId}/feed`)).statusCode).toBe(409);
+        expect((await send(sid, 'POST', `/api/pets/${petId}/play`)).statusCode).toBe(409);
+        await hoursAgo(petId, 'fed_at', 20);
+        await hoursAgo(petId, 'played_at', 8);
+        const fed = await send(sid, 'POST', `/api/pets/${petId}/feed`);
+        expect(fed.statusCode).toBe(200);
+        expect(fed.json().pets[0]).toMatchObject({ hunger: 100, xp: 5 });
+        expect((await send(sid, 'POST', `/api/pets/${petId}/play`)).json().pets[0]).toMatchObject({ joy: 100, xp: 9 });
+        // Just fed: not again.
+        expect((await send(sid, 'POST', `/api/pets/${petId}/feed`)).statusCode).toBe(409);
+        expect((await wallet(sid)).pixels).toBe(before);
+        // Experience unlocks tricks: 12 xp is level 2.
+        await pool.query('UPDATE pets SET xp = 12 WHERE id = $1', [petId]);
+        expect(await pet(sid, petId)).toMatchObject({ level: 2, tricks: ['assis', 'viens', 'saute'] });
+        void id;
+      });
+
+      it('never lets two simultaneous meals both count, nor another player care for it', async () => {
+        const { sid, petId } = await adoptOne('care3');
+        const other = await signUp('care3b');
+        await hoursAgo(petId, 'fed_at', 20);
+        const both = await Promise.all([send(sid, 'POST', `/api/pets/${petId}/feed`), send(sid, 'POST', `/api/pets/${petId}/feed`)]);
+        expect(both.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+        expect((await pet(sid, petId)).xp).toBe(5);
+        expect((await send(other.sid, 'POST', `/api/pets/${petId}/feed`)).statusCode).toBe(404);
+        expect((await send(sid, 'POST', '/api/pets/not-an-id/feed')).statusCode).toBe(404);
+      });
+    });
+
     it('adopts a companion, which comes along at once, and charges its price', async () => {
       const { id, sid } = await signUp('pet1');
       await topUp(id, 1000);

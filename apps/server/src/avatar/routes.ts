@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { LOOK_ITEMS, SLOTS, lookFor, paidPieces, parseLook, petSpecies, type Look, type Slot } from '@coloxel/render';
+import { FED_SPAN_MS, JOY_SPAN_MS, LOOK_ITEMS, MOOD_CODE, SLOTS, lookFor, paidPieces, parseLook, petLevel, petMood, petNeed, petSpecies, type Look, type Slot } from '@coloxel/render';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
 
 /** The look of a player: the one they saved, or the one derived from their id until they customise. */
@@ -21,17 +21,21 @@ export async function loadOwned(pool: pg.Pool, userId: string): Promise<Record<S
 }
 
 /** What others see next to a player: look and active companion, read from the database, never from a client message. */
-export async function loadAppearance(pool: pg.Pool, userId: string): Promise<{ look: Look; pet: string }> {
-  const { rows } = await pool.query<{ look: unknown; species: string | null; color: number | null; name: string | null }>(
-    `SELECT u.look, p.species, p.color, p.name
+export async function loadAppearance(pool: pg.Pool, userId: string): Promise<{ look: Look; pet: string; petMood: number; petLevel: number }> {
+  const { rows } = await pool.query<{ look: unknown; species: string | null; color: number | null; name: string | null; xp: number | null; since_fed: number | null; since_played: number | null }>(
+    `SELECT u.look, p.species, p.color, p.name, p.xp,
+            (extract(epoch FROM now() - p.fed_at) * 1000)::float8 AS since_fed,
+            (extract(epoch FROM now() - p.played_at) * 1000)::float8 AS since_played
        FROM users u LEFT JOIN pets p ON p.id = u.active_pet_id
       WHERE u.id = $1`,
     [userId],
   );
   const row = rows[0];
   const look = parseLook(row?.look) ?? lookFor(userId);
-  const pet = row?.species && petSpecies(row.species) ? `${row.species}:${row.color ?? 0}:${row.name ?? ''}` : '';
-  return { look, pet };
+  const hasPet = !!row?.species && !!petSpecies(row.species);
+  const pet = hasPet ? `${row!.species}:${row!.color ?? 0}:${row!.name ?? ''}` : '';
+  const mood = hasPet ? petMood(petNeed(row!.since_fed ?? 0, FED_SPAN_MS), petNeed(row!.since_played ?? 0, JOY_SPAN_MS)) : 'happy';
+  return { look, pet, petMood: MOOD_CODE[mood], petLevel: hasPet ? petLevel(row!.xp ?? 0) : 0 };
 }
 
 export function registerAvatarRoutes(app: FastifyInstance, pool: pg.Pool, guards: RateGuards = NO_GUARDS) {

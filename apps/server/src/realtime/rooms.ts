@@ -2,7 +2,7 @@ import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core
 import { schema, t, type SchemaType } from '@colyseus/schema';
 import type pg from 'pg';
 import { z } from 'zod';
-import { CATALOGUE, catalogueEntry, handItem, isSwitchable } from '@coloxel/render';
+import { CATALOGUE, PET_TRICKS, catalogueEntry, handItem, isSwitchable, petTrick } from '@coloxel/render';
 import { DEFAULT_LAYOUT, N, canStep, findPath, hasFloor, inGrid, voidKeys, type Cell, type RoomLayout } from '@coloxel/world';
 import { canEnterApartment, isExpelled } from '../apartments/access';
 import { loadLayout } from '../apartments/layout';
@@ -51,6 +51,10 @@ export const Player = schema(
     pet: t.string(),
     /** What the player is doing for show: 0 nothing, 1 dancing. */
     emote: t.uint8(),
+    /** How the active companion feels: 0 happy, 1 fine, 2 sad (see petMood). */
+    petMood: t.uint8(),
+    /** Level of the active companion, 0 without one: what tricks it knows. */
+    petLevel: t.uint8(),
     /** What the player holds in a hand (see packages/render/src/hand.ts): 0 nothing. */
     hand: t.uint8(),
   },
@@ -106,6 +110,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
   private paths = new Map<string, Cell[]>();
   private clientsByUser = new Map<string, AuthedClient>();
   private lastRefresh = new Map<string, number>();
+  private lastTrick = new Map<string, number>();
   private chatLimiter = new ChatLimiter();
   private chatChain: Promise<void> = Promise.resolve();
   /** Who follows whom (both are in this room). */
@@ -300,6 +305,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
       const appearance = await loadAppearance(needDeps().pool, id);
       player.look = JSON.stringify(appearance.look);
       player.pet = appearance.pet;
+      player.petMood = appearance.petMood;
+      player.petLevel = appearance.petLevel;
     });
 
     // Chat. The author is the session's player, the text is checked, journaled and only then shown to the room.
@@ -416,6 +423,19 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         this.setEmote(id, 0);
         this.paths.delete(id);
         return say(was ? 'C’est fait.' : 'Rien à arrêter.');
+      }
+      case 'pet': {
+        if (!player.pet) return say('Tu n’as pas de compagnon avec toi.');
+        const trick = petTrick(command.trick);
+        if (!trick) return say(`Quel tour ? ${PET_TRICKS.map((t) => `${t.key} (niveau ${t.level})`).join(', ')}.`);
+        if (player.petLevel < trick.level) return say(`Ton compagnon ne sait pas encore ça : niveau ${trick.level} requis, il est niveau ${player.petLevel}.`);
+        // A sad companion does not feel like showing off.
+        if (player.petMood === 2) return say('Ton compagnon est triste : donne-lui à manger ou joue avec lui d’abord.');
+        const now = Date.now();
+        if (now - (this.lastTrick.get(id) ?? 0) < 2500) return;
+        this.lastTrick.set(id, now);
+        this.broadcast('pet-trick', { id, trick: trick.key });
+        return;
       }
       case 'drop': {
         if (!player.hand) return say('Tu ne tiens rien.');
@@ -568,6 +588,8 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     const appearance = await loadAppearance(needDeps().pool, user.id);
     player.look = JSON.stringify(appearance.look);
     player.pet = appearance.pet;
+    player.petMood = appearance.petMood;
+    player.petLevel = appearance.petLevel;
     // A second connection of the same player replaces the first: its old cell is free again.
     this.state.players.delete(user.id);
     const spawn = this.spawnCell(blocked, shape.door);
@@ -600,6 +622,7 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
     if (this.clientsByUser.get(id) !== client) return;
     this.clientsByUser.delete(id);
     this.lastRefresh.delete(id);
+    this.lastTrick.delete(id);
     this.chatLimiter.forget(id);
     this.following.delete(id);
     this.emoteUntil.delete(id);

@@ -36,7 +36,29 @@ export {
   type LookItem,
   type Slot,
 } from './look';
-export { MAX_PETS, PET_SPECIES, petSpecies, type PetColor, type PetSpecies } from './pets';
+export {
+  CARE_THRESHOLD,
+  FED_SPAN_MS,
+  JOY_SPAN_MS,
+  MAX_PETS,
+  MAX_PET_LEVEL,
+  MOOD_CODE,
+  PET_SPECIES,
+  PET_TRICKS,
+  PET_XP_FEED,
+  PET_XP_PLAY,
+  careReadyAfterMs,
+  petLevel,
+  petMood,
+  petNeed,
+  petSpecies,
+  petTrick,
+  xpForLevel,
+  type PetColor,
+  type PetMood,
+  type PetSpecies,
+  type PetTrick,
+} from './pets';
 export {
   AVATAR_H,
   AVATAR_W,

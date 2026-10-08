@@ -142,6 +142,16 @@ export interface PetData {
   color: number;
   name: string;
   active: boolean;
+  /** 0 to 100, worked out by the server from real time. */
+  hunger: number;
+  joy: number;
+  mood: 'happy' | 'ok' | 'sad';
+  xp: number;
+  level: number;
+  /** XP needed for the next level, null at the top. */
+  nextLevelXp: number | null;
+  /** Keys of the tricks it knows (see PET_TRICKS in packages/render). */
+  tricks: string[];
 }
 
 /** What the shop can be asked to sell: the server reads the price from its own catalogues. */
@@ -584,6 +594,8 @@ export const api = {
   pets: () => call<{ pets: PetData[] }>('GET', '/api/pets'),
   setActivePet: (id: string | null) => call<{ pets: PetData[] }>('PUT', '/api/pets/active', { id }),
   renamePet: (id: string, name: string) => call<{ pets: PetData[] }>('PATCH', `/api/pets/${id}`, { name }),
+  feedPet: (id: string) => call<{ pets: PetData[] }>('POST', `/api/pets/${id}/feed`, {}),
+  playWithPet: (id: string) => call<{ pets: PetData[] }>('POST', `/api/pets/${id}/play`, {}),
   releasePet: (id: string) => call<{ pets: PetData[] }>('DELETE', `/api/pets/${id}`),
 };
 

@@ -2636,3 +2636,11 @@ body.admin .staff .win-bar button.win-close {
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
 
+/* A companion's care: two little meters. */
+.pet-care { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+.pet-meter-row { display: flex; align-items: center; gap: 6px; }
+.pet-meter-row > .small { width: 34px; }
+.pet-meter { flex: 1; height: 7px; border-radius: 4px; background: rgba(27, 21, 48, 0.25); overflow: hidden; }
+.pet-meter > span { display: block; height: 100%; background: #6be2a3; }
+.pet-meter-row:nth-child(2) .pet-meter > span { background: #ffc857; }
+

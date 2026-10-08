@@ -769,6 +769,50 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       expect((await pool.query('SELECT count(*) FROM chat_log WHERE user_id = $1', [ann.id])).rows[0].count).toBe('0');
     });
 
+    it('lets a companion do the tricks it has learnt, and only when it is in a mood for it', async () => {
+      const eli = await named('cm_eli');
+      const adopt = async (a: Account, xp: number, hoursSinceMeal: number) => {
+        const pet = (await pool.query<{ id: string }>("INSERT INTO pets (owner_id, species, color, name, xp, fed_at) VALUES ($1, 'chien', 0, 'Rex', $2, now() - ($3 || ' hours')::interval) RETURNING id", [a.id, xp, String(hoursSinceMeal)])).rows[0]!.id;
+        await pool.query('UPDATE users SET active_pet_id = $2 WHERE id = $1', [a.id, pet]);
+      };
+      // Without a companion: told so.
+      const bare = await joinHall(eli);
+      const heardBare = listenSystem(bare);
+      bare.send('chat', { text: '/compagnon assis' });
+      await until(() => heardBare.system.length > 0, 3000);
+      expect(heardBare.system[0]).toMatch(/pas de compagnon/);
+
+      // A happy level 1 companion sits, but does not yet jump.
+      const fay = await named('cm_fay');
+      await adopt(fay, 0, 0);
+      const room = await joinHall(fay);
+      const heard = listenSystem(room);
+      const tricks: { id: string; trick: string }[] = [];
+      room.onMessage('pet-trick', (m: { id: string; trick: string }) => tricks.push(m));
+      await until(() => (room.state?.players?.get(fay.id) as { petLevel: number } | undefined)?.petLevel === 1, 3000);
+      room.send('chat', { text: '/compagnon saute' });
+      await until(() => heard.system.length > 0, 3000);
+      expect(heard.system[0]).toMatch(/niveau 2/);
+      expect(tricks).toHaveLength(0);
+      room.send('chat', { text: '/compagnon assis' });
+      await until(() => tricks.length === 1, 3000);
+      expect(tricks[0]).toEqual({ id: fay.id, trick: 'assis' });
+      // A trick name that does not exist.
+      room.send('chat', { text: '/compagnon voler' });
+      await until(() => heard.system.length > 1, 3000);
+      expect(heard.system[1]).toMatch(/Quel tour/);
+
+      // A hungry one is sad and refuses.
+      const gus = await named('cm_gus');
+      await adopt(gus, 0, 30);
+      const sad = await joinHall(gus);
+      const heardSad = listenSystem(sad);
+      await until(() => (sad.state?.players?.get(gus.id) as { petMood: number } | undefined)?.petMood === 2, 3000);
+      sad.send('chat', { text: '/compagnon assis' });
+      await until(() => heardSad.system.length > 0, 3000);
+      expect(heardSad.system[0]).toMatch(/triste/);
+    });
+
     it('lets a player dance, shows everybody, and stops when they walk away or ask', async () => {
       const cat = await named('cm_cat');
       const dan = await named('cm_dan');
