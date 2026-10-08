@@ -96,6 +96,17 @@ interface PlayerView {
  * the room and a diagonal step goes straight up, down, left or right: eight directions from five
  * drawings, the others being mirrors.
  */
+/**
+ * How a seated player looks for each turn of the seat, the way the classic isometric games do it: a seat turned 0
+ * faces down-right (+i), 1 down-left (+j), 2 up-left, 3 up-right; the player takes the seat's direction.
+ */
+const SEAT_FACING: readonly { facing: Facing; flip: 1 | -1 }[] = [
+  { facing: 'front34', flip: 1 },
+  { facing: 'front34', flip: -1 },
+  { facing: 'back34', flip: -1 },
+  { facing: 'back34', flip: 1 },
+];
+
 function facingFor(di: number, dj: number): { facing: Facing; flip: 1 | -1 } {
   const a = Math.sign(di);
   const b = Math.sign(dj);
@@ -757,6 +768,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
     pet.box.zIndex = (pet.y - OY) / (TH / 2) + 0.5;
   }
 
+  /** The turn (0 to 3) of the seat or bed on this cell, or null: a seated player faces the way it faces. */
+  const restingTurn = (cell: { i: number; j: number }): number | null => {
+    const piece =
+      furniture.find((f) => f.placement && !catalogueEntry(f.key)?.wall && covers(f.placement, cell)) ??
+      items.find((it) => it.placement && covers(it.placement, cell));
+    return piece?.placement ? ((piece.placement.rot ?? 0) & 3) : null;
+  };
+
   function syncPlayers(deltaMs: number, now: number) {
     const players = room.players();
     const seen = new Set<string>();
@@ -791,6 +810,14 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
       view.moving = now - view.movedAt < 90;
       const seated = view.pose !== 'stand' && !view.moving;
       const pose: Pose = seated ? view.pose : 'stand';
+      // Seated or lying, the avatar turns the way the piece faces (its turn), and keeps that way once up again.
+      const rest = seated ? restingTurn(view.cell) : null;
+      if (rest !== null && pose === 'sit') {
+        const f = SEAT_FACING[rest]!;
+        view.facing = f.facing;
+        view.flip = f.flip;
+      }
+      const lieFlip: 1 | -1 = rest !== null && rest % 2 === 1 ? -1 : 1;
 
       const phase = Math.floor(now / (STEP_MS / 4)) % 4;
       const frame: Frame = view.moving ? WALK[phase]! : 0;
@@ -800,24 +827,24 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
         blink = now < view.blinkAt + 130;
         if (!blink) view.blinkAt = now + 2200 + Math.random() * 4500;
       }
-      // Sitting and lying down face the same way as the furniture: toward the viewer's right.
-      const facing: Facing = pose === 'stand' ? view.facing : 'front34';
+      // Lying down, the body runs along the bed: the drawing is mirrored for a bed turned a quarter.
+      const facing: Facing = pose === 'lie' ? 'front34' : view.facing;
       view.body.texture = avatarTexture(view.look, facing, frame, blink && !view.moving && showsFace(facing), pose);
       const dancing = p.emote === 1 && pose === 'stand' && !view.moving;
       // A dancer sways and turns from side to side.
       const turn = dancing ? (Math.floor(now / 340) % 2 === 0 ? 1 : -1) : view.flip;
-      view.body.scale.set((pose === 'stand' ? turn : 1) * BODY_SCALE, BODY_SCALE);
+      view.body.scale.set((pose === 'lie' ? lieFlip : turn) * BODY_SCALE, BODY_SCALE);
       view.body.rotation = dancing && !reduceMotion ? Math.sin(now / 170) * 0.14 : 0;
       // The avatar glides at a constant pace: no bounce while walking.
       const bob = dancing && !reduceMotion ? Math.abs(Math.sin(now / 170)) * 5 : 0;
       const breath = !view.moving && !reduceMotion && Math.sin(now / 520 + view.phase) > 0.55 ? 1 : 0;
       if (pose === 'lie') {
         view.body.anchor.set(0.5, 0.5);
-        view.body.position.set(17 * PX, -12 * PX);
+        view.body.position.set(17 * PX * lieFlip, -12 * PX);
       } else {
         view.body.anchor.set(0.5, 1);
-        // Seated, the avatar sits a little forward of the middle of the seat.
-        view.body.position.set(pose === 'sit' ? 3 * PX : 0, (pose === 'sit' ? 4 : 10) * PX - Math.round(bob) - (pose === 'stand' ? breath * PX : 0));
+        // Seated, the avatar sits a little forward of the middle of the seat, toward the way it faces.
+        view.body.position.set(pose === 'sit' ? 3 * PX * view.flip : 0, (pose === 'sit' ? 4 : 10) * PX - Math.round(bob) - (pose === 'stand' ? breath * PX : 0));
       }
       // What the avatar holds: in front, on the side of the hand that faces the viewer; a sleeper holds nothing.
       if (view.handId !== p.hand) {

@@ -12,6 +12,7 @@ const views: [Facing, Frame, Pose][] = [
   ['back34', 0, 'stand'],
   ['back', 0, 'stand'],
   ['front34', 0, 'sit'],
+  ['back34', 0, 'sit'],
   ['front', 0, 'lie'],
 ];
 const looks = ['alice', 'bob', 'chloe', 'dmitri', 'emma', 'farid'].map(lookFor);

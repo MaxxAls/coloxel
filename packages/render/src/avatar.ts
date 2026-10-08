@@ -829,6 +829,8 @@ function drawHead(p: Painter, look: Look, pal: Palette, facing: Facing, blink: b
 // ----- Body -----------------------------------------------------------------------
 
 const SHOE_SOLE: RGB = [244, 239, 230];
+/** How far forward the knees of a seated player reach, in units of the sketch. */
+const SIT_REACH = 3;
 
 function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, seated: boolean): void {
   const covers = look.bottom === 0 || look.bottom === 2 || look.bottom === 4 || look.bottom === 6 || look.bottom === 7;
@@ -836,18 +838,26 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
   const bottom = pal.bottom;
   const shoeTop = seated ? 47.4 : 49 + off;
   const shoeBot = seated ? 52.4 : 54.6 + off;
-  const segs: [number, number][] = seated ? [[38.5, 44.4], [43.4, 48.6]] : [[39 + off * 0.5, 50 + off]];
+  // Seated, the thigh goes forward (toward the way the player faces, +x before the mirror) and the shin hangs from
+  // the knee: the shin and the shoe are drawn SIT_REACH further forward than the hip.
+  const segs: [number, number][] = seated ? [[38.5, 42.8], [42.2, 48.6]] : [[39 + off * 0.5, 50 + off]];
   const clothEnd = covers ? 99 : look.bottom === 5 ? (seated ? 46.4 : 47.8 + off) : seated ? 44.4 : 43.6 + off;
 
-  for (const [a, b] of segs) {
+  segs.forEach(([a, b], k) => {
+    const shin = seated && k === 1;
+    const thigh = seated && k === 0;
+    if (shin) p.ox += SIT_REACH;
+    const reach = thigh ? SIT_REACH : 0;
     const clothB = Math.min(b, clothEnd);
     if (!skirt && clothB > a) {
-      p.block(x0, a, x0 + 5.4, clothB, bottom, 1.2);
-      p.block(x0 + 0.3, a, x0 + 5.1, Math.min(clothB, a + 4), tone(bottom, 0.08), 0.9);
+      p.block(x0, a, x0 + 5.4 + reach, clothB, bottom, 1.2);
+      p.block(x0 + 0.3, a, x0 + 5.1 + reach, Math.min(clothB, a + (thigh ? 1.4 : 4)), tone(bottom, 0.08), 0.9);
     }
     const skinA = skirt ? a : Math.max(a, clothEnd - 0.4);
-    if (b > skinA && (skirt || clothEnd < b)) p.block(x0 + 0.6, skinA, x0 + 4.8, b, pal.skin, 1);
-  }
+    if (b > skinA && (skirt || clothEnd < b)) p.block(x0 + 0.6, skinA, x0 + 4.8 + reach, b, pal.skin, 1);
+    if (shin) p.ox -= SIT_REACH;
+  });
+  if (seated) p.ox += SIT_REACH;
   if (!skirt && !covers) p.block(x0, clothEnd - 1, x0 + 5.4, clothEnd + 0.2, tone(bottom, -0.22), 0.4, false);
   if (look.bottom === 2) {
     // A stripe down the outside of each leg, and cuffs.
@@ -927,6 +937,7 @@ function drawLeg(p: Painter, look: Look, pal: Palette, x0: number, off: number, 
     p.set(x0 + 4.4, shoeTop + 1, WHITE);
   }
   p.rigidAt = null;
+  if (seated) p.ox -= SIT_REACH;
 }
 
 function drawArms(p: Painter, look: Look, pal: Palette, frame: Frame): void {
@@ -1282,8 +1293,9 @@ function drawBody(p: Painter, look: Look, pal: Palette, facing: Facing, frame: F
   drawBehind(p, look, pal, frame);
   p.spreadX = spread;
 
-  // A leg is drawn planted, then lifted as a whole: the step does not stretch with the warp.
-  for (const [x0, off] of seated ? ([[9.3, 0], [15.3, 0]] as const) : ([[9.3 + o.legLx, o.legL], [15.3 + o.legRx, o.legR]] as const)) {
+  // A leg is drawn planted, then lifted as a whole: the step does not stretch with the warp. Seated and seen from
+  // behind, the legs are hidden by the body and the seat.
+  if (!(seated && !showsFace(facing))) for (const [x0, off] of seated ? ([[9.3, 0], [15.3, 0]] as const) : ([[9.3 + o.legLx, o.legL], [15.3 + o.legRx, o.legR]] as const)) {
     p.postY = off;
     drawLeg(p, look, pal, x0, 0, seated);
     p.postY = 0;
