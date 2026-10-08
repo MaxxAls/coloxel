@@ -65,9 +65,14 @@ export interface PixPart {
 
 export type Part = BoxPart | CylPart | SpherePart | CirclePart | QuadPart | PixPart | GlowPart;
 
+/** Footprint on the floor, in tiles: [along x (i), along y (j)]. One tile unless the recipe says otherwise. */
+export type Size = [number, number];
+
 export interface Recipe {
   name: string;
   parts: Part[];
+  /** Missing means 1 x 1. A bigger piece covers w x h tiles; the recipe origin stays the centre of its first tile. */
+  size?: Size;
 }
 
 export interface Sprite {
@@ -77,6 +82,9 @@ export interface Sprite {
   data: Uint8ClampedArray;
   /** 1 where the sprite is opaque (outline included), for hit testing. */
   mask: Uint8Array;
+  /** Pixel of the sprite that sits on the centre of the first floor tile. */
+  ax: number;
+  ay: number;
 }
 
 /**
@@ -104,3 +112,47 @@ export const LIMITS = {
   maxParts: 200,
   maxQuadPoints: 6,
 } as const;
+
+/** Biggest footprint a piece may cover, per side. */
+export const MAX_SIDE = 3;
+/** Floor span of one tile, in recipe units. */
+export const TILE_UNITS = 16;
+
+/** Clean a size from untrusted data: integers from 1 to MAX_SIDE, 1 x 1 when anything is off. */
+export function normalizeSize(v: unknown): Size {
+  if (!Array.isArray(v) || v.length < 2) return [1, 1];
+  const side = (n: unknown) => {
+    const k = Math.round(Number(n));
+    return Number.isFinite(k) ? Math.max(1, Math.min(MAX_SIDE, k)) : 1;
+  };
+  return [side(v[0]), side(v[1])];
+}
+
+/** Size of a piece after quarter turns: an odd count swaps the sides. */
+export function rotatedSize(size: Size, turns: number): Size {
+  return Math.abs(Math.trunc(turns)) % 2 === 1 ? [size[1], size[0]] : [size[0], size[1]];
+}
+
+/** Range of recipe coordinates a piece of this size may use. */
+export function boundsFor(size: Size) {
+  const [w, h] = size;
+  const taller = Math.max(w, h) - 1;
+  return {
+    xMin: -LIMITS.xy, xMax: TILE_UNITS * (w - 1) + LIMITS.xy,
+    yMin: -LIMITS.xy, yMax: TILE_UNITS * (h - 1) + LIMITS.xy,
+    zMax: LIMITS.z + 24 * taller,
+  };
+}
+
+/** Pixel frame of a sprite for a footprint: size of the image and where the first tile's centre sits. */
+export function frameFor(size: Size): { width: number; height: number; ax: number; ay: number } {
+  const [w, h] = size;
+  const extraZ = 24 * (Math.max(w, h) - 1);
+  return {
+    width: SCALE * (96 + TILE_UNITS * (w + h - 2)),
+    height: SCALE * (112 + 8 * (w + h - 2) + extraZ),
+    ax: SCALE * (48 + TILE_UNITS * (h - 1)),
+    ay: SCALE * (88 + extraZ),
+  };
+}
+

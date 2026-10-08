@@ -1,7 +1,9 @@
 import {
-  ANCHOR_X, ANCHOR_Y, LIMITS, SCALE, SPRITE_H, SPRITE_W,
-  isTexture, type Part, type Sprite, type Texture,
+  ANCHOR_X, ANCHOR_Y, LIMITS, SCALE, TILE_UNITS, boundsFor, frameFor, isTexture, normalizeSize, rotatedSize,
+  type Part, type Recipe, type Size, type Sprite, type Texture,
 } from './types';
+
+type Frame = ReturnType<typeof frameFor>;
 
 type RGB = [number, number, number];
 
@@ -39,8 +41,8 @@ function num(v: unknown, lo: number, hi: number, d: number): number {
 }
 
 /** Screen position of a recipe point inside the sprite. */
-export function project(x: number, y: number, z: number): [number, number] {
-  return [ANCHOR_X + SCALE * (x - y), ANCHOR_Y + SCALE * ((x + y) / 2 - z)];
+export function project(x: number, y: number, z: number, frame?: Pick<Frame, 'ax' | 'ay'>): [number, number] {
+  return [(frame?.ax ?? ANCHOR_X) + SCALE * (x - y), (frame?.ay ?? ANCHOR_Y) + SCALE * ((x + y) / 2 - z)];
 }
 
 /** Deterministic noise in [0, 1): the same pixel always gets the same grain, on every machine. */
@@ -163,8 +165,8 @@ function texture(t: Texture, u: number, v: number, px: number, py: number): numb
 }
 
 /** Face coordinates (u, v) of a sprite pixel, for each kind of box face. */
-function faceUV(face: 'r' | 'l' | 't', px: number, py: number, x1: number, y1: number, z1: number): [number, number] {
-  const a = (px + 0.5 - ANCHOR_X) / SCALE, b = (py + 0.5 - ANCHOR_Y) / SCALE;
+function faceUV(face: 'r' | 'l' | 't', frame: Frame, px: number, py: number, x1: number, y1: number, z1: number): [number, number] {
+  const a = (px + 0.5 - frame.ax) / SCALE, b = (py + 0.5 - frame.ay) / SCALE;
   if (face === 'r') {
     const y = x1 - a;
     return [y, (x1 + y) / 2 - b];
@@ -179,11 +181,21 @@ function faceUV(face: 'r' | 'l' | 't', px: number, py: number, x1: number, y1: n
 type Paint = RGB | ((x: number, y: number) => RGB);
 
 class Canvas {
-  readonly data = new Uint8ClampedArray(SPRITE_W * SPRITE_H * 4);
+  readonly data: Uint8ClampedArray;
+  /** Footprint this canvas was made for: it decides how far a part may reach. */
+  size: Size = [1, 1];
+  readonly width: number;
+  readonly height: number;
+
+  constructor(readonly frame: Frame) {
+    this.width = frame.width;
+    this.height = frame.height;
+    this.data = new Uint8ClampedArray(this.width * this.height * 4);
+  }
 
   put(x: number, y: number, c: RGB): void {
-    if (x < 0 || y < 0 || x >= SPRITE_W || y >= SPRITE_H) return;
-    const i = (y * SPRITE_W + x) * 4;
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+    const i = (y * this.width + x) * 4;
     this.data[i] = c[0]; this.data[i + 1] = c[1]; this.data[i + 2] = c[2]; this.data[i + 3] = 255;
   }
 
@@ -193,8 +205,8 @@ class Canvas {
 
   rect(x: number, y: number, w: number, h: number, p: Paint): void {
     const x0 = Math.max(0, Math.round(x)), y0 = Math.max(0, Math.round(y));
-    const x1 = Math.min(SPRITE_W, Math.round(x) + Math.round(w));
-    const y1 = Math.min(SPRITE_H, Math.round(y) + Math.round(h));
+    const x1 = Math.min(this.width, Math.round(x) + Math.round(w));
+    const y1 = Math.min(this.height, Math.round(y) + Math.round(h));
     for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) this.paint(xx, yy, p);
   }
 
@@ -208,8 +220,8 @@ class Canvas {
       }
       return k;
     };
-    const yMin = Math.max(0, Math.floor(Math.min(...ys))), yMax = Math.min(SPRITE_H - 1, Math.ceil(Math.max(...ys)));
-    const xMin = Math.max(0, Math.floor(Math.min(...xs))), xMax = Math.min(SPRITE_W - 1, Math.ceil(Math.max(...xs)));
+    const yMin = Math.max(0, Math.floor(Math.min(...ys))), yMax = Math.min(this.height - 1, Math.ceil(Math.max(...ys)));
+    const xMin = Math.max(0, Math.floor(Math.min(...xs))), xMax = Math.min(this.width - 1, Math.ceil(Math.max(...xs)));
     for (let y = yMin; y <= yMax; y++) {
       for (let x = xMin; x <= xMax; x++) if (inside(x + 0.5, y + 0.5)) this.paint(x, y, p);
     }
@@ -233,14 +245,14 @@ class Canvas {
 
   /** Light that brightens what is already drawn and leaves a faint halo (alpha stays under the silhouette threshold). */
   glow(cx: number, cy: number, r: number, c: RGB, strength: number): void {
-    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(SPRITE_H - 1, Math.ceil(cy + r)); y++) {
-      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(SPRITE_W - 1, Math.ceil(cx + r)); x++) {
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(this.height - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(this.width - 1, Math.ceil(cx + r)); x++) {
         const d = Math.hypot(x + 0.5 - cx, (y + 0.5 - cy) * 1.15) / r;
         if (d >= 1) continue;
         // Four pixel-art bands instead of a smooth fade.
         const k = Math.floor((1 - d) * (1 - d) * strength * 4 + bayer(x, y) * 0.9) / 4;
         if (k <= 0) continue;
-        const i = (y * SPRITE_W + x) * 4;
+        const i = (y * this.width + x) * 4;
         const alpha = this.data[i + 3]!;
         if (alpha > 40) {
           for (let ch = 0; ch < 3; ch++) {
@@ -285,12 +297,13 @@ function addFootprint(f: Footprint, x0: number, x1: number, y0: number, y1: numb
 }
 
 function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
-  const L = -LIMITS.xy, R = LIMITS.xy, Z = LIMITS.z;
-  const P = project;
+  const B = boundsFor(cv.size);
+  const XL = B.xMin, XR = B.xMax, YL = B.yMin, YR = B.yMax, Z = B.zMax;
+  const P = (x: number, y: number, z: number) => project(x, y, z, cv.frame);
   switch (p.t) {
     case 'box': {
-      const x0 = num(p.x0, L, R, -4), x1 = num(p.x1, L, R, 4);
-      const y0 = num(p.y0, L, R, -4), y1 = num(p.y1, L, R, 4);
+      const x0 = num(p.x0, XL, XR, -4), x1 = num(p.x1, XL, XR, 4);
+      const y0 = num(p.y0, YL, YR, -4), y1 = num(p.y1, YL, YR, 4);
       const z0 = num(p.z0, 0, Z, 0), z1 = num(p.z1, 0, Z, 4);
       if (z0 <= 20) addFootprint(fp, x0, x1, y0, y1, z1);
       const base = rgb(hex(p.c ?? p.top));
@@ -307,7 +320,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
         cv.poly(pts, (x, y) => {
           let f = 0.07 - 0.17 * ((y - yTop) / span) + grain(x, y);
           if (tx) {
-            const [u, v] = faceUV(face, x, y, x1, y1, z1);
+            const [u, v] = faceUV(face, cv.frame, x, y, x1, y1, z1);
             f += texture(tx, u, v, x, y);
           }
           return tone(color, f);
@@ -320,7 +333,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
         (x, y) => {
           let f = grain(x, y, 0.06);
           if (tx) {
-            const [u, v] = faceUV('t', x, y, x1, y1, z1);
+            const [u, v] = faceUV('t', cv.frame, x, y, x1, y1, z1);
             f += texture(tx, u, v, x, y);
           }
           return tone(top, f);
@@ -341,7 +354,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
     case 'quad': {
       if (!Array.isArray(p.pts) || p.pts.length < 3) return;
       const pts = p.pts.slice(0, LIMITS.maxQuadPoints)
-        .map((a) => P(num(a?.[0], L, R, 0), num(a?.[1], L, R, 0), num(a?.[2], 0, Z, 0)));
+        .map((a) => P(num(a?.[0], XL, XR, 0), num(a?.[1], YL, YR, 0), num(a?.[2], 0, Z, 0)));
       const c = rgb(hex(p.c));
       const ys = pts.map((q) => q[1]);
       const yTop = Math.min(...ys), span = Math.max(1, Math.max(...ys) - yTop);
@@ -352,7 +365,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
     }
     case 'cyl': {
       const r = num(p.r, 0.5, 12, 3);
-      const cxu = num(p.x, L, R, 0), cyu = num(p.y, L, R, 0);
+      const cxu = num(p.x, XL, XR, 0), cyu = num(p.y, YL, YR, 0);
       const z0 = num(p.z0, 0, Z, 0), z1 = num(p.z1, 0, Z, 6);
       if (z0 <= 20) addFootprint(fp, cxu - r, cxu + r, cyu - r, cyu + r, z1);
       const [cx, cb] = P(cxu, cyu, z0);
@@ -390,7 +403,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
     }
     case 'sphere': {
       const r = num(p.r, 0.5, 14, 3) * SCALE;
-      const sx = num(p.x, L, R, 0), sy = num(p.y, L, R, 0), sz = num(p.z, 0, Z, 4);
+      const sx = num(p.x, XL, XR, 0), sy = num(p.y, YL, YR, 0), sz = num(p.z, 0, Z, 4);
       if (sz - r / SCALE <= 12) addFootprint(fp, sx - r / SCALE * 0.9, sx + r / SCALE * 0.9, sy - r / SCALE * 0.9, sy + r / SCALE * 0.9, sz + r / SCALE);
       const [cx, cy] = P(sx, sy, sz);
       const c = rgb(hex(p.c));
@@ -414,7 +427,7 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
     }
     case 'circle': {
       const r = num(p.r, 0.5, 12, 2) * SCALE;
-      const [cx, cy] = P(num(p.x, L, R, 0), num(p.y, L, R, 0), num(p.z, 0, Z, 2));
+      const [cx, cy] = P(num(p.x, XL, XR, 0), num(p.y, YL, YR, 0), num(p.z, 0, Z, 2));
       const c = rgb(hex(p.c));
       cv.ellipse(cx, cy, r, r, (x, y) => {
         const a = (x + 0.5 - cx) / r, b = (y + 0.5 - cy) / r;
@@ -424,14 +437,14 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
       return;
     }
     case 'pix': {
-      const [x, y] = P(num(p.x, L, R, 0), num(p.y, L, R, 0), num(p.z, 0, Z, 0));
+      const [x, y] = P(num(p.x, XL, XR, 0), num(p.y, YL, YR, 0), num(p.z, 0, Z, 0));
       const w = Math.max(1, Math.round(num(p.w, 0.5, 8, 1) * SCALE));
       const h = Math.max(1, Math.round(num(p.h, 0.5, 8, 1) * SCALE));
       cv.rect(x, y, w, h, rgb(hex(p.c)));
       return;
     }
     case 'glow': {
-      const [x, y] = P(num(p.x, L, R, 0), num(p.y, L, R, 0), num(p.z, 0, Z, 0));
+      const [x, y] = P(num(p.x, XL, XR, 0), num(p.y, YL, YR, 0), num(p.z, 0, Z, 0));
       cv.glow(x, y, num(p.r, 1, 30, 8) * SCALE, rgb(hex(p.c)), num(p.a, 0.1, 1, 0.6));
       return;
     }
@@ -441,18 +454,18 @@ function drawPart(cv: Canvas, p: Part, fp: Footprint): void {
 }
 
 /** A soft contact shadow on the floor under the footprint, dithered to stay pixel art. */
-function castShadow(d: Uint8ClampedArray, fp: Footprint): void {
+function castShadow(d: Uint8ClampedArray, fp: Footprint, frame: Frame): void {
   if (!fp.any) return;
   // Light comes from the upper left: the shadow leans toward the viewer's right, further for tall objects.
   const lean = 0.8 + Math.min(4, fp.height / 12);
   const x0 = fp.x0 + lean * 0.6, x1 = fp.x1 + lean, y0 = fp.y0 + lean * 0.6, y1 = fp.y1 + lean;
   const soft = 2.6;
-  for (let py = 0; py < SPRITE_H; py++) {
-    for (let px = 0; px < SPRITE_W; px++) {
-      const i = (py * SPRITE_W + px) * 4;
+  for (let py = 0; py < frame.height; py++) {
+    for (let px = 0; px < frame.width; px++) {
+      const i = (py * frame.width + px) * 4;
       if (d[i + 3]! !== 0) continue;
       // Back from the pixel to the floor point beneath it.
-      const dx = (px + 0.5 - ANCHOR_X) / SCALE, dy = (py + 0.5 - ANCHOR_Y) / SCALE;
+      const dx = (px + 0.5 - frame.ax) / SCALE, dy = (py + 0.5 - frame.ay) / SCALE;
       const fx = dy + dx / 2, fy = dy - dx / 2;
       const ox = fx < x0 ? x0 - fx : fx > x1 ? fx - x1 : 0;
       const oy = fy < y0 ? y0 - fy : fy > y1 ? fy - y1 : 0;
@@ -470,25 +483,29 @@ function castShadow(d: Uint8ClampedArray, fp: Footprint): void {
  * skipped or clamped, so a bad model answer can at worst look wrong.
  * Parts are painted in order (back to front is the recipe's job).
  */
-export function renderSprite(parts: readonly unknown[]): Sprite {
-  const cv = new Canvas();
+export function renderSprite(parts: readonly unknown[], size?: Size): Sprite {
+  const footprint = normalizeSize(size);
+  const frame = frameFor(footprint);
+  const cv = new Canvas(frame);
+  cv.size = footprint;
   const fp: Footprint = { x0: 0, x1: 0, y0: 0, y1: 0, height: 0, any: false };
   for (const p of (Array.isArray(parts) ? parts : []).slice(0, LIMITS.maxParts)) {
     if (p && typeof p === 'object' && 't' in p) drawPart(cv, p as Part, fp);
   }
 
-  const d = cv.data, n = SPRITE_W * SPRITE_H;
+  const W = frame.width, H = frame.height;
+  const d = cv.data, n = W * H;
   const solid = new Uint8Array(n);
   for (let i = 0; i < n; i++) solid[i] = d[i * 4 + 3]! > 40 ? 1 : 0;
 
   const [or, og, ob] = OUTLINE;
-  for (let y = 0; y < SPRITE_H; y++) {
-    for (let x = 0; x < SPRITE_W; x++) {
-      const i = y * SPRITE_W + x;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
       if (solid[i]) continue;
       const touches =
-        (x > 0 && solid[i - 1]) || (x < SPRITE_W - 1 && solid[i + 1]) ||
-        (y > 0 && solid[i - SPRITE_W]) || (y < SPRITE_H - 1 && solid[i + SPRITE_W]);
+        (x > 0 && solid[i - 1]) || (x < W - 1 && solid[i + 1]) ||
+        (y > 0 && solid[i - W]) || (y < H - 1 && solid[i + W]);
       if (touches) { d[i * 4] = or; d[i * 4 + 1] = og; d[i * 4 + 2] = ob; d[i * 4 + 3] = 255; }
     }
   }
@@ -496,8 +513,14 @@ export function renderSprite(parts: readonly unknown[]): Sprite {
   // What can be clicked is the object and its outline, not its shadow.
   const mask = new Uint8Array(n);
   for (let i = 0; i < n; i++) mask[i] = d[i * 4 + 3]! > 40 ? 1 : 0;
-  castShadow(d, fp);
-  return { width: SPRITE_W, height: SPRITE_H, data: d, mask };
+  castShadow(d, fp, frame);
+  return { width: W, height: H, data: d, mask, ax: frame.ax, ay: frame.ay };
+}
+
+/** Draw a whole recipe turned by quarter turns: the parts are rotated around the middle of its footprint, then drawn on the right frame. */
+export function renderRecipe(recipe: Pick<Recipe, 'parts' | 'size'>, turns = 0): Sprite {
+  const size = normalizeSize(recipe.size);
+  return renderSprite(rotateParts(recipe.parts, turns, size), rotatedSize(size, turns));
 }
 
 /** Stable FNV-1a hash of a sprite's pixels, to check client and server agree. */
@@ -515,13 +538,18 @@ export function spriteHash(s: Sprite): string {
  * so a piece of furniture can face another way. Flat screen-facing parts (circles,
  * pixels) only move: they keep facing the player. Pure and total: unknown parts pass through.
  */
-export function rotateParts<P extends { t?: unknown }>(parts: readonly P[], turns: number): P[] {
+export function rotateParts<P extends { t?: unknown }>(parts: readonly P[], turns: number, size?: Size): P[] {
   const n = ((Math.trunc(turns) % 4) + 4) % 4;
   if (n === 0) return [...parts];
+  // Turn around the middle of the footprint, then slide into the rotated footprint (sides swap on an odd count).
+  const [w, h] = normalizeSize(size);
+  const [w2, h2] = rotatedSize([w, h], n);
+  const cx = (TILE_UNITS * (w - 1)) / 2, cy = (TILE_UNITS * (h - 1)) / 2;
+  const nx = (TILE_UNITS * (w2 - 1)) / 2, ny = (TILE_UNITS * (h2 - 1)) / 2;
   const spin = (x: number, y: number): [number, number] => {
-    let cx = x, cy = y;
-    for (let k = 0; k < n; k++) [cx, cy] = [-cy, cx];
-    return [cx, cy];
+    let rx = x - cx, ry = y - cy;
+    for (let k = 0; k < n; k++) [rx, ry] = [-ry, rx];
+    return [rx + nx, ry + ny];
   };
   const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   return parts.map((raw) => {

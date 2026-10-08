@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANCHOR_X, ANCHOR_Y, SCALE, SEEDS, SPRITE_H, SPRITE_W, project, renderSprite, rotateParts, spriteHash } from '../src';
+import { type Recipe, frameFor, normalizeSize, renderRecipe, rotatedSize, ANCHOR_X, ANCHOR_Y, SCALE, SEEDS, SPRITE_H, SPRITE_W, project, renderSprite, rotateParts, spriteHash } from '../src';
 
 const opaque = (d: Uint8ClampedArray) => {
   let n = 0;
@@ -155,5 +155,39 @@ describe('rotateParts', () => {
     const plain = renderSprite(body), lit = renderSprite([...body, { t: 'glow', x: 0, y: 0, z: 6, r: 14, c: '#ffd070' }]);
     expect(spriteHash(lit)).not.toBe(spriteHash(plain));
     expect(lit.mask.reduce((n, v) => n + v, 0)).toBe(plain.mask.reduce((n, v) => n + v, 0));
+  });
+
+  it('draws a multi-tile piece on a bigger frame, keeping the first tile centre under the anchor', () => {
+    expect(frameFor([1, 1])).toMatchObject({ width: SPRITE_W, height: SPRITE_H, ax: ANCHOR_X, ay: ANCHOR_Y });
+    const sofa: Recipe = { name: 'Sofa', parts: [{ t: 'box', x0: -6, x1: 22, y0: -6, y1: 6, z0: 0, z1: 10, c: '#a04040' }], size: [2, 1] };
+    const sp = renderRecipe(sofa);
+    const f = frameFor([2, 1]);
+    expect([sp.width, sp.height, sp.ax, sp.ay]).toEqual([f.width, f.height, f.ax, f.ay]);
+    expect(sp.width).toBeGreaterThan(SPRITE_W);
+    // The far end of the sofa (x = 22) would be clipped on a one tile frame: here it is drawn.
+    const [fx] = project(22, 0, 5, f);
+    expect(sp.mask[Math.round(project(22, 0, 5, f)[1]) * sp.width + Math.round(fx) - 2]).toBe(1);
+  });
+
+  it('turns a multi-tile piece around its footprint centre and swaps its sides', () => {
+    expect(rotatedSize([2, 1], 1)).toEqual([1, 2]);
+    expect(rotatedSize([2, 1], 2)).toEqual([2, 1]);
+    expect(normalizeSize([9, 0])).toEqual([3, 1]);
+    expect(normalizeSize('x')).toEqual([1, 1]);
+    const bed = [{ t: 'box', x0: -6, x1: 22, y0: -6, y1: 6, z0: 0, z1: 5, c: '#4060a0' }];
+    const [turned] = rotateParts(bed, 1, [2, 1]) as { x0: number; x1: number; y0: number; y1: number }[];
+    // A piece 2 tiles long along x now lies 2 tiles long along y, inside the 1 x 2 footprint.
+    expect(turned!.y1 - turned!.y0).toBe(28);
+    expect(turned!.x0).toBeGreaterThanOrEqual(-8);
+    expect(turned!.x1).toBeLessThanOrEqual(8);
+    expect(turned!.y0).toBeGreaterThanOrEqual(-8);
+    expect(turned!.y1).toBeLessThanOrEqual(24);
+    // Four quarter turns bring it home.
+    let again = bed as never[];
+    let size: [number, number] = [2, 1];
+    for (let k = 0; k < 4; k++) { again = rotateParts(again, 1, size) as never[]; size = rotatedSize(size, 1); }
+    expect(again).toEqual(bed);
+    // A one tile piece turns exactly as before.
+    expect(rotateParts([{ t: 'box', x0: 1, x1: 3, y0: 2, y1: 4 }], 1)).toEqual([{ t: 'box', x0: -4, x1: -2, y0: 1, y1: 3 }]);
   });
 });

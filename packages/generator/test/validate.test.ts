@@ -98,4 +98,23 @@ describe('prompt helpers', () => {
     expect((r.recipe.parts[1] as { tex?: string }).tex).toBeUndefined();
     expect(r.recipe.parts[2]).toMatchObject({ t: 'glow', r: 30, a: 1 });
   });
+
+  it('reads the footprint and widens the bounds with it', () => {
+    const big = validateRecipe({
+      nom: 'Grand lit',
+      size: [2, 9],
+      parts: [
+        { t: 'box', x0: -6, x1: 90, y0: -6, y1: 6, z0: 0, z1: 5, c: '#4060a0' },
+        { t: 'box', x0: 0, x1: 4, y0: 0, y1: 4, z0: 0, z1: 5, c: '#4060a0' },
+      ],
+    });
+    expect(big.ok).toBe(true);
+    if (!big.ok) return;
+    expect(big.recipe.size).toEqual([2, 3]);
+    // x may reach 16 * (2 - 1) + 14 = 30 on two tiles, and no further.
+    expect(big.recipe.parts[0]).toMatchObject({ x1: 30 });
+    const plain = validateRecipe({ nom: 'Chaise', parts: big.recipe.parts });
+    expect(plain.ok && plain.recipe.size).toBeFalsy();
+    if (plain.ok) expect(plain.recipe.parts[0]).toMatchObject({ x1: 14 });
+  });
 });

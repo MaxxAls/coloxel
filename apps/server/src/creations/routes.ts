@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
 import { buildPrompt, extractJson, validateRecipe } from '@coloxel/generator';
-import { renderSprite, rotateParts, type Recipe } from '@coloxel/render';
+import { renderRecipe, type Recipe } from '@coloxel/render';
 import { findViewableItemRecipe } from '../apartments/access';
 import { containsBannedWord } from '../auth/rules';
 import { NO_GUARDS, type RateGuards } from '../rate-limit';
@@ -148,7 +148,7 @@ export function registerCreationRoutes(
     const cacheKey = `${id}:${((turns % 4) + 4) % 4}`;
     let png = pngCache.get(cacheKey);
     if (!png) {
-      png = spriteToPng(renderSprite(rotateParts(recipe.parts, turns)));
+      png = spriteToPng(renderRecipe(recipe, turns));
       if (pngCache.size >= PNG_CACHE_MAX) pngCache.delete(pngCache.keys().next().value!);
       pngCache.set(cacheKey, png);
     }

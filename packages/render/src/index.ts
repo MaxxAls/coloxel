@@ -1,5 +1,5 @@
 export * from './types';
-export { renderSprite, rotateParts, spriteHash, shade, project, isHex } from './render';
+export { renderRecipe, renderSprite, rotateParts, spriteHash, shade, project, isHex } from './render';
 export { SEEDS } from './seeds';
 export {
   CATALOGUE,
