@@ -239,6 +239,6 @@ export function bigPieces(): BigPiece[] {
     { key: 'bibliotheque', category: 'storage', recipe: bibliotheque, extras: { price: 150 } },
     { key: 'fontaine', category: 'decor', recipe: fontaine, extras: { price: 240, frames: [1, 2, 3].map(fountainFrame), frameMs: 170 } },
     { key: 'grandchene', category: 'decor', recipe: grandArbre, extras: { price: 200, anim: 'sway' } },
-    { key: 'banquet', category: 'table', recipe: tableBanquet, extras: { price: 140 } },
+    { key: 'banquet', category: 'table', recipe: tableBanquet, extras: { price: 140, surface: 9 } },
   ];
 }

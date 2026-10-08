@@ -76,7 +76,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect(await inventory(alice)).toEqual([expect.objectContaining({ id: a, placement: null })]);
     expect((await place(alice, { itemId: a, i: 3, j: 4 })).statusCode).toBe(200);
     const [item] = await inventory(alice);
-    expect(item!.placement).toEqual({ i: 3, j: 4, rot: 0, w: 1, h: 1 });
+    expect(item!.placement).toEqual({ i: 3, j: 4, rot: 0, w: 1, h: 1, z: 0 });
     expect(item).toMatchObject({ serial: 1, editionNumber: 1, editionSize: 1, creator: 'alice' });
   });
 
@@ -86,7 +86,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
     expect((await place(sid, { itemId: id, i: 0, j: 0 })).statusCode).toBe(200);
     expect((await place(sid, { itemId: id, i: 7, j: 7 })).statusCode).toBe(200);
-    expect((await inventory(sid))[0]!.placement).toEqual({ i: 7, j: 7, rot: 0, w: 1, h: 1 });
+    expect((await inventory(sid))[0]!.placement).toEqual({ i: 7, j: 7, rot: 0, w: 1, h: 1, z: 0 });
   });
 
   it('refuses an occupied cell', async () => {
@@ -119,7 +119,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     await place(owner, { itemId: id, i: 1, j: 1 });
     const del = await app.inject({ method: 'DELETE', url: `/api/placements/${id}`, cookies: as(thief) });
     expect(del.statusCode).toBe(404);
-    expect((await inventory(owner))[0]!.placement).toEqual({ i: 1, j: 1, rot: 0, w: 1, h: 1 });
+    expect((await inventory(owner))[0]!.placement).toEqual({ i: 1, j: 1, rot: 0, w: 1, h: 1, z: 0 });
   });
 
   it('refuses malformed placements', async () => {
@@ -167,6 +167,37 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
     expect((await place(sid, { itemId: big, i: 5, j: 8 })).statusCode).toBe(200);
     // Turning it in place must not push it off the floor.
     expect((await place(sid, { itemId: big, i: 5, j: 8, rot: 1 })).statusCode).toBe(400);
+  });
+
+  it('puts small things on a surface, one at a time, and puts them away with it', async () => {
+    const sid = await signUp('stacker');
+    const take = async (key: string) =>
+      (await app.inject({ method: 'POST', url: '/api/furniture', payload: { key }, cookies: as(sid) })).json().furniture.id as string;
+    const table = await take('table');
+    expect((await place(sid, { itemId: table, i: 3, j: 3 })).statusCode).toBe(200);
+    // A creation on the table stands as high as its top.
+    const vase = await createItem(sid, 'un vase');
+    const onTable = await place(sid, { itemId: vase, i: 3, j: 3 });
+    expect(onTable.statusCode).toBe(200);
+    expect(onTable.json().placement.z).toBe(12);
+    // One thing at a time on it, and nothing one sits on.
+    const lamp = await createItem(sid, 'une lampe');
+    const second = await place(sid, { itemId: lamp, i: 3, j: 3 });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error).toMatch(/déjà quelque chose dessus/);
+    const chair = await take('chaise');
+    expect((await place(sid, { itemId: chair, i: 3, j: 3 })).json().error).toMatch(/ne se pose pas/);
+    // A creation is no surface.
+    expect((await place(sid, { itemId: lamp, i: 4, j: 4 })).statusCode).toBe(200);
+    const book = await createItem(sid, 'un livre');
+    expect((await place(sid, { itemId: book, i: 4, j: 4 })).statusCode).toBe(409);
+    // The table moves: the vase stays behind, back in the inventory.
+    expect((await place(sid, { itemId: table, i: 6, j: 6 })).statusCode).toBe(200);
+    expect((await inventory(sid)).find((it) => it.id === vase)!.placement).toBeNull();
+    // On it again, then the table goes away, and the vase with it.
+    expect((await place(sid, { itemId: vase, i: 6, j: 6 })).json().placement.z).toBe(12);
+    expect((await app.inject({ method: 'DELETE', url: `/api/placements/${table}`, cookies: as(sid) })).statusCode).toBe(204);
+    expect((await inventory(sid)).find((it) => it.id === vase)!.placement).toBeNull();
   });
 
   it('removes a placement and frees the cell', async () => {
@@ -239,7 +270,7 @@ describe.skipIf(!available)('inventory and placements (PostgreSQL)', () => {
           placement: { i: number; j: number; rot: number };
         }[];
       const before = await decor();
-      expect(before).toEqual([expect.objectContaining({ id: ownerItem, placement: { i: 2, j: 2, rot: 0, w: 1, h: 1 } })]);
+      expect(before).toEqual([expect.objectContaining({ id: ownerItem, placement: { i: 2, j: 2, rot: 0, w: 1, h: 1, z: 0 } })]);
 
       // Moving the owner's object, putting it away, adding to the owner's apartment: all refused.
       expect((await place(visitor, { itemId: ownerItem, i: 5, j: 5 })).statusCode).toBe(404);

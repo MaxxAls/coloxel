@@ -68,6 +68,7 @@ interface PlacedRow {
   rot: number;
   w: number;
   h: number;
+  z: number;
 }
 
 export function registerBuildingRoutes(
@@ -126,7 +127,7 @@ export function registerBuildingRoutes(
       ),
       pool.query<PlacedRow>(
         `SELECT it.id, it.serial, it.name, it.description, it.edition_number, it.edition_size,
-                cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, p.w, p.h
+                cr.nickname AS creator, it.created_at, p.i, p.j, p.rot, p.w, p.h, p.z
            FROM placements p
            JOIN items it ON it.id = p.item_id
            JOIN users cr ON cr.id = it.creator_id
@@ -136,8 +137,8 @@ export function registerBuildingRoutes(
       ),
     ]);
     const layout = await loadLayout(pool, ownerId);
-    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; rot: number; w: number; h: number; lit: boolean; data: string | null }>(
-      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.w, p.h, p.lit, p.data
+    const base = await pool.query<{ id: string; catalogue_key: string; i: number; j: number; rot: number; w: number; h: number; z: number; lit: boolean; data: string | null }>(
+      `SELECT f.id, f.catalogue_key, p.i, p.j, p.rot, p.w, p.h, p.z, p.lit, p.data
          FROM placements p JOIN furniture f ON f.id = p.furniture_id
         WHERE p.user_id = $1 ORDER BY p.i, p.j`,
       [ownerId],
@@ -152,7 +153,7 @@ export function registerBuildingRoutes(
         id: r.id,
         key: r.catalogue_key,
         name: catalogueEntry(r.catalogue_key)?.name ?? r.catalogue_key,
-        placement: { i: r.i, j: r.j, rot: r.rot, w: r.w, h: r.h },
+        placement: { i: r.i, j: r.j, rot: r.rot, w: r.w, h: r.h, z: r.z },
         on: r.lit,
         data: r.data,
       })),
@@ -165,7 +166,7 @@ export function registerBuildingRoutes(
         editionSize: r.edition_size,
         creator: r.creator,
         createdAt: r.created_at,
-        placement: { i: r.i, j: r.j, rot: r.rot, w: r.w, h: r.h },
+        placement: { i: r.i, j: r.j, rot: r.rot, w: r.w, h: r.h, z: r.z },
       })),
     };
   });

@@ -25,6 +25,11 @@ export interface CatalogueEntry {
   anim?: 'sway' | 'flicker';
   /** A player can sit on the piece, or lie on it. The server decides who may, and when. */
   interaction?: 'sit' | 'lie';
+  /**
+   * Things can be put on it (a table, a desk, a chest of drawers): its top is this high, in recipe units. A small
+   * piece placed on its cell stands on it instead of beside it.
+   */
+  surface?: number;
   /** Lies on the floor: players walk over it (rugs, pressure plates, portals) instead of around it. */
   walkable?: boolean;
   /** Clicking it sets off the mechanisms of the apartment (a button). */
@@ -488,7 +493,7 @@ const entry = (
   key: string,
   category: FurnitureCategory,
   recipe: Recipe,
-  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
+  extras: Partial<Pick<CatalogueEntry, 'glow' | 'anim' | 'interaction' | 'price' | 'surface' | 'walkable' | 'pressable' | 'gate' | 'confetti' | 'game' | 'vendor' | 'mannequin' | 'sign' | 'jukebox' | 'goal' | 'frames' | 'frameMs' | 'wall'>> = {},
 ): CatalogueEntry => ({
   key,
   name: recipe.name,
@@ -813,7 +818,7 @@ const newEntries = (): CatalogueEntry[] => [
   entry('tabouret', 'seat', stool, { price: 20, interaction: 'sit' }),
   entry('litetoile', 'sleep', starBed, { price: 80, interaction: 'lie' }),
   entry('litsuperposes', 'sleep', bunkBed, { price: 140 }),
-  entry('tablebasse', 'table', coffeeTable, { price: 40 }),
+  entry('tablebasse', 'table', coffeeTable, { price: 40, surface: 8.8 }),
   entry('piano', 'decor', piano, { price: 220 }),
   entry('cheminee', 'decor', fireplace, { price: 180, anim: 'flicker', glow: { z: 8, color: 0xff9a40, radius: 62, flicker: true } }),
   entry('aquarium', 'decor', aquarium, { price: 160, glow: { z: 20, color: 0x6ec6e8, radius: 46 } }),
@@ -835,7 +840,7 @@ const newEntries = (): CatalogueEntry[] => [
 export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('lit', 'sleep', bed, { interaction: 'lie' }),
   entry('chaise', 'seat', chair, { interaction: 'sit' }),
-  entry('table', 'table', table),
+  entry('table', 'table', table, { surface: 12 }),
   entry('canape', 'seat', sofa, { interaction: 'sit' }),
   entry('fauteuil', 'seat', armchair, { interaction: 'sit' }),
   entry('lampadaire', 'light', lamp, { glow: { z: 27, color: 0xffd870, radius: 74 } }),
@@ -844,15 +849,15 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
   entry('etagere', 'storage', bookshelf),
   entry('tapis', 'decor', rug, { walkable: true }),
   entry('armoire', 'storage', wardrobe),
-  entry('bureau', 'table', desk),
-  entry('chevet', 'sleep', nightstand, { glow: { z: 16, color: 0xffd870, radius: 40 } }),
+  entry('bureau', 'table', desk, { surface: 15 }),
+  entry('chevet', 'sleep', nightstand, { surface: 12.2, glow: { z: 16, color: 0xffd870, radius: 40 } }),
   entry('tele', 'tech', tv, { anim: 'flicker', glow: { z: 15, color: 0x6aa6ee, radius: 52, flicker: true } }),
   entry('frigo', 'tech', fridge),
-  entry('commode', 'storage', dresser),
+  entry('commode', 'storage', dresser, { surface: 20 }),
   entry('miroir', 'decor', mirror),
   entry('pouf', 'seat', pouf, { interaction: 'sit' }),
   entry('horloge', 'decor', clock),
-  entry('coffre', 'storage', chest),
+  entry('coffre', 'storage', chest, { surface: 12 }),
   ...newEntries(),
   ...bigPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
   ...mechanismPieces().map((b) => entry(b.key, b.category, b.recipe, b.extras)),
@@ -862,6 +867,16 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
 
 const byKey = new Map(CATALOGUE.map((e) => [e.key, e]));
 export const catalogueEntry = (key: string): CatalogueEntry | undefined => byKey.get(key);
+
+/**
+ * May this piece stand on a surface? Things to look at may (a lamp, a plant, a computer, a player's creation: no
+ * entry); what players use from the floor may not (seats, beds, rugs, plates, gates, buttons, games), nor wall
+ * pieces, nor another surface.
+ */
+export function stackable(entry: CatalogueEntry | undefined): boolean {
+  if (!entry) return true;
+  return !entry.interaction && !entry.walkable && !entry.gate && !entry.pressable && !entry.wall && entry.surface === undefined && !entry.game && entry.goal === undefined;
+}
 
 /**
  * What a new apartment starts with, and where: a furnished room, so that a new player arrives somewhere that feels

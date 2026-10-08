@@ -12,6 +12,7 @@ export {
   STARTER_KIT,
   WALLS,
   catalogueEntry,
+  stackable,
   isSwitchable,
   floorStyle,
   wallStyle,

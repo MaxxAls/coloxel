@@ -19,7 +19,8 @@ export interface InventoryItem {
   createdAt: string;
   /** Reported by several players or hidden by the staff: only its owner still sees it. */
   underReview?: boolean;
-  placement: { i: number; j: number; rot: number; w?: number; h?: number } | null;
+  /** z: the height it stands at, in recipe units: above 0 it stands on a surface (a table, a desk). */
+  placement: { i: number; j: number; rot: number; w?: number; h?: number; z?: number } | null;
   /** Tiles the piece covers before any turn: along i, along j. Absent means one. */
   size?: [number, number];
   /** On the market: in escrow, it cannot be placed until the offer ends. */
@@ -31,7 +32,8 @@ export interface FurnitureItem {
   id: string;
   key: string;
   name: string;
-  placement: { i: number; j: number; rot: number; w?: number; h?: number } | null;
+  /** z: the height it stands at, in recipe units: above 0 it stands on a surface (a table, a desk). */
+  placement: { i: number; j: number; rot: number; w?: number; h?: number; z?: number } | null;
   /** Tiles the piece covers before any turn: along i, along j. Absent means one. */
   size?: [number, number];
   /** A piece that gives light: lit or switched off. Absent means lit. */

@@ -8,6 +8,23 @@ export async function loadLayout(db: pg.Pool | pg.PoolClient, ownerId: string): 
   return isValidLayout(stored) ? { cells: stored.cells, door: { i: stored.door.i, j: stored.door.j } } : DEFAULT_LAYOUT;
 }
 
+/**
+ * What stood on a surface that is no longer there (taken away, moved, or gone with the floor) goes back to the
+ * inventory: a piece above the floor needs a piece on the floor under its whole footprint. Returns how many went.
+ */
+export async function dropOrphanStacks(db: pg.Pool | pg.PoolClient, ownerId: string): Promise<number> {
+  const { rowCount } = await db.query(
+    `DELETE FROM placements s
+      WHERE s.user_id = $1 AND s.z > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM placements b
+           WHERE b.user_id = s.user_id AND b.z = 0 AND b.layer = 0
+             AND b.i <= s.i AND b.j <= s.j AND b.i + b.w >= s.i + s.w AND b.j + b.h >= s.j + s.h)`,
+    [ownerId],
+  );
+  return rowCount ?? 0;
+}
+
 /** Pick a ready-made shape by its key. */
 export const layoutOfPreset = (key: string): RoomLayout | null => presetByKey(key)?.layout ?? null;
 
@@ -32,8 +49,9 @@ export async function saveLayout(pool: pg.Pool, ownerId: string, layout: RoomLay
       return false;
     });
     for (const r of gone) await client.query('DELETE FROM placements WHERE user_id = $1 AND i = $2 AND j = $3 AND layer = $4', [ownerId, r.i, r.j, r.layer]);
+    const fell = await dropOrphanStacks(client, ownerId);
     await client.query('COMMIT');
-    return gone.length;
+    return gone.length + fell;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

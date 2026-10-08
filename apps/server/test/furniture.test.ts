@@ -100,7 +100,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const entry = catalogueEntry(piece.key)!;
       const rot = piece.rot ?? 0;
       const [w, h] = entry.wall ? [1, 1] : rotatedSize(normalizeSize(entry.recipe.size), rot);
-      expect(inv.furniture).toContainEqual(expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot, w, h } }));
+      expect(inv.furniture).toContainEqual(expect.objectContaining({ key: piece.key, placement: { i: piece.i, j: piece.j, rot, w, h, z: 0 } }));
     }
     // The kit is not a creation: nothing was numbered.
     expect(await lastSerial()).toBe(before);
@@ -182,7 +182,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       expect((await place(ines.sid, piece.id, 2, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
       expect((await place(ines.sid, piece.id, 3, 6)).statusCode).toBe(200);
-      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6, rot: 0, w: 1, h: 1 });
+      expect((await inventory(ines.sid)).furniture.find((f) => f.id === piece.id)!.placement).toEqual({ i: 3, j: 6, rot: 0, w: 1, h: 1, z: 0 });
 
       const del = await app.inject({ method: 'DELETE', url: `/api/placements/${piece.id}`, cookies: as(ines.sid) });
       expect(del.statusCode).toBe(204);
@@ -281,7 +281,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
         id: expect.any(String),
         key: expect.any(String),
         name: expect.any(String),
-        placement: { i: expect.any(Number), j: expect.any(Number), rot: 0, w: 1, h: 1 },
+        placement: { i: expect.any(Number), j: expect.any(Number), rot: 0, w: 1, h: 1, z: 0 },
         on: true,
         data: null,
       });
@@ -423,7 +423,7 @@ describe.skipIf(!available)('base furniture (PostgreSQL)', () => {
       const stool = await own(ada.id, 'pouf');
       // Left wall is behind the first tile of each row (i = 0 in a plain room); (3, 3) has floor behind it.
       expect((await putAt(ada.sid, window, 3, 3)).statusCode).toBe(400);
-      expect((await putAt(ada.sid, window, 0, 3)).json().placement).toMatchObject({ i: 0, j: 3, rot: 0, w: 1, h: 1 });
+      expect((await putAt(ada.sid, window, 0, 3)).json().placement).toMatchObject({ i: 0, j: 3, rot: 0, w: 1, h: 1, z: 0 });
       // The floor tile under it is still free, for a piece that stands.
       expect((await putAt(ada.sid, stool, 0, 3)).statusCode).toBe(200);
       // But a second piece on the same wall of the same tile is refused.
