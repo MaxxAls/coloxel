@@ -266,6 +266,9 @@ abstract class BuildingRoom extends Room<{ state: RoomState; client: AuthedClien
         case 'bell-answer':
           client.send('bell-answer', { ownerId: event.ownerId, accepted: event.accepted, text: event.text });
           break;
+        case 'pm':
+          client.send('pm', { from: event.from, nickname: event.nickname });
+          break;
       }
     }
   };

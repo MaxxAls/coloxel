@@ -534,3 +534,59 @@ button,
   font-weight: 700;
   color: var(--gold);
 }
+
+/* Private messages: one conversation in a small window. */
+.messages-window {
+  position: fixed;
+  right: 12px;
+  bottom: 84px;
+  z-index: 13;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+}
+.messages-window[hidden] {
+  display: none;
+}
+.pm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.pm {
+  display: grid;
+  gap: 2px;
+  justify-self: start;
+  max-width: 86%;
+  padding: 6px 10px;
+  background: var(--panel-3);
+  border: 2px solid var(--edge);
+  border-radius: 8px;
+}
+.pm.mine {
+  justify-self: end;
+  background: #3a2f5e;
+}
+.pm-text {
+  overflow-wrap: anywhere;
+}
+.pm-form {
+  display: flex;
+  gap: 6px;
+}
+.pm-form input {
+  flex: 1;
+  min-width: 0;
+}
+.pm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}

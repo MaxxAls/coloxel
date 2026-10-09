@@ -1739,6 +1739,10 @@ export async function createRoomScene(host: SceneHost, target: RoomTarget): Prom
   // Somebody rings at our door, or answers a ring of ours.
   room.onRing((ring) => showRing(ring.visitorId, ring.nickname, (text) => host.notify(text)));
   room.onBellAnswer((answer) => host.notify(answer.text));
+  room.onPrivateMessage((pm) => {
+    host.notify(`Nouveau message de ${pm.nickname}.`);
+    dispatchEvent(new CustomEvent('coloxel:pm', { detail: pm }));
+  });
 
   // A challenge was completed: the Pixels are already ours, the server paid them.
   room.onQuest((text) => {

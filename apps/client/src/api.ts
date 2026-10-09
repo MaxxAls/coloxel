@@ -244,7 +244,15 @@ export interface AnnouncementDraft {
   published: boolean;
 }
 
-export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment' | 'listing' | 'trade';
+export type ReportKind = 'player' | 'message' | 'item' | 'apartment_name' | 'apartment' | 'listing' | 'trade' | 'private';
+
+/** A private message, as the conversation shows it. */
+export interface PrivateMessage {
+  id: number;
+  mine: boolean;
+  text: string;
+  at: string;
+}
 export type ReportReason = 'insult' | 'harassment' | 'inappropriate' | 'personal_info' | 'spam' | 'other';
 
 /** What the staff panel reads from the server (see apps/server/src/staff/routes.ts). */
@@ -529,6 +537,10 @@ export const api = {
   }) =>
     call<MyApartment>('PUT', '/api/apartment', body),
   navigator: () => call<NavigatorData>('GET', '/api/navigator'),
+  messages: () => call<{ open: boolean; unread: { id: string; nickname: string; count: number }[] }>('GET', '/api/messages'),
+  conversation: (friendId: string) => call<{ messages: PrivateMessage[] }>('GET', `/api/messages/${friendId}`),
+  sendMessage: (friendId: string, text: string) => call<{ message: PrivateMessage }>('POST', `/api/messages/${friendId}`, { text }),
+  setMessagesOpen: (open: boolean) => call<{ open: boolean }>('PUT', '/api/messages/settings', { open }),
   rights: () => call<{ rights: { id: string; nickname: string }[] }>('GET', '/api/apartment/rights'),
   grantRights: (userId: string) => call<unknown>('PUT', `/api/apartment/rights/${userId}`),
   revokeRights: (userId: string) => call<unknown>('DELETE', `/api/apartment/rights/${userId}`),

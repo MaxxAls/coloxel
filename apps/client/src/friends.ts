@@ -17,6 +17,8 @@ export interface Friends {
 
 export interface FriendsOptions {
   go(target: Target): void;
+  /** Open the private conversation with a friend. */
+  message(friendId: string, nickname: string): void;
   onToggle(open: boolean): void;
   /** How many requests wait for an answer: the bar shows it. */
   onPending(count: number): void;
@@ -54,6 +56,9 @@ export function createFriends(options: FriendsOptions): Friends {
   root.append(windowBar('Amis', () => hide()), body);
 
   let data: FriendsData | null = null;
+  /** Unread private messages, by friend. */
+  let unread = new Map<string, number>();
+  let messagesOpen = true;
   let timer: ReturnType<typeof setInterval> | undefined;
 
   const button = (label: string, run: () => void | Promise<void>, className?: string) => {
@@ -131,12 +136,26 @@ export function createFriends(options: FriendsOptions): Friends {
                 }, 'primary'),
               );
             }
+            const waiting = unread.get(f.id) ?? 0;
+            actions.push(button(waiting ? `Message (${waiting})` : 'Message', () => options.message(f.id, f.nickname), waiting ? 'primary' : undefined));
             actions.push(button('Retirer', () => act(api.removeFriend(f.id), `${f.nickname} n’est plus dans tes amis.`)));
             return row(f.nickname, f.online ? (f.where ?? 'En ligne') : 'Hors ligne', actions, f.online);
           }),
         ),
       );
     }
+    // Whether friends may write to us.
+    const toggle = el('label', 'pm-toggle');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = messagesOpen;
+    box.addEventListener('change', async () => {
+      const res = await api.setMessagesOpen(box.checked);
+      if (res.ok) messagesOpen = res.data.open;
+      else box.checked = messagesOpen;
+    });
+    toggle.append(box, document.createTextNode(' Mes amis peuvent m’écrire en privé'));
+    lists.append(toggle);
     if (outgoing.length) {
       lists.append(
         section(
@@ -154,7 +173,12 @@ export function createFriends(options: FriendsOptions): Friends {
       return;
     }
     data = res.data;
-    options.onPending(res.data.incoming.length);
+    const pm = await api.messages();
+    if (pm.ok) {
+      unread = new Map(pm.data.unread.map((u) => [u.id, u.count]));
+      messagesOpen = pm.data.open;
+    }
+    options.onPending(res.data.incoming.length + [...unread.values()].reduce((a, b) => a + b, 0));
     if (!root.hidden) render();
   }
 
@@ -191,6 +215,8 @@ export function createFriends(options: FriendsOptions): Friends {
   setInterval(() => {
     if (root.hidden) void refresh();
   }, BADGE_MS);
+  // A private message arrived: the badge and the list count it at once.
+  addEventListener('coloxel:pm', () => void refresh());
   void refresh();
 
   addEventListener('keydown', (ev) => {
@@ -198,7 +224,7 @@ export function createFriends(options: FriendsOptions): Friends {
   });
   addEventListener('pointerdown', (ev) => {
     const t = ev.target as Node;
-    if (!root.hidden && !root.contains(t) && !(t as HTMLElement).closest?.('[data-friends-toggle], .player-card')) hide();
+    if (!root.hidden && !root.contains(t) && !(t as HTMLElement).closest?.('[data-friends-toggle], .player-card, .messages-window')) hide();
   });
 
   return {

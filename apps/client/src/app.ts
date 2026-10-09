@@ -4,6 +4,7 @@ import { api } from './api';
 import { createBuildingScene } from './building-scene';
 import { appearance } from './appearance';
 import { createFriends } from './friends';
+import { createMessages } from './messages';
 import { createNavigator } from './navigator';
 import { pixelIcon } from './pixel-icons';
 import { showNotice } from './notice-dialog';
@@ -188,8 +189,12 @@ export async function startApp(user: User) {
     onToggle: () => markActive(),
   });
   document.body.append(navigator.element);
+  const messages = createMessages({ notify: (text) => notify(text), onRead: () => friends.refresh() });
+  document.body.append(messages.element);
+  addEventListener('coloxel:pm', (ev) => messages.received((ev as CustomEvent<{ from: string }>).detail.from));
   const friends = createFriends({
     go: (target) => void go(target),
+    message: (friendId, nickname) => messages.open(friendId, nickname),
     onToggle: () => markActive(),
     onPending: (count) => setBadge('friends', count),
     notify: (text) => notify(text),

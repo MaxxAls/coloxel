@@ -121,6 +121,8 @@ export interface BuildingRoom {
   onRing(callback: (ring: { visitorId: string; nickname: string }) => void): void;
   /** The owner answered a ring we made. */
   onBellAnswer(callback: (answer: { accepted: boolean; text: string }) => void): void;
+  /** A friend sent us a private message. */
+  onPrivateMessage(callback: (pm: { from: string; nickname: string }) => void): void;
   /** The server answers a /command, to us alone. */
   onSystem(callback: (text: string) => void): void;
   /** A challenge tier was reached: the server tells us what it paid. */
@@ -225,6 +227,9 @@ function wrap(room: Room): BuildingRoom {
     },
     onRing(callback) {
       room.onMessage('ring', (m: { visitorId: string; nickname: string }) => callback(m));
+    },
+    onPrivateMessage(callback) {
+      room.onMessage('pm', (m: { from: string; nickname: string }) => callback(m));
     },
     onBellAnswer(callback) {
       room.onMessage('bell-answer', (m: { accepted: boolean; text: string }) => callback(m));

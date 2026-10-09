@@ -6,7 +6,7 @@ import { NO_GUARDS, type RateGuards } from '../rate-limit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const REPORT_KINDS = ['player', 'message', 'item', 'apartment_name', 'apartment', 'listing', 'trade'] as const;
+export const REPORT_KINDS = ['player', 'message', 'item', 'apartment_name', 'apartment', 'listing', 'trade', 'private'] as const;
 export const REPORT_REASONS = ['insult', 'harassment', 'inappropriate', 'personal_info', 'spam', 'other'] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -55,6 +55,24 @@ async function findTarget(pool: pg.Pool, reporterId: string, kind: ReportKind, i
     if (!m) return null;
     if (m.user_id === reporterId) return { error: 'Tu ne peux pas te signaler toi-même.' };
     return { key: id, userId: m.user_id, snapshot: `${m.nickname} : ${m.text}`, context: await recentChat(pool, m.room, id) };
+  }
+  if (kind === 'private') {
+    // Only the one who received a private message reports it; the staff sees it with what came just before.
+    if (!/^\d{1,15}$/.test(id)) return null;
+    const { rows } = await pool.query<{ from_id: string; to_id: string; text: string; nickname: string }>(
+      `SELECT m.from_id, m.to_id, m.text, u.nickname FROM private_messages m JOIN users u ON u.id = m.from_id WHERE m.id = $1`,
+      [id],
+    );
+    const m = rows[0];
+    if (!m || m.to_id !== reporterId) return null;
+    const before = await pool.query<{ nickname: string; text: string }>(
+      `SELECT u.nickname, p.text FROM private_messages p JOIN users u ON u.id = p.from_id
+        WHERE ((p.from_id = $1 AND p.to_id = $2) OR (p.from_id = $2 AND p.to_id = $1)) AND p.id <= $3
+        ORDER BY p.id DESC LIMIT 10`,
+      [m.from_id, m.to_id, id],
+    );
+    const context = before.rows.reverse().map((r) => `${r.nickname} : ${r.text}`).join(String.fromCharCode(10));
+    return { key: id, userId: m.from_id, snapshot: `${m.nickname} (message privé) : ${m.text}`, context };
   }
   if (!UUID.test(id)) return null;
   const key = id.toLowerCase();

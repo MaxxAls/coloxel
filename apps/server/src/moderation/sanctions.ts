@@ -64,7 +64,9 @@ export type UserEvent =
   // Someone rings at the door of this player's apartment.
   | { userId: string; kind: 'ring'; visitorId: string; nickname: string }
   // The owner answered a ring: the visitor may come in, or not.
-  | { userId: string; kind: 'bell-answer'; ownerId: string; accepted: boolean; text: string };
+  | { userId: string; kind: 'bell-answer'; ownerId: string; accepted: boolean; text: string }
+  // A friend sent this player a private message.
+  | { userId: string; kind: 'pm'; from: string; nickname: string };
 export type NotifyUser = (event: UserEvent) => void;
 /** Presence topic carrying UserEvents to every room, wherever it runs. */
 export const USER_TOPIC = 'coloxel:user-events';

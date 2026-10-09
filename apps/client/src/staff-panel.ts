@@ -84,6 +84,7 @@ const KIND_LABELS: Record<ReportKind, string> = {
   apartment: 'Appart',
   listing: 'Offre du marché',
   trade: 'Échange',
+  private: 'Message privé',
 };
 const REASON_LABELS = Object.fromEntries(REASONS) as Record<string, string>;
 const SANCTION_LABELS: Record<SanctionKind, string> = { warning: 'Avertissement', mute: 'Sourdine', suspension: 'Suspension', ban: 'Bannissement' };

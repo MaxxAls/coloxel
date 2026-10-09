@@ -12,6 +12,7 @@ import { registerVisitorRoutes } from './apartments/visitors';
 import { registerFriendRoutes } from './friends/routes';
 import { registerFurnitureRoutes } from './furniture/routes';
 import { makeQuestRecorder } from './quests/engine';
+import { registerMessageRoutes } from './messages/routes';
 import { registerQuestRoutes } from './quests/routes';
 import { registerNoticeRoutes } from './moderation/notices';
 import type { NotifyUser } from './moderation/sanctions';
@@ -123,6 +124,7 @@ export function buildServer({
       registerAvatarRoutes(scope, pool, guards);
       registerShopRoutes(scope, pool, guards, quest);
       registerQuestRoutes(scope, pool);
+      registerMessageRoutes(scope, pool, notifyUser, guards);
       registerPetRoutes(scope, pool, guards);
     });
   }
