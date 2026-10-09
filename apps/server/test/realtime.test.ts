@@ -1427,6 +1427,8 @@ describe.skipIf(!available)('realtime rooms (Colyseus)', () => {
       await until(() => emoteOf(room, owner.id) === 1, 3000);
       // A button, on the other hand, stands in the way like any piece of furniture.
       await place(owner, 'bouton', 6, 6);
+      // Placed straight in the database: the room sees it once the layout it remembers (1 s) is read again.
+      await new Promise((r) => setTimeout(r, 1100));
       const start = { ...playerOf(room, owner.id)! };
       room.send('move', { i: 6, j: 6 });
       await new Promise((r) => setTimeout(r, 1500));
